@@ -65,7 +65,7 @@ model Staff {
   registeredJourneys PatientJourney[] @relation("RegisteredJourneys")
   vitals       VitalSign[]
   
-  // --- NEW: Many-to-Many relations for Clinics and Wards ---
+  // --- Many-to-Many relations for Clinics and Wards ---
   clinics      StaffClinic[]
   wards        StaffWard[]
   // ---------------------------------------------------------
@@ -74,7 +74,7 @@ model Staff {
   updatedAt    DateTime @updatedAt
 }
 
-// --- NEW JOIN TABLES FOR STAFF ASSIGNMENTS ---
+// --- JOIN TABLES FOR STAFF ASSIGNMENTS ---
 model StaffClinic {
   staffId   String
   clinicId  String
@@ -103,7 +103,7 @@ model Appointment {
   type        String   @default("Consultation")
   notes       String?
   // Relations
-  patient     Patient  @relation(fields: [patientId], references: [id])
+  patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
   staff       Staff    @relation("DoctorAppointments", fields: [staffId], references: [id])
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -121,7 +121,7 @@ model ClinicalNote {
   plan        String?  // Treatment plan
   fullContent String?  // Optional full text
   // Relations
-  patient     Patient  @relation(fields: [patientId], references: [id])
+  patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
   author      Staff    @relation("AuthorNotes", fields: [authorId], references: [id])
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -140,7 +140,7 @@ model Prescription {
   instructions String?
   status      String   @default("Prescribed") // Prescribed, Dispensed, PartiallyDispensed, Cancelled
   // Relations
-  patient     Patient  @relation(fields: [patientId], references: [id])
+  patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
   prescribedBy Staff   @relation("PrescribingStaff", fields: [prescribingStaffId], references: [id])
   dispensedBy Staff?   @relation("DispensingStaff", fields: [dispensingStaffId], references: [id])
   createdAt   DateTime @default(now())
@@ -161,7 +161,7 @@ model LabOrder {
   resultDate  DateTime?
   notes       String?
   // Relations
-  patient     Patient  @relation(fields: [patientId], references: [id])
+  patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
   orderedBy   Staff    @relation("OrderingStaff", fields: [orderingStaffId], references: [id])
   performedBy Staff?   @relation("PerformingStaff", fields: [labStaffId], references: [id])
   createdAt   DateTime @default(now())
@@ -184,7 +184,7 @@ model BillingRecord {
   insuranceProvider String?
   insuranceClaimId String?
   // Relations
-  patient     Patient  @relation(fields: [patientId], references: [id])
+  patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
   journey     PatientJourney? @relation("BillingJourney")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -244,7 +244,7 @@ model Ward {
   // Relations
   admissions  Admission[]
   patientJourneys PatientJourney[]
-  staffAssignments StaffWard[] // <--- Reverse relation to join table
+  staffAssignments StaffWard[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -254,7 +254,7 @@ model Admission {
   id              String   @id @default(uuid())
   admissionNumber String   @unique
   patientId       String
-  patient         Patient  @relation(fields: [patientId], references: [id])
+  patient         Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
   staffId         String   
   staff           Staff    @relation("DoctorAdmissions", fields: [staffId], references: [id])
   wardId          String?
@@ -272,7 +272,7 @@ model Admission {
 model PatientHistoryRecord {
   id            String   @id @default(uuid())
   patientId     String
-  patient       Patient  @relation(fields: [patientId], references: [id])
+  patient       Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
   encounterDate DateTime @default(now())
   doctorName    String
   encounterType String   // Outpatient, Inpatient, Emergency
@@ -307,7 +307,7 @@ model Clinic {
   // Relations
   journeys    PatientJourney[]
   servicePrices ServicePrice[]
-  staffAssignments StaffClinic[] // <--- Reverse relation to join table
+  staffAssignments StaffClinic[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -316,7 +316,7 @@ model Clinic {
 model PatientJourney {
   id             String   @id @default(cuid())
   patientId      String
-  patient        Patient  @relation(fields: [patientId], references: [id])
+  patient        Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
   
   destinationType String   @default("CLINIC") // "CLINIC" or "WARD"
   
@@ -360,7 +360,7 @@ model ServicePrice {
 model VitalSign {
   id                   String   @id @default(cuid())
   patientId            String
-  patient              Patient  @relation(fields: [patientId], references: [id])
+  patient              Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
   nurseId              String
   nurse                Staff    @relation(fields: [nurseId], references: [id])
   recordedAt           DateTime @default(now())

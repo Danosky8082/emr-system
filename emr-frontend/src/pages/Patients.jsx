@@ -78,13 +78,21 @@ const fetchPatients = async () => {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to permanently delete this patient? This cannot be undone!')) return;
-    try {
-      await axios.delete(`http://localhost:3000/api/patients/${id}`, { headers: { Authorization: `Bearer ${token}` } });
-      toast.success('Patient deleted successfully');
-      fetchPatients();
-    } catch (error) { toast.error('Failed to delete patient'); }
-  };
+  // Show a more detailed confirmation
+  if (!window.confirm('Are you sure you want to permanently delete this patient? All associated records (appointments, billing, prescriptions, etc.) will also be removed if possible.')) return;
+
+  try {
+    await axios.delete(`http://localhost:3000/api/patients/${id}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    toast.success('Patient deleted successfully');
+    fetchPatients();
+  } catch (error) {
+    // Show the specific error message returned by the backend
+    const message = error.response?.data?.error || 'Failed to delete patient. They may have associated records.';
+    toast.error(message);
+  }
+};
 
   const filteredPatients = patients.filter(p => 
     `${p.firstName} ${p.lastName} ${p.hospitalId || ''}`.toLowerCase().includes(searchTerm.toLowerCase())

@@ -403,10 +403,37 @@ app.put('/api/patients/:id', authenticate, authorize('Admin', 'Records', 'ITAdmi
 app.delete('/api/patients/:id', authenticate, authorize('Admin', 'Records', 'ITAdmin'), async (req, res) => {
   try {
     const { id } = req.params;
-    await prisma.patient.delete({ where: { id } });
+
+    // Validate ID format (optional, but good practice)
+    if (!id || id.length < 5) {
+      return res.status(400).json({ error: 'Invalid patient ID format.' });
+    }
+
+    // Check if patient exists
+    const existingPatient = await prisma.patient.findUnique({
+      where: { id }
+    });
+    if (!existingPatient) {
+      return res.status(404).json({ error: 'Patient not found.' });
+    }
+
+    // Attempt deletion
+    await prisma.patient.delete({
+      where: { id }
+    });
+
     res.json({ message: 'Patient deleted successfully' });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    console.error('Delete patient error:', error);
+
+    // If Prisma throws a foreign key constraint error (P2003)
+    if (error.code === 'P2003') {
+      return res.status(400).json({
+        error: 'Cannot delete this patient because they have associated records (appointments, billing, prescriptions, etc.). Please remove those records first or contact your system administrator.'
+      });
+    }
+
+    res.status(400).json({ error: error.message || 'Failed to delete patient.' });
   }
 });
 
