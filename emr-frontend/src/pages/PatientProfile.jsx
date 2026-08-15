@@ -1,6 +1,6 @@
 // src/pages/PatientProfile.jsx
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom'; // <--- Added useNavigate
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import './PatientProfile.css';
@@ -10,6 +10,7 @@ import toast from 'react-hot-toast';
 const PatientProfile = () => {
   const { id } = useParams();
   const { token, user } = useAuth();
+  const navigate = useNavigate(); // <--- Initialize navigate
   const [loading, setLoading] = useState(true);
   const [currentTab, setCurrentTab] = useState('profile');
   
@@ -53,17 +54,35 @@ const PatientProfile = () => {
 
   useEffect(() => { if (id) fetchAllData(); }, [id, token]);
 
+  // --- 🚀 UNIVERSAL BACK BUTTON LOGIC ---
+  const handleBack = () => {
+    // 1. Try to go back to the previous page (whether they came from Nurse dashboard, Doctor dashboard, or Patients list)
+    if (window.history.state && window.history.state.idx > 0) {
+      navigate(-1);
+    } else {
+      // 2. Fallback if they opened the profile in a new tab (no history)
+      const role = user?.role;
+      if (role === 'Nurse') {
+        navigate('/nurse-dashboard');
+      } else if (role === 'Doctor') {
+        navigate('/doctor-dashboard');
+      } else {
+        // Default fallback for Admin, Records, LabTech, Pharmacist, etc.
+        navigate('/patients');
+      }
+    }
+  };
+  // ---------------------------------------
+
   const handleNoteSubmit = async (e) => {
     e.preventDefault();
     try {
       if (editingNote) {
-        // UPDATE existing note
         await axios.put(`http://localhost:3000/api/clinical-notes/${editingNote.id}`, noteForm, {
           headers: { Authorization: `Bearer ${token}` }
         });
         toast.success('Note updated successfully!');
       } else {
-        // CREATE new note
         await axios.post('http://localhost:3000/api/clinical-notes', { patientId: id, ...noteForm }, {
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -147,8 +166,16 @@ const PatientProfile = () => {
         <button className={`profile-tab-btn ${currentTab === 'notes' ? 'active' : ''}`} onClick={() => setCurrentTab('notes')}><span className="icon">📝</span> Clinical Notes</button>
         <button className={`profile-tab-btn ${currentTab === 'prescriptions' ? 'active' : ''}`} onClick={() => setCurrentTab('prescriptions')}><span className="icon">💊</span> Prescriptions</button>
         <button className={`profile-tab-btn ${currentTab === 'lab-orders' ? 'active' : ''}`} onClick={() => setCurrentTab('lab-orders')}><span className="icon">🔬</span> Lab Orders</button>
+        
+        {/* 🚀 UPDATED UNIVERSAL BACK BUTTON */}
         <div style={{ marginTop: '20px', padding: '0 20px' }}>
-          <Link to="/nurse-dashboard" className="btn btn-secondary" style={{ width: '100%', display: 'block', textAlign: 'center' }}>← Back to List</Link>
+          <button 
+            onClick={handleBack} 
+            className="btn btn-secondary" 
+            style={{ width: '100%', display: 'block', textAlign: 'center', cursor: 'pointer' }}
+          >
+            ← Back to List
+          </button>
         </div>
       </div>
 
@@ -203,7 +230,7 @@ const PatientProfile = () => {
           </>
         )}
 
-        {/* 🆕 NOTES TAB WITH EDIT/DELETE & IMPROVED UI */}
+        {/* NOTES TAB WITH EDIT/DELETE */}
         {currentTab === 'notes' && (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -265,7 +292,7 @@ const PatientProfile = () => {
         )}
       </div>
 
-      {/* --- VITAL SIGNS MODAL (Unchanged) --- */}
+      {/* VITAL SIGNS MODAL */}
       {showVitalModal && (
         <div className="modal-overlay" onClick={() => setShowVitalModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -288,7 +315,7 @@ const PatientProfile = () => {
         </div>
       )}
 
-      {/* 🆕 NOTES MODAL (Handles both Add and Edit) */}
+      {/* NOTES MODAL */}
       {showNoteModal && (
         <div className="modal-overlay" onClick={() => setShowNoteModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>

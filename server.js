@@ -2138,7 +2138,7 @@ app.patch('/api/roi/:id', authenticate, authorize('Admin', 'Records', 'ITAdmin')
 // This returns all PatientJourneys with status 'SENT_TO_DESTINATION' or 'COMPLETED'
 // that belong to the nurse's department (clinic or ward).
 // For simplicity, we'll return all journeys that are not 'REGISTERED' or 'PENDING_BILLING' or 'BILLING_CLEARED'.
-app.get('/api/nurse/patients', authenticate, authorize('Nurse'), async (req, res) => {
+app.get('/api/nurse/patients', authenticate, authorize('Nurse', 'Admin'), async (req, res) => {
   try {
     const nurse = await prisma.staff.findUnique({
       where: { id: req.user.id },
