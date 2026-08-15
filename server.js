@@ -7,8 +7,6 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
-//const Hashids = require('hashids');
-//const hashids = new Hashids('NexGenEMRSecretSalt2026', 6);
 const cors = require('cors');
 require('dotenv').config();
 
@@ -305,9 +303,8 @@ app.post('/api/patients', authenticate, authorize('Admin', 'Records', 'ITAdmin')
   }
 });
 
-
-// Get all patients - All authenticated users
-app.get('/api/patients', authenticate, async (req, res) => {
+// Get all patients - Restricted to Admin, Records, ITAdmin
+app.get('/api/patients', authenticate, authorize('Admin', 'Records', 'ITAdmin'), async (req, res) => {
   try {
     const patients = await prisma.patient.findMany({
       orderBy: { createdAt: 'desc' }
@@ -319,11 +316,14 @@ app.get('/api/patients', authenticate, async (req, res) => {
   }
 });
 
-// Get patient by ID - All authenticated users
+// Get patient by ID - Enforce assignment for Nurses/Doctors
 app.get('/api/patients/:id', authenticate, async (req, res) => {
   try {
+    const patientId = req.params.id;
+    
+    // Fetch the patient base data
     const patient = await prisma.patient.findUnique({
-      where: { id: req.params.id },
+      where: { id: patientId },
       include: {
         appointments: true,
         clinicalNotes: true,
@@ -335,6 +335,39 @@ app.get('/api/patients/:id', authenticate, async (req, res) => {
     if (!patient) {
       return res.status(404).json({ error: 'Patient not found' });
     }
+
+    // --- 🟢 ENFORCE PERMISSION FOR NURSES AND DOCTORS ---
+    if (['Nurse', 'Doctor'].includes(req.user.role)) {
+      // Check if this patient has an active journey (SENT_TO_DESTINATION or COMPLETED)
+      const activeJourney = await prisma.patientJourney.findFirst({
+        where: {
+          patientId: patientId,
+          status: { in: ['SENT_TO_DESTINATION', 'COMPLETED'] }
+        },
+        select: { clinicId: true, wardId: true }
+      });
+
+      // Check the staff's assigned clinics/wards
+      const staff = await prisma.staff.findUnique({
+        where: { id: req.user.id },
+        include: {
+          clinics: { select: { clinicId: true } },
+          wards: { select: { wardId: true } }
+        }
+      });
+      const allowedClinicIds = staff.clinics.map(c => c.clinicId);
+      const allowedWardIds = staff.wards.map(w => w.wardId);
+
+      const isAuthorized = (activeJourney && 
+        (allowedClinicIds.includes(activeJourney.clinicId) || 
+         allowedWardIds.includes(activeJourney.wardId))
+      );
+
+      if (!isAuthorized) {
+        return res.status(403).json({ error: 'You are not assigned to the clinic/ward this patient belongs to.' });
+      }
+    }
+    // ----------------------------------------------------
 
     // Audit log
     await prisma.auditLog.create({
@@ -836,8 +869,8 @@ app.get('/api/patients/:patientId/notes', authenticate, async (req, res) => {
   }
 });
 
-// Create a clinical note (SOAP) - All authenticated users
-app.post('/api/clinical-notes', authenticate, async (req, res) => {
+// Create a clinical note (SOAP) - Clinical staff only
+app.post('/api/clinical-notes', authenticate, authorize('Doctor', 'Nurse', 'Admin', 'Records'), async (req, res) => {
   try {
     const { patientId, type, subjective, objective, assessment, plan, fullContent } = req.body;
 
@@ -880,7 +913,6 @@ app.post('/api/clinical-notes', authenticate, async (req, res) => {
     res.status(400).json({ error: error.message });
   }
 });
-
 
 // Update a clinical note
 app.put('/api/clinical-notes/:id', authenticate, async (req, res) => {
@@ -2135,9 +2167,6 @@ app.patch('/api/roi/:id', authenticate, authorize('Admin', 'Records', 'ITAdmin')
 // ============ NURSE ENDPOINTS ============
 
 // Get patients currently in the nurse's destination (clinic or ward)
-// This returns all PatientJourneys with status 'SENT_TO_DESTINATION' or 'COMPLETED'
-// that belong to the nurse's department (clinic or ward).
-// For simplicity, we'll return all journeys that are not 'REGISTERED' or 'PENDING_BILLING' or 'BILLING_CLEARED'.
 app.get('/api/nurse/patients', authenticate, authorize('Nurse', 'Admin'), async (req, res) => {
   try {
     const nurse = await prisma.staff.findUnique({
@@ -2308,56 +2337,6 @@ app.delete('/api/staff/:staffId/wards/:wardId', authenticate, authorize('Admin')
   });
   res.json({ message: 'Ward unassigned' });
 });
-
-// ============ UPDATED NURSE PATIENTS ENDPOINT ============
-// Returns only patients in clinics/wards that the nurse is assigned to
-app.get('/api/nurse/patients', authenticate, authorize('Nurse'), async (req, res) => {
-  // Get nurse's assigned clinics and wards
-  const staff = await prisma.staff.findUnique({
-    where: { id: req.user.id },
-    include: {
-      clinics: { select: { clinicId: true } },
-      wards: { select: { wardId: true } }
-    }
-  });
-  const clinicIds = staff.clinics.map(c => c.clinicId);
-  const wardIds = staff.wards.map(w => w.wardId);
-
-  const journeys = await prisma.patientJourney.findMany({
-    where: {
-      status: { in: ['SENT_TO_DESTINATION', 'COMPLETED'] },
-      OR: [
-        { clinicId: { in: clinicIds } },
-        { wardId: { in: wardIds } }
-      ]
-    },
-    include: {
-      patient: {
-        select: {
-          id: true,
-          hospitalId: true,
-          firstName: true,
-          lastName: true,
-          gender: true,
-          dateOfBirth: true,
-          phone: true,
-          email: true,
-          address: true,
-          emergencyContact: true,
-          allergies: true,
-          nextOfKinName: true,
-          nextOfKinPhone: true,
-          nextOfKinRelationship: true,
-        }
-      },
-      clinic: true,
-      ward: true,
-    },
-    orderBy: { updatedAt: 'desc' }
-  });
-  res.json(journeys);
-});
-
 
 // ============ DOCTOR ENDPOINTS ============
 
@@ -2595,6 +2574,37 @@ app.delete('/api/service-prices/:id', authenticate, authorize('Admin'), async (r
   catch (error) { res.status(400).json({ error: error.message }); }
 });
 
+// ============ ADMIN PERMISSIONS MANAGER ============
+
+// Get all role permissions
+app.get('/api/permissions', authenticate, authorize('Admin'), async (req, res) => {
+  try {
+    let perms = await prisma.rolePermission.findMany();
+    // If a role hasn't been seeded yet, create it with defaults
+    const allRoles = ['Admin', 'ITAdmin', 'ITSupport', 'Doctor', 'Nurse', 'Pharmacist', 'Accountant', 'Records', 'LabTechnician', 'Receptionist', 'BillingOfficer'];
+    for (const role of allRoles) {
+      if (!perms.some(p => p.role === role)) {
+        const newPerm = await prisma.rolePermission.create({ data: { role } });
+        perms.push(newPerm);
+      }
+    }
+    res.json(perms);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Update a role's permissions
+app.patch('/api/permissions/:role', authenticate, authorize('Admin'), async (req, res) => {
+  try {
+    const { role } = req.params;
+    const updates = req.body;
+    const perm = await prisma.rolePermission.update({
+      where: { role },
+      data: updates
+    });
+    res.json(perm);
+  } catch (error) { res.status(400).json({ error: error.message }); }
+});
+
 // ============ START SERVER ============
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
@@ -2606,8 +2616,8 @@ app.listen(PORT, () => {
   console.log('='.repeat(50));
   console.log('📋 Available Endpoints:');
   console.log(`  🔐 Auth: /api/auth/login, /api/auth/register`);
-  console.log(`  👤 Patients: /api/patients (GET all, POST create, PUT edit, DELETE)`);
-  console.log(`  👤 Patient by ID: /api/patients/:id`);
+  console.log(`  👤 Patients: /api/patients (GET restricted, POST create, PUT edit, DELETE)`);
+  console.log(`  👤 Patient by ID: /api/patients/:id (enforced assignment)`);
   console.log(`  🔍 Search Patients: /api/patients/search/:query`);
   console.log(`  👨‍⚕️ Staff: /api/staff (Admin & ITAdmin only)`);
   console.log(`  👤 Staff by ID: /api/staff/:id (Admin & ITAdmin)`);
@@ -2616,7 +2626,7 @@ app.listen(PORT, () => {
   console.log(`  🔄 Reactivate Staff: /api/staff/:id/reactivate (Admin & ITAdmin)`);
   console.log(`  🔑 Reset Password: /api/staff/:id/reset-password (Admin & ITAdmin)`);
   console.log(`  📅 Appointments: /api/appointments`);
-  console.log(`  📝 Clinical Notes: /api/clinical-notes`);
+  console.log(`  📝 Clinical Notes: /api/clinical-notes (POST restricted)`);
   console.log(`  💊 Prescriptions: /api/prescriptions`);
   console.log(`  🔬 Lab Orders: /api/lab-orders`);
   console.log(`  💰 Billing: /api/billing`);
@@ -2630,6 +2640,8 @@ app.listen(PORT, () => {
   console.log(`  📋 System Logs: /api/system/logs (Admin & ITAdmin)`);
   console.log(`  📈 User Activity: /api/system/user-activity (Admin & ITAdmin)`);
   console.log(`  💲 Service Pricing: /api/service-prices (Admin only)`);
-  console.log(`  💉 Nurse Vitals: /api/nurse/patients, /api/patients/:patientId/vitals, /api/vitals (Nurse only)`);
+  console.log(`  💉 Nurse Vitals: /api/nurse/patients (Nurse/Admin), /api/patients/:patientId/vitals, /api/vitals (Nurse)`);
+  console.log(`  🩺 Doctor Patients: /api/doctor/patients (Doctor only)`);
+  console.log(`  🔐 Permissions: /api/permissions (Admin only)`);
   console.log('='.repeat(50));
 });

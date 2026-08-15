@@ -24,6 +24,8 @@ import NurseDashboard from "./pages/NurseDashboard";
 import PatientProfile from "./pages/PatientProfile";
 import ManageWards from "./pages/ManageWards";
 import DoctorDashboard from './pages/DoctorDashboard';
+// --- NEW IMPORT ---
+import ManagePermissions from './pages/ManagePermissions';
 // --------------------------------------------
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -46,7 +48,6 @@ function App() {
     setUser(user);
     localStorage.setItem('emr_token', token);
     localStorage.setItem('emr_user', JSON.stringify(user));
-    //toast.success(`Welcome, ${user.firstName}!`);
   };
 
   const logout = () => {
@@ -87,6 +88,8 @@ function App() {
           <Route path="patient-profile/:id" element={<PatientProfile />} />
           <Route path="wards" element={<ManageWards />} />
           <Route path="doctor-dashboard" element={<DoctorDashboard />} />
+          {/* --- NEW ROUTE --- */}
+          <Route path="permissions" element={<ManagePermissions />} />
         </Route>
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>

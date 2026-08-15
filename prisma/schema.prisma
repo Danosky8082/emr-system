@@ -378,3 +378,30 @@ model VitalSign {
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 }
+
+// --- 19. DYNAMIC ROLE PERMISSIONS ---
+model RolePermission {
+  id        String   @id @default(cuid())
+  role      String   @unique // e.g., "Nurse", "Doctor"
+  dashboard Boolean  @default(true)
+  patients  Boolean  @default(false)
+  staff     Boolean  @default(false)
+  appointments Boolean @default(false)
+  prescriptions Boolean @default(false)
+  labOrders Boolean @default(false)
+  billing   Boolean @default(false)
+  pharmacy  Boolean @default(false)
+  clinics   Boolean @default(false)
+  wards     Boolean @default(false)
+  pricing   Boolean @default(false)
+  billingOfficer Boolean @default(false)
+  patientIntake Boolean @default(false)
+  admissions Boolean @default(false)
+  patientHistory Boolean @default(false)
+  roiRequests Boolean @default(false)
+  nurseDashboard Boolean @default(false)
+  doctorDashboard Boolean @default(false)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

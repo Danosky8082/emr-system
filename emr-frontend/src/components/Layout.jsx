@@ -27,7 +27,8 @@ const Layout = () => {
       { path: '/clinics', label: '🏥 Manage Clinics' },
       { path: '/wards', label: '🛏️ Manage Wards' },
       { path: '/pricing', label: '💲 Service Pricing' },
-      { path: '/nurse-dashboard', label: '🩺 Nurse Dashboard' }, // <-- Added for Admin
+      { path: '/nurse-dashboard', label: '🩺 Nurse Dashboard' },
+      { path: '/permissions', label: '🔐 Role Permissions' }, // <-- NEW
     ],
     Records: [
       { path: '/patient-intake', label: '🔄 Patient Intake' },
@@ -35,14 +36,13 @@ const Layout = () => {
       { path: '/patient-history', label: '📂 Patient History' },
       { path: '/roi-requests', label: '📄 ROI Requests' },
     ],
-
-    'Doctor': [
-  { path: '/doctor-dashboard', label: '🩺 Doctor Dashboard' },
-  { path: '/appointments', label: '📅 Appointments' },
-  { path: '/prescriptions', label: '💊 Prescriptions' },
-  { path: '/lab-orders', label: '🔬 Lab Orders' },
-  { path: '/patients', label: '👤 Patients' },
-],
+    Doctor: [
+      { path: '/doctor-dashboard', label: '🩺 Doctor Dashboard' },
+      { path: '/appointments', label: '📅 Appointments' },
+      { path: '/prescriptions', label: '💊 Prescriptions' },
+      { path: '/lab-orders', label: '🔬 Lab Orders' },
+      { path: '/patients', label: '👤 Patients' },
+    ],
   };
 
   // Helper to check if the current user has permission for a specific path
@@ -50,7 +50,6 @@ const Layout = () => {
     const baseItems = ['/', '/patients'];
     const role = user?.role || '';
     
-    // Everyone can see Dashboard and Patients
     if (baseItems.includes(path)) return true;
 
     // Role-based access (updated with all modules)
@@ -58,7 +57,7 @@ const Layout = () => {
       'Admin': [
         '/staff', '/appointments', '/prescriptions', '/lab-orders', '/billing', '/pharmacy',
         '/clinics', '/wards', '/pricing', '/billing-officer', '/patient-intake', '/admissions',
-        '/patient-history', '/roi-requests', '/nurse-dashboard' // <-- Added nurse dashboard
+        '/patient-history', '/roi-requests', '/nurse-dashboard', '/permissions' // <-- NEW
       ],
       'ITAdmin': ['/staff','/appointments','/billing','/pharmacy','/system/status','/system/logs'],
       'ITSupport': ['/system/status','/system/logs'],
@@ -73,14 +72,14 @@ const Layout = () => {
     return (roleItems[role] || []).includes(path);
   };
 
-  // --- AUTO-REDIRECT NURSES TO THEIR DASHBOARD ---
+  // Auto‑redirect nurses and doctors to their dashboards
   useEffect(() => {
-  if (user?.role === 'Nurse' && location.pathname === '/') {
-    navigate('/nurse-dashboard');
-  } else if (user?.role === 'Doctor' && location.pathname === '/') {
-    navigate('/doctor-dashboard');
-  }
-}, [user, location.pathname, navigate]);
+    if (user?.role === 'Nurse' && location.pathname === '/') {
+      navigate('/nurse-dashboard');
+    } else if (user?.role === 'Doctor' && location.pathname === '/') {
+      navigate('/doctor-dashboard');
+    }
+  }, [user, location.pathname, navigate]);
 
   // Generate the Navbar dynamically with Dropdowns
   const renderNav = () => {
@@ -106,7 +105,7 @@ const Layout = () => {
         {/* Generate Dropdown Groups */}
         {Object.entries(allGroups).map(([groupName, items]) => {
           const visibleItems = items.filter(item => canAccess(item.path));
-          if (visibleItems.length === 0) return null; // Skip empty groups
+          if (visibleItems.length === 0) return null;
 
           return (
             <div key={groupName} className="nav-dropdown">
@@ -140,7 +139,6 @@ const Layout = () => {
     <div className="layout app-container">
       <nav className="navbar">
         <div className="nav-brand">
-          {/* Unique Logo SVG */}
           <svg className="unique-logo" viewBox="0 0 100 100">
             <defs>
               <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -178,7 +176,6 @@ const Layout = () => {
       </nav>
 
       <main className="main-content">
-        {/* Pass searchTerm to all child routes */}
         <Outlet context={{ searchTerm }} />
       </main>
     </div>
@@ -186,5 +183,4 @@ const Layout = () => {
 };
 
 export default Layout;
-// Export this hook so child pages can easily grab the searchTerm
 export const useSearch = () => useOutletContext();
