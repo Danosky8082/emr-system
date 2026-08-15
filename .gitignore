@@ -1,0 +1,13 @@
+# Backend dependencies
+node_modules/
+.env
+dist/
+
+# Frontend dependencies
+emr-frontend/node_modules/
+emr-frontend/dist/
+emr-frontend/.vite/
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FMC EMR System</title>
+    <link rel="stylesheet" href="style.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+        rel="stylesheet" />
+</head>
+
+<body>
+    <div id="app">
+        <!-- Login Screen -->
+        <div id="loginScreen" class="screen active">
+            <div class="login-container">
+                <div class="login-header">
+                    <h1>🏥 FMC EMR</h1>
+                    <p>Federal Medical Centre, Ebute Metta</p>
+                    <p class="subtitle">Electronic Medical Records System</p>
+                </div>
+                <form id="loginForm">
+                    <div class="form-group">
+                        <label for="loginEmail">Email Address</label>
+                        <input type="email" id="loginEmail" placeholder="Enter your email" required />
+                    </div>
+                    <div class="form-group">
+                        <label for="loginPassword">Password</label>
+                        <input type="password" id="loginPassword" placeholder="Enter your password" required />
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-full">Login</button>
+                    <p id="loginError" class="error-message" style="display:none;"></p>
+                </form>
+            </div>
+        </div>
+
+        <!-- Dashboard -->
+        <div id="dashboardScreen" class="screen">
+            <nav class="navbar">
+                <div class="nav-brand">
+                    <span>🏥 FMC EMR</span>
+                </div>
+                <div class="nav-menu">
+                    <a href="#" class="nav-link active" data-tab="dashboard">Dashboard</a>
+                    <a href="#" class="nav-link" data-tab="patients">Patients</a>
+                    <a href="#" class="nav-link" data-tab="appointments">Appointments</a>
+                    <a href="#" class="nav-link" data-tab="prescriptions">Prescriptions</a>
+                    <a href="#" class="nav-link" data-tab="lab">Lab Orders</a>
+                    <a href="#" class="nav-link" data-tab="billing">Billing</a>
+                    <a href="#" class="nav-link" data-tab="pharmacy">Pharmacy</a>
+                    <a href="#" class="nav-link" data-tab="staff">Staff</a>
+                </div>
+                <div class="nav-user">
+                    <span id="userName">User</span>
+                    <span class="role-badge" id="userRole">Role</span>
+                    <button id="logoutBtn" class="btn btn-danger btn-sm">Logout</button>
+                </div>
+            </nav>
+
+            <div class="main-content">
+                <!-- Dashboard Tab -->
+                <div id="tab-dashboard" class="tab-content active">
+                    <div class="page-header">
+                        <h2>Dashboard</h2>
+                        <p>Welcome back, <span id="welcomeUser">User</span>!</p>
+                    </div>
+                    <div class="stats-grid" id="dashboardStats">
+                        <div class="stat-card">
+                            <div class="stat-icon">👤</div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="totalPatients">0</div>
+                                <div class="stat-label">Total Patients</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">👨‍⚕️</div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="totalStaff">0</div>
+                                <div class="stat-label">Total Staff</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">📅</div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="totalAppointments">0</div>
+                                <div class="stat-label">Scheduled Appointments</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">💰</div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="totalRevenue">₦0</div>
+                                <div class="stat-label">Total Revenue</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">💊</div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="lowStockCount">0</div>
+                                <div class="stat-label">Low Stock Items</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">📋</div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="pendingBills">0</div>
+                                <div class="stat-label">Pending Bills</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="section">
+                        <h3>Recent Patients</h3>
+                        <div id="recentPatients" class="table-container"></div>
+                    </div>
+                </div>
+
+                <!-- Patients Tab -->
+                <div id="tab-patients" class="tab-content">
+                    <div class="page-header">
+                        <h2>Patient Management</h2>
+                        <button id="addPatientBtn" class="btn btn-primary">+ Add Patient</button>
+                    </div>
+                    <div class="search-bar">
+                        <input type="text" id="patientSearch" placeholder="Search by name, hospital ID, email..." />
+                        <button id="searchPatientBtn" class="btn btn-primary">Search</button>
+                    </div>
+                    <div class="table-container" id="patientList"></div>
+                </div>
+
+                <!-- Appointments Tab -->
+                <div id="tab-appointments" class="tab-content">
+                    <div class="page-header">
+                        <h2>Appointments</h2>
+                        <button id="addAppointmentBtn" class="btn btn-primary">+ Schedule Appointment</button>
+                    </div>
+                    <div class="table-container" id="appointmentList"></div>
+                </div>
+
+                <!-- Prescriptions Tab -->
+                <div id="tab-prescriptions" class="tab-content">
+                    <div class="page-header">
+                        <h2>Prescriptions</h2>
+                        <button id="addPrescriptionBtn" class="btn btn-primary">+ New Prescription</button>
+                    </div>
+                    <div class="table-container" id="prescriptionList"></div>
+                </div>
+
+                <!-- Lab Orders Tab -->
+                <div id="tab-lab" class="tab-content">
+                    <div class="page-header">
+                        <h2>Lab Orders</h2>
+                        <button id="addLabOrderBtn" class="btn btn-primary">+ New Lab Order</button>
+                    </div>
+                    <div class="table-container" id="labOrderList"></div>
+                </div>
+
+                <!-- Billing Tab -->
+                <div id="tab-billing" class="tab-content">
+                    <div class="page-header">
+                        <h2>Billing</h2>
+                        <button id="addBillBtn" class="btn btn-primary">+ New Bill</button>
+                    </div>
+                    <div class="table-container" id="billingList"></div>
+                </div>
+
+                <!-- Pharmacy Tab -->
+                <div id="tab-pharmacy" class="tab-content">
+                    <div class="page-header">
+                        <h2>Pharmacy Inventory</h2>
+                        <button id="addMedicationBtn" class="btn btn-primary">+ Add Medication</button>
+                    </div>
+                    <div class="table-container" id="medicationList"></div>
+                </div>
+
+                <!-- Staff Tab -->
+                <div id="tab-staff" class="tab-content">
+                    <div class="page-header">
+                        <h2>Staff Management</h2>
+                        <button id="addStaffBtn" class="btn btn-primary">+ Add Staff</button>
+                    </div>
+                    <div class="table-container" id="staffList"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for Add/Edit forms -->
+    <div id="modal" class="modal" style="display:none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">Add Record</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body" id="modalBody"></div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary modal-close">Cancel</button>
+                <button class="btn btn-primary" id="modalSubmit">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>

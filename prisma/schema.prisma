@@ -1,0 +1,380 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// 1. Core Patient Model
+model Patient {
+  id           String   @id @default(cuid())
+  hospitalId   String   @unique
+  firstName    String
+  lastName     String
+  dateOfBirth  DateTime
+  gender       String
+  phone        String?
+  email        String?   @unique
+  address      String?
+  emergencyContact String?
+  allergies    String?
+  // --- NEXT OF KIN FIELDS ---
+  nextOfKinName       String?
+  nextOfKinPhone      String?
+  nextOfKinRelationship String?
+  // ----------------------------
+  // Relations
+  appointments Appointment[]
+  clinicalNotes ClinicalNote[]
+  billingRecords BillingRecord[]
+  prescriptions Prescription[]
+  labOrders    LabOrder[]
+  admissions   Admission[]
+  historyRecords PatientHistoryRecord[]
+  journeys     PatientJourney[]
+  vitals       VitalSign[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// 2. Staff Model
+model Staff {
+  id         String   @id @default(cuid())
+  employeeId String   @unique
+  username   String   @unique  
+  firstName  String
+  lastName   String
+  email      String   @unique
+  role       String
+  department String?
+  password   String
+  isActive   Boolean  @default(true)
+  
+  // Relations
+  appointments Appointment[] @relation("DoctorAppointments")
+  clinicalNotes ClinicalNote[] @relation("AuthorNotes")
+  prescriptions Prescription[] @relation("PrescribingStaff")
+  dispensedPrescriptions Prescription[] @relation("DispensingStaff")
+  labOrders    LabOrder[] @relation("OrderingStaff")
+  performedLabOrders LabOrder[] @relation("PerformingStaff")
+  auditLogs    AuditLog[]
+  admissions   Admission[] @relation("DoctorAdmissions")
+  registeredJourneys PatientJourney[] @relation("RegisteredJourneys")
+  vitals       VitalSign[]
+  
+  // --- NEW: Many-to-Many relations for Clinics and Wards ---
+  clinics      StaffClinic[]
+  wards        StaffWard[]
+  // ---------------------------------------------------------
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// --- NEW JOIN TABLES FOR STAFF ASSIGNMENTS ---
+model StaffClinic {
+  staffId   String
+  clinicId  String
+  staff     Staff  @relation(fields: [staffId], references: [id])
+  clinic    Clinic @relation(fields: [clinicId], references: [id])
+  @@id([staffId, clinicId])
+}
+
+model StaffWard {
+  staffId   String
+  wardId    String
+  staff     Staff  @relation(fields: [staffId], references: [id])
+  ward      Ward   @relation(fields: [wardId], references: [id])
+  @@id([staffId, wardId])
+}
+// ------------------------------------------------
+
+// 3. Appointment Model
+model Appointment {
+  id          String   @id @default(cuid())
+  patientId   String
+  staffId     String
+  dateTime    DateTime
+  duration    Int      @default(30)
+  status      String   @default("Scheduled") // Scheduled, CheckedIn, InProgress, Completed, Cancelled, NoShow
+  type        String   @default("Consultation")
+  notes       String?
+  // Relations
+  patient     Patient  @relation(fields: [patientId], references: [id])
+  staff       Staff    @relation("DoctorAppointments", fields: [staffId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// 4. Clinical Notes (SOAP)
+model ClinicalNote {
+  id          String   @id @default(cuid())
+  patientId   String
+  authorId    String
+  type        String   @default("SOAP") // SOAP, Progress Note, Discharge Summary, Referral
+  subjective  String?  // What the patient says
+  objective   String?  // Examination findings, vital signs
+  assessment  String?  // Diagnosis or impression
+  plan        String?  // Treatment plan
+  fullContent String?  // Optional full text
+  // Relations
+  patient     Patient  @relation(fields: [patientId], references: [id])
+  author      Staff    @relation("AuthorNotes", fields: [authorId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// 5. Prescriptions
+model Prescription {
+  id          String   @id @default(cuid())
+  patientId   String
+  prescribingStaffId String
+  dispensingStaffId  String?
+  medication  String
+  dosage      String
+  frequency   String
+  duration    String
+  instructions String?
+  status      String   @default("Prescribed") // Prescribed, Dispensed, PartiallyDispensed, Cancelled
+  // Relations
+  patient     Patient  @relation(fields: [patientId], references: [id])
+  prescribedBy Staff   @relation("PrescribingStaff", fields: [prescribingStaffId], references: [id])
+  dispensedBy Staff?   @relation("DispensingStaff", fields: [dispensingStaffId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// 6. Lab Orders
+model LabOrder {
+  id          String   @id @default(cuid())
+  patientId   String
+  orderingStaffId String
+  labStaffId  String?
+  testName    String
+  testType    String   // Haematology, Biochemistry, Microbiology, Radiology
+  priority    String   @default("Routine") // Routine, Urgent, Emergency
+  status      String   @default("Ordered") // Ordered, InProgress, Completed, Reviewed
+  result      String?
+  resultDate  DateTime?
+  notes       String?
+  // Relations
+  patient     Patient  @relation(fields: [patientId], references: [id])
+  orderedBy   Staff    @relation("OrderingStaff", fields: [orderingStaffId], references: [id])
+  performedBy Staff?   @relation("PerformingStaff", fields: [labStaffId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// 7. Billing Records
+model BillingRecord {
+  id          String   @id @default(cuid())
+  patientId   String
+  invoiceNumber String  @unique
+  description String
+  amount      Float
+  discount    Float    @default(0)
+  tax         Float    @default(0)
+  totalAmount Float
+  status      String   @default("Pending") // Pending, Paid, InsuranceClaim, Write-off, Overdue
+  paymentMethod String? // Cash, Transfer, Card, Insurance
+  paymentDate DateTime?
+  insuranceProvider String?
+  insuranceClaimId String?
+  // Relations
+  patient     Patient  @relation(fields: [patientId], references: [id])
+  journey     PatientJourney? @relation("BillingJourney")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// 8. Pharmacy Inventory
+model Medication {
+  id          String   @id @default(cuid())
+  name        String
+  genericName String?
+  category    String   // Antibiotics, Analgesics, Antihypertensives, etc.
+  supplier    String?
+  unitPrice   Float
+  stockQuantity Int
+  reorderLevel Int
+  expiryDate  DateTime
+  batchNumber String?
+  // Relations
+  transactions MedicationTransaction[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// 9. Medication Transactions
+model MedicationTransaction {
+  id          String   @id @default(cuid())
+  medicationId String
+  transactionType String // Purchase, Dispensed, Returned, Adjusted
+  quantity    Int
+  unitPrice   Float
+  note        String?
+  staffId     String?
+  // Relations
+  medication  Medication @relation(fields: [medicationId], references: [id])
+  createdAt   DateTime @default(now())
+}
+
+// 10. Audit Logs
+model AuditLog {
+  id        String   @id @default(cuid())
+  staffId   String
+  action    String   // LOGIN, LOGOUT, VIEW_PATIENT, UPDATE_PATIENT, CREATE_BILL, VIEW_REPORT
+  module    String   // Patient, Billing, Pharmacy, Lab, Admin
+  details   String?
+  ipAddress String?
+  // Relations
+  staff     Staff    @relation(fields: [staffId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+// --- 11. WARD MODEL ---
+model Ward {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  capacity    Int?
+  // Relations
+  admissions  Admission[]
+  patientJourneys PatientJourney[]
+  staffAssignments StaffWard[] // <--- Reverse relation to join table
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// --- 12. ADMISSION MODEL ---
+model Admission {
+  id              String   @id @default(uuid())
+  admissionNumber String   @unique
+  patientId       String
+  patient         Patient  @relation(fields: [patientId], references: [id])
+  staffId         String   
+  staff           Staff    @relation("DoctorAdmissions", fields: [staffId], references: [id])
+  wardId          String?
+  ward            Ward?    @relation(fields: [wardId], references: [id])
+  admissionDate   DateTime @default(now())
+  dischargeDate   DateTime?
+  status          String   @default("Admitted")
+  notes           String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// 13. Patient History & Coding
+model PatientHistoryRecord {
+  id            String   @id @default(uuid())
+  patientId     String
+  patient       Patient  @relation(fields: [patientId], references: [id])
+  encounterDate DateTime @default(now())
+  doctorName    String
+  encounterType String   // Outpatient, Inpatient, Emergency
+  diagnosis     String
+  icd10Code     String?
+  notes         String?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// 14. ROI Requests
+model ROIRequest {
+  id            String   @id @default(uuid())
+  requestorName String
+  patientName   String
+  requestDate   DateTime @default(now())
+  requestType   String   // Legal, Insurance, Transfer
+  status        String   @default("Pending") // Pending, Approved, Denied, Completed
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// --- 15. CLINIC MODEL ---
+model Clinic {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  location    String?
+  isActive    Boolean  @default(true)
+  // Relations
+  journeys    PatientJourney[]
+  servicePrices ServicePrice[]
+  staffAssignments StaffClinic[] // <--- Reverse relation to join table
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// --- 16. PATIENT JOURNEY MODEL ---
+model PatientJourney {
+  id             String   @id @default(cuid())
+  patientId      String
+  patient        Patient  @relation(fields: [patientId], references: [id])
+  
+  destinationType String   @default("CLINIC") // "CLINIC" or "WARD"
+  
+  clinicId       String?
+  clinic         Clinic?  @relation(fields: [clinicId], references: [id])
+  
+  wardId         String?
+  ward           Ward?    @relation(fields: [wardId], references: [id])
+  
+  registeredById String
+  registeredBy   Staff    @relation("RegisteredJourneys", fields: [registeredById], references: [id])
+  
+  status         String   @default("REGISTERED") 
+  // REGISTERED ➔ BILLING_CLEARED ➔ CARD_PRINTED ➔ SENT_TO_DESTINATION ➔ COMPLETED
+
+  cardGeneratedAt DateTime?
+  sentToDestinationAt DateTime?
+  
+  billingRecordId String?  @unique
+  billingRecord   BillingRecord? @relation("BillingJourney", fields: [billingRecordId], references: [id])
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// --- 17. SERVICE PRICING CATALOG ---
+model ServicePrice {
+  id          String   @id @default(cuid())
+  name        String   // e.g., "Consultation", "Admission Fee"
+  description String?
+  amount      Float    // The price (e.g., 7500.00)
+  clinicId    String?  // Optional: Link to a specific clinic (e.g., Cardiology)
+  clinic      Clinic?  @relation(fields: [clinicId], references: [id])
+  isActive    Boolean  @default(true)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// --- 18. VITAL SIGNS ---
+model VitalSign {
+  id                   String   @id @default(cuid())
+  patientId            String
+  patient              Patient  @relation(fields: [patientId], references: [id])
+  nurseId              String
+  nurse                Staff    @relation(fields: [nurseId], references: [id])
+  recordedAt           DateTime @default(now())
+  
+  bloodPressureSystolic Int?    // mmHg
+  bloodPressureDiastolic Int?   // mmHg
+  heartRate             Int?    // bpm
+  temperature           Float?  // °C
+  respiratoryRate       Int?    // breaths/min
+  oxygenSaturation      Int?    // %
+  weight                Float?  // kg
+  height                Float?  // cm
+  notes                 String?
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
