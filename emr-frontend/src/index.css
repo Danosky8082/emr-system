@@ -351,7 +351,7 @@ html,
 
 /* --- BUTTONS --- */
 .btn {
-    padding: 10px 24px;
+    padding: 10px 20px;
     border: none;
     border-radius: 8px;
     font-weight: 600;
@@ -359,10 +359,14 @@ html,
     cursor: pointer;
     transition: all 0.2s;
     font-family: inherit;
+    display: inline-block;
+    /* Prevents them from stretching */
+    width: auto;
+    /* Ensures they are only as wide as their text + padding */
 }
 
+/* The cyan primary button (now compact by default) */
 .btn-primary {
-    width: 100%;
     background: #00d4ff;
     color: #000;
     font-weight: 600;
@@ -373,6 +377,7 @@ html,
     transform: translateY(-1px);
 }
 
+/* Red danger button */
 .btn-danger {
     background: #ef4444;
     color: white;
@@ -382,6 +387,7 @@ html,
     background: #dc2626;
 }
 
+/* Grey secondary button */
 .btn-secondary {
     background: rgba(255, 255, 255, 0.15);
     color: white;
@@ -392,9 +398,15 @@ html,
     background: rgba(255, 255, 255, 0.25);
 }
 
+/* Small buttons for toolbars */
 .btn-sm {
     padding: 6px 14px;
     font-size: 12px;
+}
+
+/* ONLY use this class for full-width buttons (like the Login button) */
+.btn-full {
+    width: 100%;
 }
 
 /* --- RESPONSIVE DESIGN --- */
@@ -434,4 +446,17 @@ html,
         padding: 24px;
         margin: 16px;
     }
+}
+
+/* Fix for receipt modal close button – make it visible */
+.modal-close-btn {
+    background: #e5e7eb !important;
+    /* light gray background */
+    color: #1f2937 !important;
+    /* dark text */
+    border: 1px solid #d1d5db !important;
+}
+
+.modal-close-btn:hover {
+    background: #d1d5db !important;
 }

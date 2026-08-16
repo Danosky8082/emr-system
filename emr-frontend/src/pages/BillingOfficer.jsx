@@ -192,7 +192,7 @@ const BillingOfficer = () => {
             </div>
 
             <div style={{display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px'}}>
-              <button type="button" className="btn btn-secondary" onClick={() => setShowReceipt(false)}>Close</button>
+              <button type="button" className="btn btn-secondary modal-close-btn" onClick={() => setShowReceipt(false)}>Close</button>
               <button type="button" className="btn btn-primary" onClick={handlePrintReceipt}>🖨️ Print Receipt</button>
             </div>
           </div>

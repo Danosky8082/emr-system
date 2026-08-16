@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate, useOutletContext, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import axios from 'axios';
 import './Layout.css';
 
 const Layout = () => {
@@ -10,7 +11,11 @@ const Layout = () => {
   const location = useLocation();
   const [searchTerm, setSearchTerm] = useState('');
 
-  // --- GROUPED NAVIGATION CONFIGURATION ---
+  // --- PERMISSIONS STATE ---
+  const [permissions, setPermissions] = useState(null);
+  const [loadingPermissions, setLoadingPermissions] = useState(true);
+
+  // --- GROUPED NAVIGATION CONFIGURATION (static definition) ---
   const allGroups = {
     Clinical: [
       { path: '/appointments', label: '📅 Appointments' },
@@ -28,7 +33,7 @@ const Layout = () => {
       { path: '/wards', label: '🛏️ Manage Wards' },
       { path: '/pricing', label: '💲 Service Pricing' },
       { path: '/nurse-dashboard', label: '🩺 Nurse Dashboard' },
-      { path: '/permissions', label: '🔐 Role Permissions' }, // <-- NEW
+      { path: '/permissions', label: '🔐 Role Permissions' },
     ],
     Records: [
       { path: '/patient-intake', label: '🔄 Patient Intake' },
@@ -41,38 +46,79 @@ const Layout = () => {
       { path: '/appointments', label: '📅 Appointments' },
       { path: '/prescriptions', label: '💊 Prescriptions' },
       { path: '/lab-orders', label: '🔬 Lab Orders' },
-      { path: '/patients', label: '👤 Patients' },
+      // 👤 Patients removed from here to avoid duplication
     ],
   };
 
-  // Helper to check if the current user has permission for a specific path
-  const canAccess = (path) => {
-    const baseItems = ['/', '/patients'];
-    const role = user?.role || '';
-    
-    if (baseItems.includes(path)) return true;
-
-    // Role-based access (updated with all modules)
-    const roleItems = {
-      'Admin': [
-        '/staff', '/appointments', '/prescriptions', '/lab-orders', '/billing', '/pharmacy',
-        '/clinics', '/wards', '/pricing', '/billing-officer', '/patient-intake', '/admissions',
-        '/patient-history', '/roi-requests', '/nurse-dashboard', '/permissions' // <-- NEW
-      ],
-      'ITAdmin': ['/staff','/appointments','/billing','/pharmacy','/system/status','/system/logs'],
-      'ITSupport': ['/system/status','/system/logs'],
-      'Doctor': ['/appointments','/prescriptions','/lab-orders'],
-      'Nurse': ['/nurse-dashboard', '/appointments', '/prescriptions', '/lab-orders'],
-      'Pharmacist': ['/pharmacy','/prescriptions'],
-      'Accountant': ['/billing'],
-      'Records': ['/patient-intake','/admissions','/patient-history','/roi-requests','/appointments'],
-      'LabTechnician': ['/lab-orders'],
-      'BillingOfficer': ['/billing-officer'],
-    };
-    return (roleItems[role] || []).includes(path);
+  // --- MAPPING PATH -> PERMISSION KEY ---
+  const pathToPermissionKey = {
+    '/appointments': 'appointments',
+    '/prescriptions': 'prescriptions',
+    '/lab-orders': 'labOrders',
+    '/pharmacy': 'pharmacy',
+    '/billing': 'billing',
+    '/billing-officer': 'billingOfficer',
+    '/staff': 'staff',
+    '/clinics': 'clinics',
+    '/wards': 'wards',
+    '/pricing': 'pricing',
+    '/nurse-dashboard': 'nurseDashboard',
+    '/doctor-dashboard': 'doctorDashboard',
+    '/patient-intake': 'patientIntake',
+    '/admissions': 'admissions',
+    '/patient-history': 'patientHistory',
+    '/roi-requests': 'roiRequests',
+    '/patients': 'patients', // Added this key so it respects the database
   };
 
-  // Auto‑redirect nurses and doctors to their dashboards
+  // --- FETCH PERMISSIONS FROM BACKEND ---
+  useEffect(() => {
+    const fetchPermissions = async () => {
+      if (!user) return;
+      setLoadingPermissions(true);
+      try {
+        const token = localStorage.getItem('emr_token');
+        const res = await axios.get('http://localhost:3000/api/permissions', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const rolePerm = res.data.find(p => p.role === user.role);
+        if (rolePerm) {
+          setPermissions(rolePerm);
+        } else {
+          setPermissions(null);
+        }
+      } catch (error) {
+        console.error('Failed to load permissions', error);
+        setPermissions(null);
+      } finally {
+        setLoadingPermissions(false);
+      }
+    };
+
+    fetchPermissions();
+  }, [user]);
+
+  // --- PERMISSION CHECKER ---
+  const canAccess = (path) => {
+    // Dashboard is always visible
+    if (path === '/') return true;
+
+    // If still loading permissions, show nothing
+    if (loadingPermissions) return false;
+
+    // If no permissions object, deny access
+    if (!permissions) return false;
+
+    // Admin gets full access (override)
+    if (user?.role === 'Admin') return true;
+
+    const permissionKey = pathToPermissionKey[path];
+    if (!permissionKey) return false; // no mapping -> deny
+
+    return permissions[permissionKey] === true;
+  };
+
+  // --- AUTO-REDIRECT NURSES AND DOCTORS TO THEIR DASHBOARDS ---
   useEffect(() => {
     if (user?.role === 'Nurse' && location.pathname === '/') {
       navigate('/nurse-dashboard');
@@ -81,8 +127,12 @@ const Layout = () => {
     }
   }, [user, location.pathname, navigate]);
 
-  // Generate the Navbar dynamically with Dropdowns
+  // --- RENDER NAVBAR ---
   const renderNav = () => {
+    if (loadingPermissions) {
+      return <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.9rem' }}>Loading menu...</span>;
+    }
+
     return (
       <>
         {/* Dashboard – always visible */}
@@ -90,17 +140,19 @@ const Layout = () => {
           📊 Dashboard
         </NavLink>
 
-        {/* Nurse Dashboard – for both Admin and Nurse */}
-        {(user?.role === 'Nurse' || user?.role === 'Admin') && (
+        {/* Nurse Dashboard – only if permission allows */}
+        {canAccess('/nurse-dashboard') && (
           <NavLink to="/nurse-dashboard" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             🩺 Nurse Dashboard
           </NavLink>
         )}
 
-        {/* Patients – always visible */}
-        <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-          👤 Patients
-        </NavLink>
+        {/* Patients – only if permission allows (no longer hardcoded) */}
+        {canAccess('/patients') && (
+          <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            👤 Patients
+          </NavLink>
+        )}
 
         {/* Generate Dropdown Groups */}
         {Object.entries(allGroups).map(([groupName, items]) => {
@@ -114,9 +166,9 @@ const Layout = () => {
               </button>
               <div className="dropdown-content">
                 {visibleItems.map(item => (
-                  <NavLink 
-                    key={item.path} 
-                    to={item.path} 
+                  <NavLink
+                    key={item.path}
+                    to={item.path}
                     className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
                   >
                     {item.label}
@@ -160,9 +212,9 @@ const Layout = () => {
         </div>
 
         <div className="nav-search">
-          <input 
-            type="text" 
-            placeholder="🔍 Search records..." 
+          <input
+            type="text"
+            placeholder="🔍 Search records..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />

@@ -75,11 +75,11 @@ const PatientIntake = () => {
 
     try {
       const payload = {
-        patientId: newJourney.patientId,
-        destinationType: newJourney.destinationType,
-        clinicId: newJourney.destinationType === 'CLINIC' ? newJourney.clinicId : null,
-        wardId: newJourney.destinationType === 'WARD' ? newJourney.wardId : null
-      };
+  patientId: newJourney.patientId,
+  destinationType: newJourney.destinationType,
+  clinicId: newJourney.destinationType === 'CLINIC' ? newJourney.clinicId : null,
+  wardId: newJourney.destinationType === 'WARD' ? newJourney.wardId : null
+};
 
       await axios.post('http://localhost:3000/api/patient-journeys', payload, {
         headers: { Authorization: `Bearer ${token}` }

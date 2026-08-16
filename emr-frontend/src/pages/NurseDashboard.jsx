@@ -7,7 +7,7 @@ import './Dashboard.css';
 import toast from 'react-hot-toast';
 
 const NurseDashboard = () => {
-  const { token } = useAuth();
+  const { token } = useAuth();  // ✅ token is correctly destructured
   const [patients, setPatients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedPatient, setSelectedPatient] = useState(null);
@@ -26,7 +26,7 @@ const NurseDashboard = () => {
 
   const fetchPatients = async () => {
     try {
-      const res = await axios.get('http://localhost:3000/api/nurse/patients', {
+      const res = await axios.get('http://localhost:3000/api/nurse/patients', { 
         headers: { Authorization: `Bearer ${token}` }
       });
       setPatients(res.data);
@@ -37,9 +37,12 @@ const NurseDashboard = () => {
     }
   };
 
+  // ✅ Only fetch if token exists, and depend on token
   useEffect(() => {
-    fetchPatients();
-  }, []);
+    if (token) {
+      fetchPatients();
+    }
+  }, [token]);
 
   const handleVitalSubmit = async (e) => {
     e.preventDefault();

@@ -32,8 +32,8 @@ app.use(express.json());
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // limit each IP to 100 requests per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === 'production' ? 100 : 1000 // 1000 for dev
 });
 app.use('/api', limiter);
 
@@ -321,7 +321,6 @@ app.get('/api/patients/:id', authenticate, async (req, res) => {
   try {
     const patientId = req.params.id;
     
-    // Fetch the patient base data
     const patient = await prisma.patient.findUnique({
       where: { id: patientId },
       include: {
@@ -336,9 +335,9 @@ app.get('/api/patients/:id', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Patient not found' });
     }
 
-    // --- 🟢 ENFORCE PERMISSION FOR NURSES AND DOCTORS ---
+    // Enforce permissions for Nurses and Doctors
     if (['Nurse', 'Doctor'].includes(req.user.role)) {
-      // Check if this patient has an active journey (SENT_TO_DESTINATION or COMPLETED)
+      // Find the patient's active journey (SENT_TO_DESTINATION or COMPLETED)
       const activeJourney = await prisma.patientJourney.findFirst({
         where: {
           patientId: patientId,
@@ -347,7 +346,14 @@ app.get('/api/patients/:id', authenticate, async (req, res) => {
         select: { clinicId: true, wardId: true }
       });
 
-      // Check the staff's assigned clinics/wards
+      // If no active journey, the patient hasn't arrived at a destination yet
+      if (!activeJourney) {
+        return res.status(403).json({ 
+          error: 'This patient has not yet arrived at a clinic or ward. You cannot view their profile yet.'
+        });
+      }
+
+      // Check if the nurse/doctor is assigned to that clinic or ward
       const staff = await prisma.staff.findUnique({
         where: { id: req.user.id },
         include: {
@@ -358,16 +364,16 @@ app.get('/api/patients/:id', authenticate, async (req, res) => {
       const allowedClinicIds = staff.clinics.map(c => c.clinicId);
       const allowedWardIds = staff.wards.map(w => w.wardId);
 
-      const isAuthorized = (activeJourney && 
-        (allowedClinicIds.includes(activeJourney.clinicId) || 
-         allowedWardIds.includes(activeJourney.wardId))
-      );
+      const isAuthorized = 
+        (activeJourney.clinicId && allowedClinicIds.includes(activeJourney.clinicId)) ||
+        (activeJourney.wardId && allowedWardIds.includes(activeJourney.wardId));
 
       if (!isAuthorized) {
-        return res.status(403).json({ error: 'You are not assigned to the clinic/ward this patient belongs to.' });
+        return res.status(403).json({ 
+          error: 'You are not assigned to the clinic or ward where this patient is located.'
+        });
       }
     }
-    // ----------------------------------------------------
 
     // Audit log
     await prisma.auditLog.create({
@@ -1490,17 +1496,19 @@ app.get('/api/dashboard/stats', authenticate, async (req, res) => {
       prisma.appointment.count({ where: { status: 'Scheduled' } }),
       prisma.billingRecord.count({ where: { status: 'Pending' } }),
       prisma.billingRecord.aggregate({ _sum: { totalAmount: true }, where: { status: 'Paid' } }),
-      prisma.medication.count({ where: { stockQuantity: { lte: prisma.medication.fields.reorderLevel } } }),
-      
+      // Low stock: compare stockQuantity <= reorderLevel directly
+      prisma.medication.count({
+        where: {
+          stockQuantity: { lte: prisma.medication.fields.reorderLevel }
+        }
+      }),
       prisma.patient.groupBy({ by: ['gender'], _count: true }),
-      
       prisma.$queryRaw`
         SELECT TO_CHAR("createdAt", 'YYYY-MM') as month, COUNT(*) as count
         FROM "Patient"
         WHERE "createdAt" >= NOW() - INTERVAL '6 months'
         GROUP BY month ORDER BY month ASC
       `,
-      
       prisma.admission.groupBy({
         by: ['wardId'],
         _count: { _all: true },
@@ -1512,6 +1520,18 @@ app.get('/api/dashboard/stats', authenticate, async (req, res) => {
       month: item.month,
       count: Number(item.count)
     }));
+
+    console.log('✅ Dashboard stats:', {
+      totalPatients,
+      totalStaff,
+      totalAppointments,
+      pendingBills,
+      totalRevenue: totalRevenue._sum.totalAmount || 0,
+      lowStockCount,
+      genderData,
+      monthlyRegistrations: formattedMonthlyRegistrations,
+      wardOccupancy
+    });
 
     res.json({
       totalPatients,
@@ -2166,17 +2186,32 @@ app.patch('/api/roi/:id', authenticate, authorize('Admin', 'Records', 'ITAdmin')
 
 // ============ NURSE ENDPOINTS ============
 
-// Get patients currently in the nurse's destination (clinic or ward)
+// Get patients currently in the nurse's assigned clinics/wards
 app.get('/api/nurse/patients', authenticate, authorize('Nurse', 'Admin'), async (req, res) => {
   try {
-    const nurse = await prisma.staff.findUnique({
+    // Get nurse's assigned clinics and wards
+    const staff = await prisma.staff.findUnique({
       where: { id: req.user.id },
-      select: { department: true }
+      include: {
+        clinics: { select: { clinicId: true } },
+        wards: { select: { wardId: true } }
+      }
     });
-    // For now, we'll return all active journeys (status not in the initial stages)
+    const clinicIds = staff.clinics.map(c => c.clinicId);
+    const wardIds = staff.wards.map(w => w.wardId);
+
+    // If no assignments, return empty array
+    if (clinicIds.length === 0 && wardIds.length === 0) {
+      return res.json([]);
+    }
+
     const journeys = await prisma.patientJourney.findMany({
       where: {
-        status: { in: ['SENT_TO_DESTINATION', 'COMPLETED'] }
+        status: { in: ['SENT_TO_DESTINATION', 'COMPLETED'] },
+        OR: [
+          { clinicId: { in: clinicIds } },
+          { wardId: { in: wardIds } }
+        ]
       },
       include: {
         patient: {
@@ -2577,7 +2612,7 @@ app.delete('/api/service-prices/:id', authenticate, authorize('Admin'), async (r
 // ============ ADMIN PERMISSIONS MANAGER ============
 
 // Get all role permissions
-app.get('/api/permissions', authenticate, authorize('Admin'), async (req, res) => {
+app.get('/api/permissions', authenticate, async (req, res) => {
   try {
     let perms = await prisma.rolePermission.findMany();
     // If a role hasn't been seeded yet, create it with defaults

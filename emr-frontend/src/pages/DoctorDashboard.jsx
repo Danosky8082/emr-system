@@ -12,42 +12,43 @@ const DoctorDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [vitalsForm, setVitalsForm] = useState({
-    bloodPressureSystolic: '', bloodPressureDiastolic: '', heartRate: '',
-    temperature: '', respiratoryRate: '', oxygenSaturation: '', weight: '', height: '', notes: '',
+    bloodPressureSystolic: '',
+    bloodPressureDiastolic: '',
+    heartRate: '',
+    temperature: '',
+    respiratoryRate: '',
+    oxygenSaturation: '',
+    weight: '',
+    height: '',
+    notes: '',
   });
   const [showVitalModal, setShowVitalModal] = useState(false);
 
-  // Inside fetchPatients in Patients.jsx
-const fetchPatients = async () => {
-  try {
-    let url = 'http://localhost:3000/api/patients';
-    if (user?.role === 'Doctor') {
-      url = 'http://localhost:3000/api/doctor/patients';
-    } else if (user?.role === 'Nurse') {
-      url = 'http://localhost:3000/api/nurse/patients';
+  const fetchPatients = async () => {
+    try {
+      const res = await axios.get('http://localhost:3000/api/doctor/patients', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      // Filter out any journeys that don't have a patient
+      const validJourneys = res.data.filter(j => j.patient != null);
+      setPatients(validJourneys);
+    } catch (error) {
+      toast.error('Failed to load patients');
+    } finally {
+      setLoading(false);
     }
-    
-    const res = await axios.get(url, { headers: { Authorization: `Bearer ${token}` } });
-    
-    // Handle the wrapper (journey array) for Nurse and Doctor
-    if (user?.role === 'Doctor' || user?.role === 'Nurse') {
-      setPatients(res.data.map(j => j.patient));
-    } else {
-      setPatients(res.data);
-    }
-  } catch (error) { console.error(error); } finally { setLoading(false); }
-};
+  };
 
   useEffect(() => {
-    fetchPatients();
-  }, []);
+    if (token) fetchPatients();
+  }, [token]);
 
   const handleVitalSubmit = async (e) => {
     e.preventDefault();
     if (!selectedPatient) return;
     try {
       await axios.post('http://localhost:3000/api/vitals', {
-        patientId: selectedPatient.patient.id,
+        patientId: selectedPatient.id,
         ...vitalsForm
       }, {
         headers: { Authorization: `Bearer ${token}` }
@@ -97,12 +98,15 @@ const fetchPatients = async () => {
           <tbody>
             {patients.map(journey => {
               const p = journey.patient;
+              // Safety guard – if patient is missing, skip this row
+              if (!p) return null;
+
               const destination = journey.clinic ? `Clinic: ${journey.clinic.name}` : (journey.ward ? `Ward: ${journey.ward.name}` : 'N/A');
               return (
                 <tr key={journey.id}>
-                  <td><strong>{p.hospitalId}</strong></td>
-                  <td>{p.firstName} {p.lastName}</td>
-                  <td>{p.gender}</td>
+                  <td><strong>{p.hospitalId || 'N/A'}</strong></td>
+                  <td>{p.firstName || ''} {p.lastName || ''}</td>
+                  <td>{p.gender || '—'}</td>
                   <td>{calculateAge(p.dateOfBirth)}</td>
                   <td>{destination}</td>
                   <td>{journey.status}</td>
@@ -110,7 +114,7 @@ const fetchPatients = async () => {
                     <button
                       className="btn btn-sm btn-primary"
                       onClick={() => {
-                        setSelectedPatient(journey);
+                        setSelectedPatient(p);
                         setShowVitalModal(true);
                       }}
                       style={{ marginRight: '5px' }}
@@ -131,12 +135,12 @@ const fetchPatients = async () => {
         </table>
       </div>
 
-      {/* Vital Signs Modal */}
+      {/* Vital Signs Modal – same as before */}
       {showVitalModal && selectedPatient && (
         <div className="modal-overlay" onClick={() => setShowVitalModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>Record Vitals – {selectedPatient.patient.firstName} {selectedPatient.patient.lastName}</h3>
+              <h3>Record Vitals – {selectedPatient.firstName} {selectedPatient.lastName}</h3>
               <button className="modal-close" onClick={() => setShowVitalModal(false)}>×</button>
             </div>
             <form onSubmit={handleVitalSubmit}>
@@ -170,5 +174,4 @@ const fetchPatients = async () => {
     </div>
   );
 };
-
 export default DoctorDashboard;

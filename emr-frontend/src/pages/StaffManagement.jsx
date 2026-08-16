@@ -92,10 +92,10 @@ const StaffManagement = () => {
     }
   };
 
-  // Filter staff by search term
+    // Filter staff by search term
   const filteredStaff = staff.filter(s => {
-    const searchString = `${s.firstName} ${s.lastName} ${s.username || ''} ${s.email || ''} ${s.role} ${s.employeeId || ''} ${s.department || ''}`.toLowerCase();
-    return searchString.includes(searchTerm.toLowerCase());
+    const searchString = `${s.firstName} ${s.lastName} ${s.username || ''} ${s.email || ''} ${s.role} ${s.employeeId || ''} ${s.department || ''}`.toLowerCase().trim();
+    return searchString.includes(searchTerm.toLowerCase().trim());
   });
 
   const handleInputChange = (e) => {

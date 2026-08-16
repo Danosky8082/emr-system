@@ -145,3 +145,46 @@
         grid-template-columns: 1fr;
     }
 }
+
+/* Fix button colors for better visibility */
+.staff-management .btn-secondary {
+    background: #e5e7eb !important;
+    /* light gray */
+    color: #1f2937 !important;
+    /* dark text */
+    border: 1px solid #d1d5db;
+}
+
+.staff-management .btn-primary {
+    background: #0f3460 !important;
+    color: white !important;
+}
+
+.staff-management .btn-danger {
+    background: #ef4444 !important;
+    color: white !important;
+}
+
+.staff-management .btn-success {
+    background: #10b981 !important;
+    color: white !important;
+}
+
+/* Keep the buttons compact */
+.action-buttons .btn-sm {
+    padding: 4px 10px;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+/* --- FIX: Make Role Badge Text Black --- */
+.staff-management .role-badge {
+    color: #000000 !important;
+    /* Force black text */
+    background: #e5e7eb !important;
+    /* Light gray background for contrast */
+    border: 1px solid #d1d5db !important;
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: 12px;
+}

@@ -5,7 +5,7 @@ import axios from 'axios';
 import './Dashboard.css';
 import { useSearch } from '../components/Layout';
 import toast from 'react-hot-toast';
-import { Link } from 'react-router-dom'; // <--- ADD THIS IMPORT
+import { Link } from 'react-router-dom';
 
 const Patients = () => {
   const { token, user } = useAuth();
@@ -20,28 +20,35 @@ const Patients = () => {
     emergencyContact: '', allergies: '', nextOfKinName: '', nextOfKinPhone: '', nextOfKinRelationship: ''
   });
 
-  useEffect(() => { fetchPatients(); }, []);
+  // ✅ Fetch only when user is loaded
+  useEffect(() => {
+    if (user) {
+      fetchPatients();
+    }
+  }, [user, token]); // <-- added dependency on user and token
 
-  // Inside the fetchPatients function in Patients.jsx
-const fetchPatients = async () => {
-  try {
-    // If the user is a Doctor, they get filtered patients. Everyone else gets all.
-    let url = 'http://localhost:3000/api/patients';
-    if (user?.role === 'Doctor') {
-      url = 'http://localhost:3000/api/doctor/patients';
-    } else if (user?.role === 'Nurse') {
-      url = 'http://localhost:3000/api/nurse/patients';
+  const fetchPatients = async () => {
+    try {
+      let url = 'http://localhost:3000/api/patients';
+      if (user?.role === 'Nurse') {
+        url = 'http://localhost:3000/api/nurse/patients';
+      } else if (user?.role === 'Doctor') {
+        url = 'http://localhost:3000/api/doctor/patients';
+      }
+
+      const res = await axios.get(url, { headers: { Authorization: `Bearer ${token}` } });
+
+      let patientsList = res.data;
+      if (user?.role === 'Nurse' || user?.role === 'Doctor') {
+        patientsList = res.data.map(j => j.patient);
+      }
+      setPatients(patientsList);
+    } catch (error) {
+      console.error(error);
+      toast.error('Failed to load patients');
+    } finally {
+      setLoading(false);
     }
-    
-    const res = await axios.get(url, { headers: { Authorization: `Bearer ${token}` } });
-    
-    // If Doctor or Nurse, the API returns Journeys wrapping the patient.
-    if (user?.role === 'Doctor' || user?.role === 'Nurse') {
-      setPatients(res.data.map(j => j.patient));
-    } else {
-      setPatients(res.data);
-    }
-  } catch (error) { console.error(error); } finally { setLoading(false); }
   };
   
   const handleInputChange = (e) => {
@@ -78,27 +85,25 @@ const fetchPatients = async () => {
   };
 
   const handleDelete = async (id) => {
-  // Show a more detailed confirmation
-  if (!window.confirm('Are you sure you want to permanently delete this patient? All associated records (appointments, billing, prescriptions, etc.) will also be removed if possible.')) return;
-
-  try {
-    await axios.delete(`http://localhost:3000/api/patients/${id}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    toast.success('Patient deleted successfully');
-    fetchPatients();
-  } catch (error) {
-    // Show the specific error message returned by the backend
-    const message = error.response?.data?.error || 'Failed to delete patient. They may have associated records.';
-    toast.error(message);
-  }
-};
+    if (!window.confirm('Are you sure you want to permanently delete this patient? All associated records (appointments, billing, prescriptions, etc.) will also be removed if possible.')) return;
+    try {
+      await axios.delete(`http://localhost:3000/api/patients/${id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      toast.success('Patient deleted successfully');
+      fetchPatients();
+    } catch (error) {
+      const message = error.response?.data?.error || 'Failed to delete patient. They may have associated records.';
+      toast.error(message);
+    }
+  };
 
   const filteredPatients = patients.filter(p => 
     `${p.firstName} ${p.lastName} ${p.hospitalId || ''}`.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  if (loading) return <div className="spinner" />;
+  // ✅ Show spinner while user is not loaded yet
+  if (!user || loading) return <div className="spinner" />;
   
   // Permission checks
   const canManage = ['Admin', 'Records', 'ITAdmin'].includes(user?.role);
@@ -132,14 +137,11 @@ const fetchPatients = async () => {
                 <td>{p.phone || '-'}</td>
                 <td>{p.nextOfKinName || '-'}</td>
                 <td>
-                  {/* --- 🟢 NEW: Open File Button --- */}
                   {canViewProfile && (
                     <Link to={`/patient-profile/${p.id}`} className="btn btn-sm btn-secondary" style={{ marginRight: '5px' }}>
                       📂 Open File
                     </Link>
                   )}
-                  {/* ------------------------------ */}
-                  
                   {canManage && (
                     <>
                       <button className="btn btn-sm btn-secondary" style={{ marginRight: '5px' }} onClick={() => handleEdit(p)}>Edit</button>
@@ -154,14 +156,14 @@ const fetchPatients = async () => {
         </table>
       </div>
 
-      {/* Registration/Edit Modal - Unchanged */}
+      {/* Registration/Edit Modal - unchanged */}
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header"><h3>{editingPatient ? 'Edit Patient' : 'Register New Patient'}</h3><button className="modal-close" onClick={() => setShowModal(false)}>×</button></div>
             <form onSubmit={handleSubmit}>
-              {/* ... (Keep your existing modal body code here) ... */}
               <div className="modal-body">
+                {/* ... existing form fields ... */}
                 <div className="form-row">
                   <div className="form-group"><label>First Name *</label><input type="text" name="firstName" value={formData.firstName} onChange={handleInputChange} required /></div>
                   <div className="form-group"><label>Last Name *</label><input type="text" name="lastName" value={formData.lastName} onChange={handleInputChange} required /></div>
