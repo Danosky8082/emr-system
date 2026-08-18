@@ -20,26 +20,27 @@ const Patients = () => {
     emergencyContact: '', allergies: '', nextOfKinName: '', nextOfKinPhone: '', nextOfKinRelationship: ''
   });
 
-  // ✅ Fetch only when user is loaded
   useEffect(() => {
     if (user) {
       fetchPatients();
     }
-  }, [user, token]); // <-- added dependency on user and token
+  }, [user, token]);
 
   const fetchPatients = async () => {
     try {
       let url = 'http://localhost:3000/api/patients';
-      if (user?.role === 'Nurse') {
+      // Clinical roles use their own endpoints
+      if (['Nurse', 'Midwife'].includes(user?.role)) {
         url = 'http://localhost:3000/api/nurse/patients';
-      } else if (user?.role === 'Doctor') {
+      } else if (['Doctor', 'Obstetrician'].includes(user?.role)) {
         url = 'http://localhost:3000/api/doctor/patients';
       }
 
       const res = await axios.get(url, { headers: { Authorization: `Bearer ${token}` } });
 
       let patientsList = res.data;
-      if (user?.role === 'Nurse' || user?.role === 'Doctor') {
+      // For clinical roles, extract patient from journeys
+      if (['Nurse', 'Midwife', 'Doctor', 'Obstetrician'].includes(user?.role)) {
         patientsList = res.data.map(j => j.patient);
       }
       setPatients(patientsList);
@@ -102,12 +103,10 @@ const Patients = () => {
     `${p.firstName} ${p.lastName} ${p.hospitalId || ''}`.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // ✅ Show spinner while user is not loaded yet
   if (!user || loading) return <div className="spinner" />;
   
-  // Permission checks
   const canManage = ['Admin', 'Records', 'ITAdmin'].includes(user?.role);
-  const canViewProfile = ['Admin', 'Records', 'ITAdmin', 'Nurse', 'Doctor'].includes(user?.role);
+  const canViewProfile = ['Admin', 'Records', 'ITAdmin', 'Nurse', 'Doctor', 'Obstetrician', 'Midwife'].includes(user?.role);
 
   return (
     <div className="dashboard">
@@ -163,7 +162,6 @@ const Patients = () => {
             <div className="modal-header"><h3>{editingPatient ? 'Edit Patient' : 'Register New Patient'}</h3><button className="modal-close" onClick={() => setShowModal(false)}>×</button></div>
             <form onSubmit={handleSubmit}>
               <div className="modal-body">
-                {/* ... existing form fields ... */}
                 <div className="form-row">
                   <div className="form-group"><label>First Name *</label><input type="text" name="firstName" value={formData.firstName} onChange={handleInputChange} required /></div>
                   <div className="form-group"><label>Last Name *</label><input type="text" name="lastName" value={formData.lastName} onChange={handleInputChange} required /></div>

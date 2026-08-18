@@ -11,17 +11,16 @@ const Layout = () => {
   const location = useLocation();
   const [searchTerm, setSearchTerm] = useState('');
 
-  // --- PERMISSIONS STATE ---
   const [permissions, setPermissions] = useState(null);
   const [loadingPermissions, setLoadingPermissions] = useState(true);
 
-  // --- GROUPED NAVIGATION CONFIGURATION (static definition) ---
   const allGroups = {
     Clinical: [
       { path: '/appointments', label: '📅 Appointments' },
       { path: '/prescriptions', label: '💊 Prescriptions' },
       { path: '/lab-orders', label: '🔬 Lab Orders' },
       { path: '/pharmacy', label: '🏥 Pharmacy' },
+      { path: '/antenatal', label: '🤰 Antenatal Care' },
     ],
     Finance: [
       { path: '/billing', label: '💰 Billing' },
@@ -46,11 +45,9 @@ const Layout = () => {
       { path: '/appointments', label: '📅 Appointments' },
       { path: '/prescriptions', label: '💊 Prescriptions' },
       { path: '/lab-orders', label: '🔬 Lab Orders' },
-      // 👤 Patients removed from here to avoid duplication
     ],
   };
 
-  // --- MAPPING PATH -> PERMISSION KEY ---
   const pathToPermissionKey = {
     '/appointments': 'appointments',
     '/prescriptions': 'prescriptions',
@@ -68,10 +65,10 @@ const Layout = () => {
     '/admissions': 'admissions',
     '/patient-history': 'patientHistory',
     '/roi-requests': 'roiRequests',
-    '/patients': 'patients', // Added this key so it respects the database
+    '/patients': 'patients',
+    '/antenatal': 'antenatal',
   };
 
-  // --- FETCH PERMISSIONS FROM BACKEND ---
   useEffect(() => {
     const fetchPermissions = async () => {
       if (!user) return;
@@ -94,40 +91,38 @@ const Layout = () => {
         setLoadingPermissions(false);
       }
     };
-
     fetchPermissions();
   }, [user]);
 
-  // --- PERMISSION CHECKER ---
   const canAccess = (path) => {
-    // Dashboard is always visible
+    // --- Hard override for Obstetrician / Midwife ---
+    if (user?.role === 'Obstetrician' && path === '/nurse-dashboard') return false;
+    if (user?.role === 'Midwife' && path === '/doctor-dashboard') return false;
+    // ------------------------------------------------
+
     if (path === '/') return true;
-
-    // If still loading permissions, show nothing
     if (loadingPermissions) return false;
-
-    // If no permissions object, deny access
     if (!permissions) return false;
-
-    // Admin gets full access (override)
     if (user?.role === 'Admin') return true;
-
     const permissionKey = pathToPermissionKey[path];
-    if (!permissionKey) return false; // no mapping -> deny
-
+    if (!permissionKey) return false;
     return permissions[permissionKey] === true;
   };
 
-  // --- AUTO-REDIRECT NURSES AND DOCTORS TO THEIR DASHBOARDS ---
+  // --- Updated redirect logic to support Obstetrician & Midwife ---
   useEffect(() => {
-    if (user?.role === 'Nurse' && location.pathname === '/') {
-      navigate('/nurse-dashboard');
-    } else if (user?.role === 'Doctor' && location.pathname === '/') {
-      navigate('/doctor-dashboard');
+    const hasRedirected = sessionStorage.getItem('hasRedirected');
+    if (!hasRedirected) {
+      if (['Nurse', 'Midwife'].includes(user?.role) && location.pathname === '/') {
+        sessionStorage.setItem('hasRedirected', 'true');
+        navigate('/nurse-dashboard');
+      } else if (['Doctor', 'Obstetrician'].includes(user?.role) && location.pathname === '/') {
+        sessionStorage.setItem('hasRedirected', 'true');
+        navigate('/doctor-dashboard');
+      }
     }
   }, [user, location.pathname, navigate]);
 
-  // --- RENDER NAVBAR ---
   const renderNav = () => {
     if (loadingPermissions) {
       return <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.9rem' }}>Loading menu...</span>;
@@ -135,35 +130,28 @@ const Layout = () => {
 
     return (
       <>
-        {/* Dashboard – always visible */}
         <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
           📊 Dashboard
         </NavLink>
 
-        {/* Nurse Dashboard – only if permission allows */}
         {canAccess('/nurse-dashboard') && (
           <NavLink to="/nurse-dashboard" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             🩺 Nurse Dashboard
           </NavLink>
         )}
 
-        {/* Patients – only if permission allows (no longer hardcoded) */}
         {canAccess('/patients') && (
           <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             👤 Patients
           </NavLink>
         )}
 
-        {/* Generate Dropdown Groups */}
         {Object.entries(allGroups).map(([groupName, items]) => {
           const visibleItems = items.filter(item => canAccess(item.path));
           if (visibleItems.length === 0) return null;
-
           return (
             <div key={groupName} className="nav-dropdown">
-              <button className="nav-dropdown-header">
-                {groupName} ▼
-              </button>
+              <button className="nav-dropdown-header">{groupName} ▼</button>
               <div className="dropdown-content">
                 {visibleItems.map(item => (
                   <NavLink
@@ -207,9 +195,7 @@ const Layout = () => {
           <span>NexGen EMR</span>
         </div>
 
-        <div className="nav-menu">
-          {renderNav()}
-        </div>
+        <div className="nav-menu">{renderNav()}</div>
 
         <div className="nav-search">
           <input

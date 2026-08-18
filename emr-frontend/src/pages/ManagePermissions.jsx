@@ -29,6 +29,7 @@ const ManagePermissions = () => {
     { key: 'roiRequests', label: 'ROI Requests' },
     { key: 'nurseDashboard', label: 'Nurse Dashboard' },
     { key: 'doctorDashboard', label: 'Doctor Dashboard' },
+    { key: 'antenatal', label: 'Antenatal Care' }, 
   ];
 
   const fetchPermissions = async () => {
@@ -92,4 +93,5 @@ const ManagePermissions = () => {
     </div>
   );
 };
+
 export default ManagePermissions;

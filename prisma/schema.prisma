@@ -36,6 +36,7 @@ model Patient {
   historyRecords PatientHistoryRecord[]
   journeys     PatientJourney[]
   vitals       VitalSign[]
+  pregnancies  Pregnancy[]                     // <--- NEW
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
@@ -68,7 +69,11 @@ model Staff {
   // --- Many-to-Many relations for Clinics and Wards ---
   clinics      StaffClinic[]
   wards        StaffWard[]
-  // ---------------------------------------------------------
+
+  // --- NEW ANTENATAL RELATIONS ---
+  antenatalVisits AntenatalVisit[] @relation("AntenatalVisits")
+  deliveries     Delivery[] @relation("Deliveries")
+  // -------------------------------------------------
   
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -401,7 +406,67 @@ model RolePermission {
   roiRequests Boolean @default(false)
   nurseDashboard Boolean @default(false)
   doctorDashboard Boolean @default(false)
-  
+  antenatal   Boolean @default(false) 
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// --- 20. ANTENATAL / PREGNANCY MODULE ---
+
+model Pregnancy {
+  id                String        @id @default(cuid())
+  patientId         String
+  patient           Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  expectedDelivery  DateTime
+  gravida           Int?
+  para              Int?
+  lastMenstrualPeriod DateTime?
+  estimatedDueDate   DateTime?
+  riskLevel          String?      // Low, Medium, High
+  status             String       @default("Active") // Active, Delivered, Miscarried
+  notes              String?
+
+  visits             AntenatalVisit[]
+  delivery           Delivery?
+
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+}
+
+model AntenatalVisit {
+  id                String        @id @default(cuid())
+  pregnancyId       String
+  pregnancy         Pregnancy     @relation(fields: [pregnancyId], references: [id], onDelete: Cascade)
+  visitDate         DateTime      @default(now())
+  gestationalWeeks  Int?
+  bloodPressure     String?       // e.g., "120/80"
+  heartRate         Int?          // fetal heart rate (bpm)
+  weight            Float?        // mother's weight
+  fundalHeight      Float?        // cm
+  notes             String?
+  staffId           String
+  staff             Staff         @relation("AntenatalVisits", fields: [staffId], references: [id])
+
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+}
+
+model Delivery {
+  id                String        @id @default(cuid())
+  pregnancyId       String        @unique   // <-- FIXED: added @unique for one-to-one relation
+  pregnancy         Pregnancy     @relation(fields: [pregnancyId], references: [id], onDelete: Cascade)
+  deliveryDate      DateTime      @default(now())
+  type              String        // Vaginal, C-section, Assisted
+  durationHours     Float?
+  babyGender        String        // Male, Female
+  babyWeight        Float?        // kg
+  babyApgar         Int?          // Apgar score
+  outcome           String        // Live birth, Stillbirth
+  notes             String?
+  staffId           String
+  staff             Staff         @relation("Deliveries", fields: [staffId], references: [id])
+
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 }

@@ -37,6 +37,35 @@ const limiter = rateLimit({
 });
 app.use('/api', limiter);
 
+// ============ PERMISSION MIDDLEWARE ============
+const checkPermission = (permissionKey) => {
+  return async (req, res, next) => {
+    try {
+      const userRole = req.user?.role;
+      if (!userRole) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      // Fetch the role permissions from the database
+      const rolePerm = await prisma.rolePermission.findUnique({
+        where: { role: userRole },
+        select: { [permissionKey]: true },
+      });
+
+      // If no record or permission is false => Forbidden
+      if (!rolePerm || !rolePerm[permissionKey]) {
+        return res.status(403).json({ error: 'Forbidden – insufficient permissions' });
+      }
+
+      // Permission granted – proceed to the route handler
+      next();
+    } catch (error) {
+      console.error('Permission check error:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  };
+};
+
 // ============ AUTHENTICATION ENDPOINTS ============
 
 // Register new staff
@@ -170,8 +199,6 @@ const authenticate = async (req, res, next) => {
 
     const decoded = jwt.verify(token, JWT_SECRET);
     req.user = decoded;
-
-    // Log access for audit (optional, can be done per endpoint)
     next();
   } catch (error) {
     if (error.name === 'JsonWebTokenError') {
@@ -191,7 +218,6 @@ const authorize = (...roles) => {
     if (!req.user) {
       return res.status(401).json({ error: 'Not authenticated' });
     }
-    // Convert both to lowercase for accurate comparison
     const userRole = req.user.role.toLowerCase();
     const allowedRoles = roles.map(r => r.toLowerCase());
     if (!allowedRoles.includes(userRole)) {
@@ -1475,75 +1501,130 @@ app.get('/api/audit-logs', authenticate, authorize('Admin', 'ITAdmin'), async (r
   }
 });
 
-// ============ DASHBOARD STATISTICS ============
+// ============ DASHBOARD STATISTICS (Role-Aware) ============
 
-// Get dashboard statistics - All authenticated users
+// Get dashboard statistics – adapted based on the logged‑in user's role
 app.get('/api/dashboard/stats', authenticate, async (req, res) => {
   try {
-    const [
-      totalPatients,
-      totalStaff,
-      totalAppointments,
-      pendingBills,
-      totalRevenue,
-      lowStockCount,
-      genderData,
-      monthlyRegistrations,
-      wardOccupancy
-    ] = await Promise.all([
-      prisma.patient.count(),
-      prisma.staff.count(),
-      prisma.appointment.count({ where: { status: 'Scheduled' } }),
-      prisma.billingRecord.count({ where: { status: 'Pending' } }),
-      prisma.billingRecord.aggregate({ _sum: { totalAmount: true }, where: { status: 'Paid' } }),
-      // Low stock: compare stockQuantity <= reorderLevel directly
-      prisma.medication.count({
-        where: {
-          stockQuantity: { lte: prisma.medication.fields.reorderLevel }
-        }
-      }),
-      prisma.patient.groupBy({ by: ['gender'], _count: true }),
-      prisma.$queryRaw`
-        SELECT TO_CHAR("createdAt", 'YYYY-MM') as month, COUNT(*) as count
-        FROM "Patient"
-        WHERE "createdAt" >= NOW() - INTERVAL '6 months'
-        GROUP BY month ORDER BY month ASC
-      `,
-      prisma.admission.groupBy({
-        by: ['wardId'],
-        _count: { _all: true },
-        where: { status: 'Admitted' }
-      })
-    ]);
+    const role = req.user.role;
+    console.log('🔍 Dashboard stats for role:', role);
 
-    const formattedMonthlyRegistrations = monthlyRegistrations.map(item => ({
+    let responseData = {};
+
+    // Gender distribution and monthly registrations are useful for most roles
+    const genderData = await prisma.patient.groupBy({ by: ['gender'], _count: true });
+    const monthlyRegistrations = await prisma.$queryRaw`
+      SELECT TO_CHAR("createdAt", 'YYYY-MM') as month, COUNT(*) as count
+      FROM "Patient"
+      WHERE "createdAt" >= NOW() - INTERVAL '6 months'
+      GROUP BY month ORDER BY month ASC
+    `;
+
+    // --- 1. Admin, Records, ITAdmin (Global Hospital View) ---
+    if (['Admin', 'Records', 'ITAdmin'].includes(role)) {
+      const [totalPatients, totalStaff, totalAppointments, pendingBills, totalRevenue, lowStockCount, wardOccupancy] = await Promise.all([
+        prisma.patient.count(),
+        prisma.staff.count(),
+        prisma.appointment.count({ where: { status: 'Scheduled' } }),
+        prisma.billingRecord.count({ where: { status: 'Pending' } }),
+        prisma.billingRecord.aggregate({ _sum: { totalAmount: true }, where: { status: 'Paid' } }),
+        prisma.medication.count({ where: { stockQuantity: { lte: prisma.medication.fields.reorderLevel } } }),
+        prisma.admission.groupBy({ by: ['wardId'], _count: { _all: true }, where: { status: 'Admitted' } })
+      ]);
+      responseData = {
+        totalPatients,
+        totalStaff,
+        totalAppointments,
+        pendingBills,
+        totalRevenue: totalRevenue._sum.totalAmount || 0,
+        lowStockCount,
+        wardOccupancy
+      };
+    }
+
+    // --- 2. Clinical roles (Doctor, Nurse, Obstetrician, Midwife) – case‑insensitive ---
+    else if (['doctor', 'nurse', 'obstetrician', 'midwife'].includes(role.trim().toLowerCase())) {
+      const staff = await prisma.staff.findUnique({
+        where: { id: req.user.id },
+        include: { clinics: { select: { clinicId: true } }, wards: { select: { wardId: true } } }
+      });
+      const clinicIds = staff.clinics.map(c => c.clinicId);
+      const wardIds = staff.wards.map(w => w.wardId);
+
+      console.log(`🛠️ [Stats Endpoint] Clinic IDs for ${req.user.role}:`, clinicIds);
+      console.log(`🛠️ [Stats Endpoint] Ward IDs for ${req.user.role}:`, wardIds);
+
+      const [myPatientsCount, myAppointmentsCount, myVitalsCount] = await Promise.all([
+        prisma.patientJourney.count({
+          where: {
+            status: { in: ['SENT_TO_DESTINATION', 'COMPLETED'] },
+            OR: [ { clinicId: { in: clinicIds } }, { wardId: { in: wardIds } } ]
+          }
+        }),
+        prisma.appointment.count({ where: { staffId: req.user.id, status: 'Scheduled' } }),
+        prisma.vitalSign.count({ where: { nurseId: req.user.id } })
+      ]);
+      responseData = { myPatientsCount, myAppointmentsCount, myVitalsCount };
+    }
+
+    // --- 3. Pharmacist (Pharmacy View) ---
+    else if (role === 'Pharmacist') {
+      const [totalMedications, lowStockCount, recentDispensedCount] = await Promise.all([
+        prisma.medication.count(),
+        prisma.medication.count({ where: { stockQuantity: { lte: prisma.medication.fields.reorderLevel } } }),
+        prisma.prescription.count({
+          where: {
+            status: 'Dispensed',
+            createdAt: { gte: new Date(new Date().setDate(new Date().getDate() - 7)) }
+          }
+        })
+      ]);
+      responseData = { totalMedications, lowStockCount, recentDispensedCount };
+    }
+
+    // --- 4. Accountant & Billing Officer (Finance View) ---
+    else if (['Accountant', 'BillingOfficer'].includes(role)) {
+      const [pendingBills, totalRevenue, paidBillsCount, revenueTrend] = await Promise.all([
+        prisma.billingRecord.count({ where: { status: 'Pending' } }),
+        prisma.billingRecord.aggregate({ _sum: { totalAmount: true }, where: { status: 'Paid' } }),
+        prisma.billingRecord.count({ where: { status: 'Paid' } }),
+        prisma.$queryRaw`
+          SELECT TO_CHAR("paymentDate", 'YYYY-MM') as month, SUM("totalAmount") as revenue
+          FROM "BillingRecord"
+          WHERE "status" = 'Paid' AND "paymentDate" >= NOW() - INTERVAL '6 months'
+          GROUP BY month ORDER BY month ASC
+        `
+      ]);
+      responseData = {
+        pendingBills,
+        totalRevenue: totalRevenue._sum.totalAmount || 0,
+        paidBillsCount,
+        revenueTrend: revenueTrend.map(item => ({ month: item.month, revenue: Number(item.revenue) }))
+      };
+    }
+
+    // --- 5. Lab Technician (Lab View) ---
+    else if (role === 'LabTechnician') {
+      const [pendingLabOrders, completedLabOrders] = await Promise.all([
+        prisma.labOrder.count({ where: { status: 'Ordered' } }),
+        prisma.labOrder.count({ where: { status: 'Completed' } })
+      ]);
+      responseData = { pendingLabOrders, completedLabOrders };
+    }
+
+    // --- Fallback for other roles (e.g. Receptionist, ITSupport) ---
+    else {
+      responseData = { message: 'Stats for this role are work in progress' };
+    }
+
+    // Append charts (common to all roles that have them)
+    responseData.genderData = genderData;
+    responseData.monthlyRegistrations = monthlyRegistrations.map(item => ({
       month: item.month,
       count: Number(item.count)
     }));
 
-    console.log('✅ Dashboard stats:', {
-      totalPatients,
-      totalStaff,
-      totalAppointments,
-      pendingBills,
-      totalRevenue: totalRevenue._sum.totalAmount || 0,
-      lowStockCount,
-      genderData,
-      monthlyRegistrations: formattedMonthlyRegistrations,
-      wardOccupancy
-    });
-
-    res.json({
-      totalPatients,
-      totalStaff,
-      totalAppointments,
-      pendingBills,
-      totalRevenue: totalRevenue._sum.totalAmount || 0,
-      lowStockCount,
-      genderData,
-      monthlyRegistrations: formattedMonthlyRegistrations,
-      wardOccupancy
-    });
+    res.json(responseData);
   } catch (error) {
     console.error('Dashboard stats error:', error);
     res.status(500).json({ error: error.message });
@@ -1676,9 +1757,17 @@ app.post('/api/wards', authenticate, authorize('Admin', 'ITAdmin'), async (req, 
   try {
     const { name, description, capacity } = req.body;
     if (!name) return res.status(400).json({ error: 'Ward name is required' });
-    const ward = await prisma.ward.create({ data: { name, description, capacity } });
+    
+    const ward = await prisma.ward.create({
+      data: {
+        name: name.trim(),
+        description: description || null,
+        capacity: capacity ? parseInt(capacity) : null // ✅ FIXED: convert to Int
+      }
+    });
     res.status(201).json(ward);
   } catch (error) {
+    console.error('Create ward error:', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -2187,7 +2276,7 @@ app.patch('/api/roi/:id', authenticate, authorize('Admin', 'Records', 'ITAdmin')
 // ============ NURSE ENDPOINTS ============
 
 // Get patients currently in the nurse's assigned clinics/wards
-app.get('/api/nurse/patients', authenticate, authorize('Nurse', 'Admin'), async (req, res) => {
+app.get('/api/nurse/patients', authenticate, authorize('Nurse', 'Admin', 'Midwife'), async (req, res) => {
   try {
     // Get nurse's assigned clinics and wards
     const staff = await prisma.staff.findUnique({
@@ -2376,7 +2465,7 @@ app.delete('/api/staff/:staffId/wards/:wardId', authenticate, authorize('Admin')
 // ============ DOCTOR ENDPOINTS ============
 
 // Get patients assigned to the doctor's clinics/wards
-app.get('/api/doctor/patients', authenticate, authorize('Doctor'), async (req, res) => {
+app.get('/api/doctor/patients', authenticate, authorize('Doctor', 'Obstetrician'), async (req, res) => {
   const staff = await prisma.staff.findUnique({
     where: { id: req.user.id },
     include: {
@@ -2386,6 +2475,11 @@ app.get('/api/doctor/patients', authenticate, authorize('Doctor'), async (req, r
   });
   const clinicIds = staff.clinics.map(c => c.clinicId);
   const wardIds = staff.wards.map(w => w.wardId);
+
+  // If no assignments, return empty array
+  if (clinicIds.length === 0 && wardIds.length === 0) {
+    return res.json([]);
+  }
 
   const journeys = await prisma.patientJourney.findMany({
     where: {
@@ -2616,7 +2710,7 @@ app.get('/api/permissions', authenticate, async (req, res) => {
   try {
     let perms = await prisma.rolePermission.findMany();
     // If a role hasn't been seeded yet, create it with defaults
-    const allRoles = ['Admin', 'ITAdmin', 'ITSupport', 'Doctor', 'Nurse', 'Pharmacist', 'Accountant', 'Records', 'LabTechnician', 'Receptionist', 'BillingOfficer'];
+    const allRoles = ['Admin', 'ITAdmin', 'ITSupport', 'Doctor', 'Nurse', 'Pharmacist', 'Accountant', 'Records', 'LabTechnician', 'Receptionist', 'BillingOfficer', 'Obstetrician', 'Midwife'];
     for (const role of allRoles) {
       if (!perms.some(p => p.role === role)) {
         const newPerm = await prisma.rolePermission.create({ data: { role } });
@@ -2638,6 +2732,328 @@ app.patch('/api/permissions/:role', authenticate, authorize('Admin'), async (req
     });
     res.json(perm);
   } catch (error) { res.status(400).json({ error: error.message }); }
+});
+
+// ============ ANTENATAL MODULE ENDPOINTS (Permission-based) ============
+
+// Get all pregnancies – uses checkPermission('antenatal')
+app.get('/api/pregnancies', authenticate, checkPermission('antenatal'), async (req, res) => {
+  try {
+    const role = req.user.role;
+    let where = {};
+
+    // For Doctor/Nurse, filter pregnancies to patients in their assigned clinics/wards
+    if (['Doctor', 'Nurse'].includes(role)) {
+      const staff = await prisma.staff.findUnique({
+        where: { id: req.user.id },
+        include: {
+          clinics: { select: { clinicId: true } },
+          wards: { select: { wardId: true } }
+        }
+      });
+      const clinicIds = staff.clinics.map(c => c.clinicId);
+      const wardIds = staff.wards.map(w => w.wardId);
+
+      // Get all patient IDs that have a journey in the assigned clinics/wards
+      const patientsInAssignedClinics = await prisma.patientJourney.findMany({
+        where: {
+          status: { in: ['SENT_TO_DESTINATION', 'COMPLETED'] },
+          OR: [
+            { clinicId: { in: clinicIds } },
+            { wardId: { in: wardIds } }
+          ]
+        },
+        select: { patientId: true }
+      });
+      const patientIds = patientsInAssignedClinics.map(j => j.patientId);
+      where = { patientId: { in: patientIds } };
+    }
+
+    const pregnancies = await prisma.pregnancy.findMany({
+      where,
+      include: {
+        patient: { select: { hospitalId: true, firstName: true, lastName: true } },
+        visits: { orderBy: { visitDate: 'desc' }, take: 1 },
+        delivery: true
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(pregnancies);
+  } catch (error) {
+    console.error('Get pregnancies error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get a single pregnancy – uses checkPermission('antenatal')
+app.get('/api/pregnancies/:id', authenticate, checkPermission('antenatal'), async (req, res) => {
+  try {
+    const pregnancy = await prisma.pregnancy.findUnique({
+      where: { id: req.params.id },
+      include: {
+        patient: true,
+        visits: {
+          include: { staff: { select: { firstName: true, lastName: true } } },
+          orderBy: { visitDate: 'desc' }
+        },
+        delivery: {
+          include: { staff: { select: { firstName: true, lastName: true } } }
+        }
+      }
+    });
+    if (!pregnancy) return res.status(404).json({ error: 'Pregnancy not found' });
+    res.json(pregnancy);
+  } catch (error) {
+    console.error('Get pregnancy error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create a new pregnancy – uses checkPermission('antenatal')
+app.post('/api/pregnancies', authenticate, checkPermission('antenatal'), async (req, res) => {
+  try {
+    const { patientId, expectedDelivery, gravida, para, lastMenstrualPeriod, estimatedDueDate, riskLevel, notes } = req.body;
+
+    if (!patientId || !expectedDelivery) {
+      return res.status(400).json({ error: 'Patient and expected delivery date are required.' });
+    }
+
+    // Find the patient by hospitalId
+    const patient = await prisma.patient.findUnique({
+      where: { hospitalId: patientId }
+    });
+
+    if (!patient) {
+      return res.status(404).json({ error: 'Patient not found. Please register the patient first.' });
+    }
+
+    // Check if the patient already has an active pregnancy
+    const existingPregnancy = await prisma.pregnancy.findFirst({
+      where: {
+        patientId: patient.id,
+        status: 'Active'
+      }
+    });
+
+    if (existingPregnancy) {
+      return res.status(400).json({ error: 'This patient already has an active pregnancy.' });
+    }
+
+    // ✅ FIXED: Properly handle gravida and para values
+    const gravidaValue = gravida && gravida !== '' ? parseInt(gravida) : 0;
+    const paraValue = para && para !== '' ? parseInt(para) : 0;
+
+    console.log('📝 Creating pregnancy - gravida:', gravidaValue);
+    console.log('📝 Creating pregnancy - para:', paraValue);
+
+    const pregnancy = await prisma.pregnancy.create({
+      data: {
+        patientId: patient.id,
+        expectedDelivery: new Date(expectedDelivery),
+        gravida: gravidaValue,
+        para: paraValue,
+        lastMenstrualPeriod: lastMenstrualPeriod ? new Date(lastMenstrualPeriod) : null,
+        estimatedDueDate: estimatedDueDate ? new Date(estimatedDueDate) : null,
+        riskLevel,
+        notes,
+        status: 'Active'
+      },
+      include: { patient: true }
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        staffId: req.user.id,
+        action: 'CREATE_PREGNANCY',
+        module: 'Antenatal',
+        details: `Pregnancy record created for patient ${pregnancy.patient.hospitalId}`
+      }
+    });
+
+    res.status(201).json(pregnancy);
+  } catch (error) {
+    console.error('Create pregnancy error:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Update pregnancy
+app.put('/api/pregnancies/:id', authenticate, checkPermission('antenatal'), async (req, res) => {
+  const { id } = req.params;
+  const { status, notes, riskLevel, estimatedDueDate, gravida, para } = req.body;
+
+  try {
+    const existing = await prisma.pregnancy.findUnique({
+      where: { id }
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Pregnancy not found' });
+    }
+
+    // ✅ Handle gravida and para properly
+    const gravidaValue = gravida !== undefined && gravida !== '' ? parseInt(gravida) : existing.gravida;
+    const paraValue = para !== undefined && para !== '' ? parseInt(para) : existing.para;
+
+    const updated = await prisma.pregnancy.update({
+      where: { id },
+      data: {
+        status: status || undefined,
+        notes: notes || undefined,
+        riskLevel: riskLevel || undefined,
+        estimatedDueDate: estimatedDueDate ? new Date(estimatedDueDate) : undefined,
+        gravida: gravidaValue,
+        para: paraValue,
+      },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        staffId: req.user.id,
+        action: 'UPDATE_PREGNANCY',
+        module: 'Antenatal',
+        details: `Updated pregnancy ${id}`
+      }
+    });
+
+    res.json(updated);
+  } catch (error) {
+    console.error('PUT /api/pregnancies/:id error:', error);
+    if (error.code === 'P2025') {
+      return res.status(404).json({ error: 'Pregnancy not found' });
+    }
+    res.status(500).json({ error: 'Failed to update pregnancy' });
+  }
+});
+
+// Add an antenatal visit – uses checkPermission('antenatal')
+app.post('/api/pregnancies/:id/visits', authenticate, checkPermission('antenatal'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { visitDate, gestationalWeeks, bloodPressure, heartRate, weight, fundalHeight, notes } = req.body;
+
+    const visit = await prisma.antenatalVisit.create({
+      data: {
+        pregnancyId: id,
+        staffId: req.user.id,
+        visitDate: visitDate ? new Date(visitDate) : new Date(),
+        gestationalWeeks: parseInt(gestationalWeeks) || null,
+        bloodPressure,
+        heartRate: parseInt(heartRate) || null,
+        weight: parseFloat(weight) || null,
+        fundalHeight: parseFloat(fundalHeight) || null,
+        notes
+      }
+    });
+
+    // Update pregnancy's updatedAt
+    await prisma.pregnancy.update({
+      where: { id },
+      data: { updatedAt: new Date() }
+    });
+
+    res.status(201).json(visit);
+  } catch (error) {
+    console.error('Add visit error:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Record delivery – uses checkPermission('antenatal')
+app.post('/api/deliveries', authenticate, checkPermission('antenatal'), async (req, res) => {
+  try {
+    const { pregnancyId, deliveryDate, type, durationHours, babyGender, babyWeight, babyApgar, outcome, notes } = req.body;
+
+    if (!pregnancyId || !type || !babyGender) {
+      return res.status(400).json({ error: 'Pregnancy ID, delivery type, and baby gender are required.' });
+    }
+
+    // Use a transaction to ensure all operations succeed together
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Create the delivery record
+      const delivery = await tx.delivery.create({
+        data: {
+          pregnancyId,
+          staffId: req.user.id,
+          deliveryDate: deliveryDate ? new Date(deliveryDate) : new Date(),
+          type,
+          durationHours: parseFloat(durationHours) || null,
+          babyGender,
+          babyWeight: parseFloat(babyWeight) || null,
+          babyApgar: parseInt(babyApgar) || null,
+          outcome: outcome || 'Live birth',
+          notes
+        },
+        include: { pregnancy: { include: { patient: true } } }
+      });
+
+      // 2. Close the pregnancy
+      await tx.pregnancy.update({
+        where: { id: pregnancyId },
+        data: { status: 'Delivered' }
+      });
+
+      // 3. Create the baby as a new patient
+      const mother = delivery.pregnancy.patient;
+      const count = await tx.patient.count();
+      const nextIdNumber = count + 1;
+      const hospitalId = ((nextIdNumber * 9301 + 12345) % 1000000).toString().padStart(6, '0');
+
+      const baby = await tx.patient.create({
+        data: {
+          hospitalId,
+          firstName: `Baby ${mother.firstName}`,
+          lastName: mother.lastName,
+          dateOfBirth: new Date(),
+          gender: babyGender,
+          phone: mother.phone,
+          email: mother.email,
+          address: mother.address,
+          emergencyContact: mother.emergencyContact,
+          allergies: mother.allergies,
+          nextOfKinName: mother.firstName + ' ' + mother.lastName,
+          nextOfKinPhone: mother.phone,
+          nextOfKinRelationship: 'Mother'
+        }
+      });
+
+      // 4. Find the Paediatrics clinic ID
+      const paediatricsClinic = await tx.clinic.findFirst({
+        where: { name: 'Paediatrics' }
+      });
+      if (!paediatricsClinic) {
+        throw new Error('Paediatrics clinic not found. Please create a clinic named "Paediatrics".');
+      }
+
+      // 5. Create a patient journey for the baby to Paediatrics
+      await tx.patientJourney.create({
+        data: {
+          patientId: baby.id,
+          destinationType: 'CLINIC',
+          clinicId: paediatricsClinic.id,
+          registeredById: req.user.id,
+          status: 'SENT_TO_DESTINATION' // mark as ready for pediatrics
+        }
+      });
+
+      // Audit log
+      await tx.auditLog.create({
+        data: {
+          staffId: req.user.id,
+          action: 'RECORD_DELIVERY',
+          module: 'Antenatal',
+          details: `Delivery recorded for pregnancy ${pregnancyId}. Baby ${baby.hospitalId} transferred to Paediatrics.`
+        }
+      });
+
+      return { delivery, baby };
+    });
+
+    res.status(201).json(result);
+  } catch (error) {
+    console.error('Record delivery error:', error);
+    res.status(400).json({ error: error.message });
+  }
 });
 
 // ============ START SERVER ============
@@ -2675,8 +3091,9 @@ app.listen(PORT, () => {
   console.log(`  📋 System Logs: /api/system/logs (Admin & ITAdmin)`);
   console.log(`  📈 User Activity: /api/system/user-activity (Admin & ITAdmin)`);
   console.log(`  💲 Service Pricing: /api/service-prices (Admin only)`);
-  console.log(`  💉 Nurse Vitals: /api/nurse/patients (Nurse/Admin), /api/patients/:patientId/vitals, /api/vitals (Nurse)`);
-  console.log(`  🩺 Doctor Patients: /api/doctor/patients (Doctor only)`);
+  console.log(`  💉 Nurse Vitals: /api/nurse/patients (Nurse/Admin/Midwife), /api/patients/:patientId/vitals, /api/vitals (Nurse)`);
+  console.log(`  🩺 Doctor Patients: /api/doctor/patients (Doctor/Obstetrician only)`);
   console.log(`  🔐 Permissions: /api/permissions (Admin only)`);
+  console.log(`  🤰 Antenatal: /api/pregnancies, /api/pregnancies/:id, /api/pregnancies/:id/visits, /api/deliveries (permission-based)`);
   console.log('='.repeat(50));
 });

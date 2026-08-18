@@ -24,8 +24,9 @@ import NurseDashboard from "./pages/NurseDashboard";
 import PatientProfile from "./pages/PatientProfile";
 import ManageWards from "./pages/ManageWards";
 import DoctorDashboard from './pages/DoctorDashboard';
-// --- NEW IMPORT ---
 import ManagePermissions from './pages/ManagePermissions';
+import AntenatalDashboard from './pages/AntenatalDashboard';
+import PregnancyProfile from './pages/PregnancyProfile';
 // --------------------------------------------
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -88,8 +89,10 @@ function App() {
           <Route path="patient-profile/:id" element={<PatientProfile />} />
           <Route path="wards" element={<ManageWards />} />
           <Route path="doctor-dashboard" element={<DoctorDashboard />} />
-          {/* --- NEW ROUTE --- */}
           <Route path="permissions" element={<ManagePermissions />} />
+          <Route path="antenatal" element={<AntenatalDashboard />} />
+          <Route path="pregnancy/new" element={<PregnancyProfile />} />
+          <Route path="pregnancy/:id" element={<PregnancyProfile />} />
         </Route>
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>

@@ -1,0 +1,581 @@
+/* src/pages/PregnancyProfile.css */
+
+.pregnancy-container {
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+/* Back Button */
+.back-btn {
+    margin-bottom: 16px;
+    display: inline-block;
+}
+
+.page-title {
+    font-size: 28px;
+    font-weight: 700;
+    margin: 8px 0 0 0;
+    color: #1a1a2e;
+}
+
+/* Header Actions */
+.header-actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+/* ========== NEW PREGNANCY FORM ========== */
+.pregnancy-form-card {
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+    overflow: hidden;
+    margin-top: 20px;
+}
+
+.pregnancy-form-card .card-header {
+    padding: 24px 32px;
+    border-bottom: 1px solid #e8ecf1;
+    background: #f8fafc;
+}
+
+.pregnancy-form-card .card-header h3 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+    color: #1a1a2e;
+}
+
+.pregnancy-form-card .card-header p {
+    margin: 4px 0 0 0;
+    font-size: 14px;
+    color: #6b7280;
+}
+
+.pregnancy-form-card .card-body {
+    padding: 32px;
+}
+
+.form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+.form-grid .full-width {
+    grid-column: 1 / -1;
+}
+
+.form-grid .form-group {
+    margin-bottom: 0;
+}
+
+.form-grid .form-group label {
+    display: block;
+    font-weight: 600;
+    font-size: 14px;
+    color: #374151;
+    margin-bottom: 6px;
+}
+
+.form-grid .form-group .required {
+    color: #ef4444;
+}
+
+.form-grid .form-control {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 14px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    background: white;
+}
+
+.form-grid .form-control:focus {
+    outline: none;
+    border-color: #0f3460;
+    box-shadow: 0 0 0 3px rgba(15, 52, 96, 0.1);
+}
+
+.form-grid .helper-text {
+    display: block;
+    font-size: 12px;
+    color: #6b7280;
+    margin-top: 4px;
+}
+
+.form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid #e8ecf1;
+}
+
+.spinner-sm {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid #0f3460;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-right: 8px;
+    vertical-align: middle;
+}
+
+/* ========== PATIENT SUMMARY CARD ========== */
+.patient-summary-card {
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+    padding: 24px 32px;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+}
+
+.patient-avatar {
+    width: 64px;
+    height: 64px;
+    background: linear-gradient(135deg, #0f3460, #1a4a7a);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.avatar-icon {
+    font-size: 28px;
+}
+
+.patient-info {
+    flex: 1;
+}
+
+.patient-info h3 {
+    margin: 0 0 4px 0;
+    font-size: 20px;
+    font-weight: 600;
+    color: #1a1a2e;
+}
+
+.patient-details {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px 24px;
+    margin-top: 4px;
+}
+
+.patient-details .detail-item {
+    font-size: 14px;
+    color: #374151;
+}
+
+.patient-details .detail-item strong {
+    color: #6b7280;
+    font-weight: 500;
+}
+
+.pregnancy-status-badge {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-end;
+}
+
+.status-badge {
+    padding: 4px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.status-badge.active {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.status-badge.delivered {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.status-badge.miscarried {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.risk-badge {
+    padding: 4px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.risk-badge.low {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.risk-badge.medium {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.risk-badge.high {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+/* ========== TABS ========== */
+.tabs-container {
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+    overflow: hidden;
+}
+
+.tabs-nav {
+    display: flex;
+    border-bottom: 1px solid #e8ecf1;
+    background: #f8fafc;
+    padding: 0 24px;
+}
+
+.tab-btn {
+    padding: 16px 24px;
+    background: transparent;
+    border: none;
+    font-size: 15px;
+    font-weight: 500;
+    color: #6b7280;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.tab-btn:hover {
+    color: #1a1a2e;
+    background: rgba(0, 0, 0, 0.02);
+}
+
+.tab-btn.active {
+    color: #0f3460;
+}
+
+.tab-btn.active::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 24px;
+    right: 24px;
+    height: 3px;
+    background: #0f3460;
+    border-radius: 3px 3px 0 0;
+}
+
+.tab-badge {
+    background: #e8ecf1;
+    color: #374151;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.tab-content-container {
+    padding: 24px 32px;
+}
+
+/* ========== OVERVIEW TAB ========== */
+.overview-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+}
+
+.info-card {
+    background: #f8fafc;
+    border-radius: 12px;
+    padding: 20px 24px;
+}
+
+.info-card h4 {
+    margin: 0 0 16px 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #1a1a2e;
+}
+
+.info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 20px;
+}
+
+.info-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.info-item label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.info-item span {
+    font-size: 15px;
+    color: #1a1a2e;
+    margin-top: 2px;
+}
+
+.risk-label {
+    padding: 2px 12px;
+    border-radius: 12px;
+    font-weight: 600;
+    font-size: 13px;
+    display: inline-block;
+    width: fit-content;
+}
+
+.risk-label.low {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.risk-label.medium {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.risk-label.high {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.status-label {
+    padding: 2px 12px;
+    border-radius: 12px;
+    font-weight: 600;
+    font-size: 13px;
+    display: inline-block;
+    width: fit-content;
+}
+
+.status-label.active {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.status-label.delivered {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.status-label.miscarried {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.notes-section {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid #e8ecf1;
+}
+
+.notes-section label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.notes-section p {
+    margin: 4px 0 0 0;
+    font-size: 14px;
+    color: #374151;
+    white-space: pre-wrap;
+}
+
+/* ========== VISITS TAB ========== */
+.visits-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.visits-header h4 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #1a1a2e;
+}
+
+.visits-table th {
+    background: #f8fafc;
+    padding: 10px 12px;
+    font-size: 12px;
+    text-transform: uppercase;
+    color: #6b7280;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+.visits-table td {
+    padding: 10px 12px;
+    font-size: 14px;
+}
+
+/* ========== DELIVERY TAB ========== */
+.delivery-details-card {
+    background: #f8fafc;
+    border-radius: 12px;
+    padding: 24px;
+}
+
+.delivery-details-card h4 {
+    margin: 0 0 16px 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #1a1a2e;
+}
+
+.delivery-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 20px;
+}
+
+.delivery-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.delivery-item label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.delivery-item span {
+    font-size: 15px;
+    color: #1a1a2e;
+    margin-top: 2px;
+}
+
+.delivery-type {
+    font-weight: 600;
+    color: #0f3460;
+}
+
+.baby-gender {
+    font-weight: 600;
+}
+
+.outcome {
+    padding: 2px 12px;
+    border-radius: 12px;
+    font-weight: 600;
+    font-size: 13px;
+    display: inline-block;
+    width: fit-content;
+}
+
+.outcome.live {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.outcome.stillbirth {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+/* ========== EMPTY STATE ========== */
+.empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: #6b7280;
+}
+
+.empty-state p {
+    font-size: 16px;
+    margin-bottom: 16px;
+}
+
+/* ========== RESPONSIVE ========== */
+@media (max-width: 992px) {
+    .overview-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .delivery-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .form-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .form-grid .full-width {
+        grid-column: 1;
+    }
+}
+
+@media (max-width: 768px) {
+    .patient-summary-card {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 20px;
+    }
+
+    .pregnancy-status-badge {
+        align-items: flex-start;
+        width: 100%;
+    }
+
+    .tabs-nav {
+        flex-wrap: wrap;
+        padding: 0 16px;
+    }
+
+    .tab-btn {
+        padding: 12px 16px;
+        font-size: 13px;
+    }
+
+    .tab-btn.active::after {
+        left: 16px;
+        right: 16px;
+    }
+
+    .tab-content-container {
+        padding: 16px;
+    }
+
+    .info-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .header-actions {
+        flex-wrap: wrap;
+    }
+}

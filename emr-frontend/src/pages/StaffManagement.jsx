@@ -33,7 +33,7 @@ const StaffManagement = () => {
   // Available roles
   const roles = [
     'Admin', 'ITAdmin', 'ITSupport', 'Doctor', 'Nurse',
-    'Pharmacist', 'Accountant', 'Records', 'LabTechnician', 'Receptionist', 'BillingOfficer'
+    'Pharmacist', 'Accountant', 'Records', 'LabTechnician', 'Receptionist', 'BillingOfficer','Obstetrician', 'Midwife'      
   ];
 
   // Departments
