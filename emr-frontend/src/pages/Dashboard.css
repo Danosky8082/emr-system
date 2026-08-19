@@ -184,3 +184,61 @@
     padding: 0.25rem 0.5rem;
     border-radius: 0.25rem;
 }
+
+/* Vital Signs Validation Styles */
+.vital-warning {
+    color: #ef4444;
+    font-size: 12px;
+    display: block;
+    margin-top: 4px;
+    font-weight: 600;
+}
+
+.vital-warning::before {
+    content: '⚠️ ';
+}
+
+.helper-text {
+    display: block;
+    font-size: 12px;
+    color: #6b7280;
+    margin-top: 4px;
+}
+
+.helper-text.vital-warning {
+    color: #ef4444;
+}
+
+.vital-normal {
+    color: #10b981;
+}
+
+/* Field validation styling */
+.form-control.has-warning {
+    border-color: #ef4444 !important;
+    background-color: #fef2f2 !important;
+}
+
+.form-control.has-normal {
+    border-color: #10b981 !important;
+    background-color: #f0fdf4 !important;
+}
+
+/* New button styles for Patient Intake */
+.btn-warning {
+    background: #f59e0b;
+    color: white;
+}
+
+.btn-warning:hover {
+    background: #d97706;
+}
+
+.btn-danger {
+    background: #ef4444;
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #dc2626;
+}

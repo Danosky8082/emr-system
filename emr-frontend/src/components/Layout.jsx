@@ -20,7 +20,6 @@ const Layout = () => {
       { path: '/prescriptions', label: '💊 Prescriptions' },
       { path: '/lab-orders', label: '🔬 Lab Orders' },
       { path: '/pharmacy', label: '🏥 Pharmacy' },
-      { path: '/antenatal', label: '🤰 Antenatal Care' },
     ],
     Finance: [
       { path: '/billing', label: '💰 Billing' },
@@ -99,6 +98,13 @@ const Layout = () => {
     if (user?.role === 'Obstetrician' && path === '/nurse-dashboard') return false;
     if (user?.role === 'Midwife' && path === '/doctor-dashboard') return false;
     // ------------------------------------------------
+
+    // ✅ Antenatal: Only specific roles can access
+    if (path === '/antenatal') {
+      const allowedRoles = ['Admin', 'ITAdmin', 'Records', 'Obstetrician', 'Midwife', 'Nurse'];
+      // ✅ Exclude regular Doctors specifically
+      return allowedRoles.includes(user?.role) && user?.role !== 'Doctor';
+    }
 
     if (path === '/') return true;
     if (loadingPermissions) return false;

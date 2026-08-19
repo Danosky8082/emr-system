@@ -1,11 +1,12 @@
 /* src/pages/PregnancyProfile.css */
 
+/* ===== CONTAINER ===== */
 .pregnancy-container {
     max-width: 1400px;
     margin: 0 auto;
 }
 
-/* Back Button */
+/* ===== BACK BUTTON ===== */
 .back-btn {
     margin-bottom: 16px;
     display: inline-block;
@@ -18,14 +19,283 @@
     color: #1a1a2e;
 }
 
-/* Header Actions */
+/* ===== HEADER ACTIONS ===== */
 .header-actions {
     display: flex;
     gap: 12px;
     align-items: center;
 }
 
-/* ========== NEW PREGNANCY FORM ========== */
+/* ============================================================
+   MODERN FORM STYLES (NEW)
+   ============================================================ */
+.modern-form {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.modern-form .form-section {
+    background: white;
+    border-radius: 16px;
+    padding: 24px 28px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+    border: 1px solid #f0f2f5;
+    transition: box-shadow 0.3s ease;
+}
+
+.modern-form .form-section:hover {
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+.modern-form .form-section-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #1a1a2e;
+    margin: 0 0 16px 0;
+    padding-bottom: 12px;
+    border-bottom: 2px solid #f0f2f5;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.modern-form .form-section-title .icon {
+    font-size: 20px;
+}
+
+.modern-form .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.modern-form .form-group {
+    margin-bottom: 16px;
+}
+
+.modern-form .form-group:last-child {
+    margin-bottom: 0;
+}
+
+.modern-form .form-group label {
+    display: block;
+    font-weight: 600;
+    font-size: 13px;
+    color: #374151;
+    margin-bottom: 6px;
+    letter-spacing: 0.3px;
+}
+
+.modern-form .form-group label .required {
+    color: #ef4444;
+    margin-left: 2px;
+}
+
+.modern-form .form-group .helper-text {
+    display: block;
+    font-size: 12px;
+    color: #6b7280;
+    margin-top: 4px;
+}
+
+.modern-form .form-control {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 10px;
+    font-size: 14px;
+    font-family: inherit;
+    transition: all 0.25s ease;
+    background: #fafbfc;
+    color: #1a1a2e;
+    box-sizing: border-box;
+}
+
+.modern-form .form-control:focus {
+    outline: none;
+    border-color: #0f3460;
+    box-shadow: 0 0 0 4px rgba(15, 52, 96, 0.08);
+    background: white;
+}
+
+.modern-form .form-control:hover {
+    border-color: #94a3b8;
+}
+
+.modern-form .form-control.has-warning {
+    border-color: #ef4444;
+    background: #fef2f2;
+}
+
+.modern-form .form-control.has-warning:focus {
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.1);
+}
+
+.modern-form .form-control.has-success {
+    border-color: #10b981;
+    background: #f0fdf4;
+}
+
+.modern-form .form-control.has-success:focus {
+    box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.1);
+}
+
+.modern-form select.form-control {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    padding-right: 36px;
+    cursor: pointer;
+}
+
+.modern-form textarea.form-control {
+    resize: vertical;
+    min-height: 80px;
+}
+
+/* ===== VITAL WARNING STYLES ===== */
+.modern-form .vital-warning {
+    display: block;
+    font-size: 12px;
+    color: #ef4444;
+    margin-top: 4px;
+    font-weight: 500;
+    animation: fadeIn 0.3s ease;
+}
+
+.modern-form .vital-warning::before {
+    content: '⚠️ ';
+}
+
+.modern-form .vital-success {
+    display: block;
+    font-size: 12px;
+    color: #10b981;
+    margin-top: 4px;
+    font-weight: 500;
+}
+
+.modern-form .vital-success::before {
+    content: '✅ ';
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ============================================================
+   MODAL UPGRADES (NEW)
+   ============================================================ */
+.modern-modal .modal-content {
+    border-radius: 20px;
+    overflow: hidden;
+    max-width: 750px !important;
+    width: 100%;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+.modern-modal .modal-header {
+    background: linear-gradient(135deg, #0f3460, #1a4a7a);
+    padding: 20px 28px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modern-modal .modal-header h3 {
+    color: white;
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.modern-modal .modal-header .modal-close {
+    background: rgba(255, 255, 255, 0.15);
+    border: none;
+    border-radius: 50%;
+    width: 36px;
+    height: 36px;
+    color: white;
+    font-size: 22px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modern-modal .modal-header .modal-close:hover {
+    background: rgba(255, 255, 255, 0.25);
+    transform: rotate(90deg);
+}
+
+.modern-modal .modal-body {
+    padding: 28px;
+    background: #f8fafc;
+}
+
+.modern-modal .modal-footer {
+    padding: 16px 28px;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    background: white;
+}
+
+.modern-modal .modal-footer .btn {
+    padding: 10px 24px;
+    font-weight: 600;
+    border-radius: 10px;
+}
+
+.modern-modal .modal-footer .btn-secondary {
+    background: #e2e8f0;
+    color: #1a1a2e;
+    border: none;
+}
+
+.modern-modal .modal-footer .btn-secondary:hover {
+    background: #cbd5e1;
+}
+
+.modern-modal .modal-footer .btn-primary {
+    background: #0f3460;
+    color: white;
+    border: none;
+}
+
+.modern-modal .modal-footer .btn-primary:hover {
+    background: #1a4a7a;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(15, 52, 96, 0.2);
+}
+
+.modern-modal .modal-footer .btn-success {
+    background: #10b981;
+    color: white;
+    border: none;
+}
+
+.modern-modal .modal-footer .btn-success:hover {
+    background: #059669;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
+}
+
+/* ============================================================
+   ORIGINAL PREGNANCY FORM STYLES (KEPT)
+   ============================================================ */
 .pregnancy-form-card {
     background: white;
     border-radius: 16px;
@@ -127,7 +397,9 @@
     vertical-align: middle;
 }
 
-/* ========== PATIENT SUMMARY CARD ========== */
+/* ============================================================
+   PATIENT SUMMARY CARD
+   ============================================================ */
 .patient-summary-card {
     background: white;
     border-radius: 16px;
@@ -235,7 +507,9 @@
     color: #991b1b;
 }
 
-/* ========== TABS ========== */
+/* ============================================================
+   TABS
+   ============================================================ */
 .tabs-container {
     background: white;
     border-radius: 16px;
@@ -298,7 +572,9 @@
     padding: 24px 32px;
 }
 
-/* ========== OVERVIEW TAB ========== */
+/* ============================================================
+   OVERVIEW TAB
+   ============================================================ */
 .overview-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -412,7 +688,9 @@
     white-space: pre-wrap;
 }
 
-/* ========== VISITS TAB ========== */
+/* ============================================================
+   VISITS TAB
+   ============================================================ */
 .visits-header {
     display: flex;
     justify-content: space-between;
@@ -442,7 +720,9 @@
     font-size: 14px;
 }
 
-/* ========== DELIVERY TAB ========== */
+/* ============================================================
+   DELIVERY TAB
+   ============================================================ */
 .delivery-details-card {
     background: #f8fafc;
     border-radius: 12px;
@@ -509,7 +789,9 @@
     color: #991b1b;
 }
 
-/* ========== EMPTY STATE ========== */
+/* ============================================================
+   EMPTY STATE
+   ============================================================ */
 .empty-state {
     text-align: center;
     padding: 40px 20px;
@@ -521,7 +803,9 @@
     margin-bottom: 16px;
 }
 
-/* ========== RESPONSIVE ========== */
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
 @media (max-width: 992px) {
     .overview-grid {
         grid-template-columns: 1fr;
@@ -537,6 +821,10 @@
 
     .form-grid .full-width {
         grid-column: 1;
+    }
+
+    .modern-form .form-row {
+        grid-template-columns: 1fr;
     }
 }
 
@@ -577,5 +865,23 @@
 
     .header-actions {
         flex-wrap: wrap;
+    }
+
+    .modern-modal .modal-body {
+        padding: 20px;
+    }
+
+    .modern-modal .modal-header {
+        padding: 16px 20px;
+    }
+}
+
+@media (max-width: 480px) {
+    .modern-form .form-section {
+        padding: 16px;
+    }
+
+    .pregnancy-form-card .card-body {
+        padding: 16px;
     }
 }

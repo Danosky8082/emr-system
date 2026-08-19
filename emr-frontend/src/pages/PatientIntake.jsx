@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
-import PatientCard from '../components/PatientCard'; // <--- IMPORT THE CARD
+import PatientCard from '../components/PatientCard';
 
 const PatientIntake = () => {
   const { token } = useAuth();
@@ -13,11 +13,13 @@ const PatientIntake = () => {
   const [wards, setWards] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  
-  // --- NEW: Card Print State ---
   const [showCardModal, setShowCardModal] = useState(false);
   const [cardPatient, setCardPatient] = useState(null);
-  // ----------------------------
+  const [showReverseModal, setShowReverseModal] = useState(false);
+  const [selectedJourney, setSelectedJourney] = useState(null);
+  const [reverseReason, setReverseReason] = useState('');
+  const [returnToStage, setReturnToStage] = useState('');
+  const [showReturnModal, setShowReturnModal] = useState(false);
 
   const [newJourney, setNewJourney] = useState({ 
     patientId: '', 
@@ -58,6 +60,18 @@ const PatientIntake = () => {
     return map[status] || '#6b7280';
   };
 
+  const getStatusLabel = (status) => {
+    const map = {
+      'REGISTERED': '📝 Registered',
+      'PENDING_BILLING': '💰 Pending Billing',
+      'BILLING_CLEARED': '✅ Billing Cleared',
+      'CARD_PRINTED': '🖨️ Card Printed',
+      'SENT_TO_DESTINATION': '🚑 Sent to Dest.',
+      'COMPLETED': '🎉 Completed'
+    };
+    return map[status] || status;
+  };
+
   const handleStartJourney = async (e) => {
     e.preventDefault();
     if (!newJourney.patientId) {
@@ -75,11 +89,11 @@ const PatientIntake = () => {
 
     try {
       const payload = {
-  patientId: newJourney.patientId,
-  destinationType: newJourney.destinationType,
-  clinicId: newJourney.destinationType === 'CLINIC' ? newJourney.clinicId : null,
-  wardId: newJourney.destinationType === 'WARD' ? newJourney.wardId : null
-};
+        patientId: newJourney.patientId,
+        destinationType: newJourney.destinationType,
+        clinicId: newJourney.destinationType === 'CLINIC' ? newJourney.clinicId : null,
+        wardId: newJourney.destinationType === 'WARD' ? newJourney.wardId : null
+      };
 
       await axios.post('http://localhost:3000/api/patient-journeys', payload, {
         headers: { Authorization: `Bearer ${token}` }
@@ -106,7 +120,69 @@ const PatientIntake = () => {
     }
   };
 
-  // --- 🖨️ NEW: Open Card Print Modal ---
+  // ✅ NEW: Handle reverse journey
+  const handleReverseJourney = async () => {
+    if (!selectedJourney) return;
+    if (!reverseReason) {
+      toast.error('Please provide a reason for reversing');
+      return;
+    }
+
+    try {
+      await axios.patch(`http://localhost:3000/api/patient-journeys/${selectedJourney.id}/reverse`, 
+        { reason: reverseReason },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast.success('Journey reversed successfully!');
+      setShowReverseModal(false);
+      setReverseReason('');
+      setSelectedJourney(null);
+      fetchData();
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to reverse journey');
+    }
+  };
+
+  // ✅ NEW: Handle return to stage
+  const handleReturnToStage = async () => {
+    if (!selectedJourney || !returnToStage) {
+      toast.error('Please select a target stage');
+      return;
+    }
+
+    const reason = prompt('Please provide a reason for returning to this stage:');
+    if (!reason) return;
+
+    try {
+      await axios.patch(`http://localhost:3000/api/patient-journeys/${selectedJourney.id}/return-to-stage`, 
+        { targetStatus: returnToStage, reason },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast.success(`Patient returned to ${returnToStage} successfully!`);
+      setShowReturnModal(false);
+      setReturnToStage('');
+      setSelectedJourney(null);
+      fetchData();
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to return to stage');
+    }
+  };
+
+  // ✅ NEW: Handle reprint card
+  const handleReprintCard = async (journey) => {
+    try {
+      const res = await axios.post(`http://localhost:3000/api/patient-journeys/${journey.id}/reprint-card`, 
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setCardPatient(res.data.patient);
+      setShowCardModal(true);
+      toast.success('Card reprint recorded');
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to reprint card');
+    }
+  };
+
   const handlePrintCard = (patient) => {
     setCardPatient(patient);
     setShowCardModal(true);
@@ -115,18 +191,12 @@ const PatientIntake = () => {
   const handlePrint = () => {
     window.print();
   };
-  // ------------------------------------
 
-  const getStatusLabel = (status) => {
-    const map = {
-      'REGISTERED': '📝 Registered',
-      'PENDING_BILLING': '💰 Pending Billing',
-      'BILLING_CLEARED': '✅ Billing Cleared',
-      'CARD_PRINTED': '🖨️ Card Printed',
-      'SENT_TO_DESTINATION': '🚑 Sent to Dest.',
-      'COMPLETED': '🎉 Completed'
-    };
-    return map[status] || status;
+  // ✅ Get available stages for return (previous stages only)
+  const getAvailableStages = (currentStatus) => {
+    const stages = ['REGISTERED', 'PENDING_BILLING', 'BILLING_CLEARED', 'CARD_PRINTED', 'SENT_TO_DESTINATION', 'COMPLETED'];
+    const currentIndex = stages.indexOf(currentStatus);
+    return stages.slice(0, currentIndex); // Only previous stages
   };
 
   if (loading) return <div className="spinner" />;
@@ -152,6 +222,8 @@ const PatientIntake = () => {
           <tbody>
             {journeys.map(j => {
               let action = null;
+              const isCompleted = j.status === 'COMPLETED';
+              
               if (j.status === 'REGISTERED') {
                 action = { label: '💰 Send to Billing', status: 'PENDING_BILLING' };
               } else if (j.status === 'BILLING_CLEARED') {
@@ -165,6 +237,12 @@ const PatientIntake = () => {
               const destinationName = j.destinationType === 'WARD' 
                 ? j.ward?.name 
                 : j.clinic?.name;
+
+              // ✅ Show card print button for BILLING_CLEARED, CARD_PRINTED, or SENT_TO_DESTINATION
+              const showCardButton = ['BILLING_CLEARED', 'CARD_PRINTED', 'SENT_TO_DESTINATION', 'COMPLETED'].includes(j.status);
+              const showReprintButton = j.status === 'COMPLETED' && j.cardGeneratedAt;
+              const showReverseButton = j.status === 'COMPLETED' || j.status === 'SENT_TO_DESTINATION';
+              const showReturnButton = j.status !== 'REGISTERED';
 
               return (
                 <tr key={j.id}>
@@ -185,8 +263,8 @@ const PatientIntake = () => {
                     </span>
                   </td>
                   <td>
-                    {/* --- 🖨️ NEW: Print Card Button (Visible when Billing is Cleared or Card Printed) --- */}
-                    {['BILLING_CLEARED', 'CARD_PRINTED'].includes(j.status) && (
+                    {/* 🖨️ Print Card Button */}
+                    {showCardButton && (
                       <button 
                         className="btn btn-sm btn-secondary" 
                         style={{ marginRight: '5px' }}
@@ -195,8 +273,48 @@ const PatientIntake = () => {
                         🖨️ Print Card
                       </button>
                     )}
-                    {/* ------------------------------------------------------------------------------- */}
-                    
+
+                    {/* 🔄 Reprint Card Button (for completed journeys) */}
+                    {showReprintButton && (
+                      <button 
+                        className="btn btn-sm btn-warning" 
+                        style={{ marginRight: '5px' }}
+                        onClick={() => handleReprintCard(j)}
+                      >
+                        🔄 Reprint
+                      </button>
+                    )}
+
+                    {/* ↩️ Reverse Button */}
+                    {showReverseButton && (
+                      <button 
+                        className="btn btn-sm btn-danger" 
+                        style={{ marginRight: '5px' }}
+                        onClick={() => {
+                          setSelectedJourney(j);
+                          setShowReverseModal(true);
+                        }}
+                      >
+                        ↩️ Reverse
+                      </button>
+                    )}
+
+                    {/* 🔄 Return to Stage Button */}
+                    {showReturnButton && !isCompleted && (
+                      <button 
+                        className="btn btn-sm btn-warning" 
+                        style={{ marginRight: '5px' }}
+                        onClick={() => {
+                          setSelectedJourney(j);
+                          setReturnToStage('');
+                          setShowReturnModal(true);
+                        }}
+                      >
+                        🔄 Return
+                      </button>
+                    )}
+
+                    {/* Next Action Button */}
                     {action ? (
                       <button 
                         className="btn btn-sm btn-primary" 
@@ -216,12 +334,86 @@ const PatientIntake = () => {
         </table>
       </div>
 
-      {/* --- 🖨️ PATIENT CARD MODAL --- */}
+      {/* Reverse Modal */}
+      {showReverseModal && selectedJourney && (
+        <div className="modal-overlay" onClick={() => setShowReverseModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+            <div className="modal-header">
+              <h3>↩️ Reverse Journey</h3>
+              <button className="modal-close" onClick={() => setShowReverseModal(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <p><strong>Patient:</strong> {selectedJourney.patient?.firstName} {selectedJourney.patient?.lastName}</p>
+              <p><strong>Current Status:</strong> {getStatusLabel(selectedJourney.status)}</p>
+              <p><strong>Destination:</strong> {selectedJourney.clinic?.name || selectedJourney.ward?.name || 'N/A'}</p>
+              
+              <div className="form-group">
+                <label>Reason for Reversing <span style={{color: 'red'}}>*</span></label>
+                <textarea
+                  value={reverseReason}
+                  onChange={(e) => setReverseReason(e.target.value)}
+                  className="form-control"
+                  rows="3"
+                  placeholder="Please explain why this journey needs to be reversed..."
+                  required
+                />
+                <small style={{color: '#ef4444'}}>
+                  ⚠️ This will undo the completion and move the patient back to SENT_TO_DESTINATION.
+                </small>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setShowReverseModal(false)}>Cancel</button>
+              <button className="btn btn-danger" onClick={handleReverseJourney}>Confirm Reverse</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Return to Stage Modal */}
+      {showReturnModal && selectedJourney && (
+        <div className="modal-overlay" onClick={() => setShowReturnModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+            <div className="modal-header">
+              <h3>🔄 Return to Previous Stage</h3>
+              <button className="modal-close" onClick={() => setShowReturnModal(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <p><strong>Patient:</strong> {selectedJourney.patient?.firstName} {selectedJourney.patient?.lastName}</p>
+              <p><strong>Current Status:</strong> {getStatusLabel(selectedJourney.status)}</p>
+              
+              <div className="form-group">
+                <label>Return to Stage <span style={{color: 'red'}}>*</span></label>
+                <select
+                  value={returnToStage}
+                  onChange={(e) => setReturnToStage(e.target.value)}
+                  className="form-control"
+                  required
+                >
+                  <option value="">Select a stage...</option>
+                  {getAvailableStages(selectedJourney.status).map(stage => (
+                    <option key={stage} value={stage}>{getStatusLabel(stage)}</option>
+                  ))}
+                </select>
+                <small style={{color: '#ef4444'}}>
+                  ⚠️ This will move the patient backward in the pipeline. Some data may be cleared.
+                </small>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setShowReturnModal(false)}>Cancel</button>
+              <button className="btn btn-warning" onClick={handleReturnToStage}>Confirm Return</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Patient Card Modal */}
       {showCardModal && cardPatient && (
         <div className="modal-overlay" onClick={() => setShowCardModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '650px', padding: '30px', backgroundColor: '#f8f9fa' }}>
             <div className="modal-header">
-              <h3>Print Patient Card</h3>
+              <h3>🖨️ Print Patient Card</h3>
               <button className="modal-close" onClick={() => setShowCardModal(false)}>×</button>
             </div>
             
@@ -236,9 +428,8 @@ const PatientIntake = () => {
           </div>
         </div>
       )}
-      /* -------------------------------------------------------- */
 
-      {/* Intake Modal (Unchanged) */}
+      {/* Start Intake Modal - Keep existing */}
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -315,4 +506,5 @@ const PatientIntake = () => {
     </div>
   );
 };
+
 export default PatientIntake;

@@ -36,60 +36,70 @@ const Dashboard = () => {
 
   if (loading) return <div className="spinner" />;
 
-  const renderStatCards = () => {
-    const role = user?.role;
-    if (!stats) return [];
+  // src/pages/Dashboard.jsx - renderStatCards function
 
-    // Global Hospital Dashboard
-    if (['Admin', 'Records', 'ITAdmin'].includes(role)) {
-      return [
-        { icon: '👤', label: 'Total Patients', value: stats.totalPatients || 0 },
-        { icon: '👨‍⚕️', label: 'Total Staff', value: stats.totalStaff || 0 },
-        { icon: '📅', label: 'Scheduled Appts', value: stats.totalAppointments || 0 },
-        { icon: '💰', label: 'Total Revenue', value: `₦${(stats.totalRevenue || 0).toLocaleString()}` },
-        { icon: '💊', label: 'Low Stock Items', value: stats.lowStockCount || 0 },
-        { icon: '📋', label: 'Pending Bills', value: stats.pendingBills || 0 },
-      ];
-    }
+const renderStatCards = () => {
+  const role = user?.role;
+  if (!stats) return [];
 
-    // Clinical Dashboard (Doctor, Nurse, Obstetrician, Midwife)
-    if (['Doctor', 'Nurse', 'Obstetrician', 'Midwife'].includes(role)) {
-      return [
-        { icon: '👤', label: 'My Patients', value: stats.myPatientsCount || 0 },
-        { icon: '📅', label: 'My Appointments', value: stats.myAppointmentsCount || 0 },
-        { icon: '❤️', label: 'Vitals Recorded', value: stats.myVitalsCount || 0 },
-      ];
-    }
+  // Global Hospital Dashboard
+  if (['Admin', 'Records', 'ITAdmin'].includes(role)) {
+    return [
+      { icon: '👤', label: 'Total Patients', value: stats.totalPatients || 0 },
+      { icon: '👨‍⚕️', label: 'Total Staff', value: stats.totalStaff || 0 },
+      { icon: '📅', label: 'Scheduled Appts', value: stats.totalAppointments || 0 },
+      { icon: '💰', label: 'Total Revenue', value: `₦${(stats.totalRevenue || 0).toLocaleString()}` },
+      { icon: '💊', label: 'Low Stock Items', value: stats.lowStockCount || 0 },
+      { icon: '📋', label: 'Pending Bills', value: stats.pendingBills || 0 },
+    ];
+  }
 
-    // Pharmacy Dashboard
-    if (role === 'Pharmacist') {
-      return [
-        { icon: '💊', label: 'Total Medications', value: stats.totalMedications || 0 },
-        { icon: '⚠️', label: 'Low Stock Alerts', value: stats.lowStockCount || 0 },
-        { icon: '📤', label: 'Dispensed (7d)', value: stats.recentDispensedCount || 0 },
-      ];
-    }
+  // ✅ Clinical Dashboard (Doctor, Obstetrician) - NO VITALS
+  if (['Doctor', 'Obstetrician'].includes(role)) {
+    return [
+      { icon: '👤', label: 'My Patients', value: stats.myPatientsCount || 0 },
+      { icon: '📅', label: 'My Appointments', value: stats.myAppointmentsCount || 0 },
+      { icon: '💊', label: 'Prescriptions Written', value: stats.myPrescriptionsCount || 0 },
+    ];
+  }
 
-    // Billing Officer & Accountant Dashboard (Finance)
-    if (['Accountant', 'BillingOfficer'].includes(role)) {
-      return [
-        { icon: '📋', label: 'Pending Bills', value: stats.pendingBills || 0 },
-        { icon: '💰', label: 'Total Revenue', value: `₦${(stats.totalRevenue || 0).toLocaleString()}` },
-        { icon: '✅', label: 'Paid Invoices', value: stats.paidBillsCount || 0 },
-      ];
-    }
+  // ✅ Clinical Dashboard (Nurse, Midwife) - WITH VITALS
+  if (['Nurse', 'Midwife'].includes(role)) {
+    return [
+      { icon: '👤', label: 'My Patients', value: stats.myPatientsCount || 0 },
+      { icon: '📅', label: 'My Appointments', value: stats.myAppointmentsCount || 0 },
+      { icon: '❤️', label: 'Vitals Recorded', value: stats.myVitalsCount || 0 },
+    ];
+  }
 
-    // Lab Technician Dashboard
-    if (role === 'LabTechnician') {
-      return [
-        { icon: '🔬', label: 'Pending Tests', value: stats.pendingLabOrders || 0 },
-        { icon: '✅', label: 'Completed Tests', value: stats.completedLabOrders || 0 },
-      ];
-    }
+  // Pharmacy Dashboard
+  if (role === 'Pharmacist') {
+    return [
+      { icon: '💊', label: 'Total Medications', value: stats.totalMedications || 0 },
+      { icon: '⚠️', label: 'Low Stock Alerts', value: stats.lowStockCount || 0 },
+      { icon: '📤', label: 'Dispensed (7d)', value: stats.recentDispensedCount || 0 },
+    ];
+  }
 
-    return [];
-  };
+  // Billing Officer & Accountant Dashboard (Finance)
+  if (['Accountant', 'BillingOfficer'].includes(role)) {
+    return [
+      { icon: '📋', label: 'Pending Bills', value: stats.pendingBills || 0 },
+      { icon: '💰', label: 'Total Revenue', value: `₦${(stats.totalRevenue || 0).toLocaleString()}` },
+      { icon: '✅', label: 'Paid Invoices', value: stats.paidBillsCount || 0 },
+    ];
+  }
 
+  // Lab Technician Dashboard
+  if (role === 'LabTechnician') {
+    return [
+      { icon: '🔬', label: 'Pending Tests', value: stats.pendingLabOrders || 0 },
+      { icon: '✅', label: 'Completed Tests', value: stats.completedLabOrders || 0 },
+    ];
+  }
+
+  return [];
+};
   const statCards = renderStatCards();
 
   const genderChartData = stats?.genderData?.map(g => ({ name: g.gender, value: g._count })) || [];

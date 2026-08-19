@@ -188,3 +188,102 @@
     padding: 4px 12px;
     border-radius: 12px;
 }
+
+/* src/pages/StaffManagement.css - Add these styles */
+
+/* Alert Banner Animation */
+.alert-banner {
+    animation: slideDown 0.5s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Assignment section styling */
+.assignment-section {
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 16px;
+    margin: 12px 0;
+    border: 1px solid #e2e8f0;
+}
+
+.assignment-section .section-title {
+    font-weight: 600;
+    font-size: 14px;
+    color: #1a1a2e;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.assignment-section .checkbox-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.assignment-section .checkbox-group label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #374151;
+    cursor: pointer;
+    padding: 4px 10px;
+    background: white;
+    border-radius: 6px;
+    border: 1px solid #e2e8f0;
+    transition: all 0.2s;
+}
+
+.assignment-section .checkbox-group label:hover {
+    background: #f1f5f9;
+    border-color: #94a3b8;
+}
+
+.assignment-section .checkbox-group label input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: #0f3460;
+    cursor: pointer;
+}
+
+/* Staff row with warning badge */
+.staff-row-warning {
+    border-left: 3px solid #f59e0b;
+}
+
+.no-assignment-badge {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 2px 10px;
+    background: #fef3c7;
+    color: #92400e;
+    font-size: 10px;
+    border-radius: 12px;
+    font-weight: 600;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.6;
+    }
+}
