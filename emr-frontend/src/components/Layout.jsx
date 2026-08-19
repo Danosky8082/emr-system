@@ -38,6 +38,7 @@ const Layout = () => {
       { path: '/admissions', label: '🏥 ADT' },
       { path: '/patient-history', label: '📂 Patient History' },
       { path: '/roi-requests', label: '📄 ROI Requests' },
+      { path: '/archived-patients', label: '📦 Archived Patients' },
     ],
     Doctor: [
       { path: '/doctor-dashboard', label: '🩺 Doctor Dashboard' },
@@ -66,6 +67,7 @@ const Layout = () => {
     '/roi-requests': 'roiRequests',
     '/patients': 'patients',
     '/antenatal': 'antenatal',
+    '/archived-patients': 'archivedPatients', // ✅ FIXED: Now uses its own permission
   };
 
   useEffect(() => {
@@ -102,8 +104,23 @@ const Layout = () => {
     // ✅ Antenatal: Only specific roles can access
     if (path === '/antenatal') {
       const allowedRoles = ['Admin', 'ITAdmin', 'Records', 'Obstetrician', 'Midwife', 'Nurse'];
-      // ✅ Exclude regular Doctors specifically
       return allowedRoles.includes(user?.role) && user?.role !== 'Doctor';
+    }
+
+    // ✅ Archived Patients: Use permission system with role-based fallback
+    if (path === '/archived-patients') {
+      // Admin bypass - always allowed
+      if (user?.role === 'Admin') return true;
+      
+      // Check permission if loaded
+      if (!loadingPermissions && permissions) {
+        const permissionKey = 'archivedPatients';
+        return permissions[permissionKey] === true;
+      }
+      
+      // Fallback: Allow Records and ITAdmin if permissions not loaded yet
+      if (loadingPermissions) return false;
+      return ['Records', 'ITAdmin'].includes(user?.role);
     }
 
     if (path === '/') return true;

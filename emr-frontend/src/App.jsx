@@ -27,6 +27,7 @@ import DoctorDashboard from './pages/DoctorDashboard';
 import ManagePermissions from './pages/ManagePermissions';
 import AntenatalDashboard from './pages/AntenatalDashboard';
 import PregnancyProfile from './pages/PregnancyProfile';
+import ArchivedPatients from './pages/ArchivedPatients';
 // --------------------------------------------
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -93,6 +94,7 @@ function App() {
           <Route path="antenatal" element={<AntenatalDashboard />} />
           <Route path="pregnancy/new" element={<PregnancyProfile />} />
           <Route path="pregnancy/:id" element={<PregnancyProfile />} />
+          <Route path="archived-patients" element={<ArchivedPatients />} />
         </Route>
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>

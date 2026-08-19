@@ -1,18 +1,24 @@
+/* src/pages/Dashboard.css */
+
 .dashboard .page-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 24px;
+    flex-wrap: wrap;
+    gap: 12px;
 }
 
 .dashboard .page-header h2 {
     font-size: 24px;
     font-weight: 700;
+    margin: 0;
 }
 
 .dashboard .page-header p {
     color: #666;
     font-size: 14px;
+    margin: 0;
 }
 
 .stats-grid {
@@ -57,6 +63,7 @@
     margin-bottom: 12px;
 }
 
+/* ===== TABLE STYLES ===== */
 .table-container {
     background: white;
     border-radius: 12px;
@@ -88,6 +95,362 @@
     background: #fafafa;
 }
 
+/* ===== BUTTON STYLES ===== */
+.btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+    display: inline-block;
+    text-decoration: none;
+}
+
+.btn-primary {
+    background: #0f3460;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #1a4a7a;
+    transform: translateY(-1px);
+}
+
+.btn-secondary {
+    background: #e5e7eb;
+    color: #1f2937;
+    border: 1px solid #d1d5db;
+}
+
+.btn-secondary:hover {
+    background: #d1d5db;
+}
+
+.btn-danger {
+    background: #ef4444;
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #dc2626;
+}
+
+.btn-success {
+    background: #10b981;
+    color: white;
+}
+
+.btn-success:hover {
+    background: #059669;
+}
+
+.btn-warning {
+    background: #f59e0b;
+    color: white;
+}
+
+.btn-warning:hover {
+    background: #d97706;
+}
+
+.btn-sm {
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 4px;
+    border: none;
+    cursor: pointer;
+    white-space: nowrap;
+    text-decoration: none;
+    display: inline-block;
+}
+
+/* ===== ACTION BUTTONS IN TABLE ===== */
+.table-container .btn-sm {
+    margin-right: 4px;
+}
+
+.btn-open-file {
+    background: #0f3460;
+    color: white;
+}
+
+.btn-open-file:hover {
+    background: #1a4a7a;
+}
+
+.btn-edit {
+    background: #0f3460;
+    color: white;
+}
+
+.btn-edit:hover {
+    background: #1a4a7a;
+}
+
+.btn-delete {
+    background: #ef4444;
+    color: white;
+}
+
+.btn-delete:hover {
+    background: #dc2626;
+}
+
+.btn-archive {
+    background: #6b7280;
+    color: white;
+}
+
+.btn-archive:hover {
+    background: #4b5563;
+}
+
+.btn-unarchive {
+    background: #10b981;
+    color: white;
+}
+
+.btn-unarchive:hover {
+    background: #059669;
+}
+
+.btn-reprint {
+    background: #f59e0b;
+    color: white;
+}
+
+.btn-reprint:hover {
+    background: #d97706;
+}
+
+.btn-reverse {
+    background: #ef4444;
+    color: white;
+}
+
+.btn-reverse:hover {
+    background: #dc2626;
+}
+
+.btn-return {
+    background: #f59e0b;
+    color: white;
+}
+
+.btn-return:hover {
+    background: #d97706;
+}
+
+/* ===== CATEGORY BADGES ===== */
+.category-badge {
+    display: inline-block;
+    padding: 3px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.category-fpp {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.category-nhis {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.category-corporate {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.category-badge:hover {
+    transform: scale(1.05);
+    transition: transform 0.2s ease;
+}
+
+/* ===== STATUS BADGES ===== */
+.role-badge {
+    background: rgba(255, 255, 255, 0.15);
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.status-badge {
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.status-active {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.status-inactive {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.status-scheduled {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.status-completed {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.status-cancelled {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.status-pending {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.status-paid {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+/* ===== MODAL STYLES ===== */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 999;
+}
+
+.modal-content {
+    background: white;
+    border-radius: 16px;
+    width: 100%;
+    max-width: 620px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+.modal-header {
+    padding: 20px 24px;
+    border-bottom: 1px solid #e8ecf1;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: sticky;
+    top: 0;
+    background: white;
+    border-radius: 16px 16px 0 0;
+}
+
+.modal-header h3 {
+    font-size: 18px;
+    font-weight: 700;
+    margin: 0;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 28px;
+    cursor: pointer;
+    color: #999;
+    padding: 0 8px;
+}
+
+.modal-close:hover {
+    color: #333;
+}
+
+.modal-body {
+    padding: 24px;
+}
+
+.modal-footer {
+    padding: 16px 24px;
+    border-top: 1px solid #e8ecf1;
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    background: #f8fafc;
+    border-radius: 0 0 16px 16px;
+}
+
+/* ===== FORM STYLES ===== */
+.form-group {
+    margin-bottom: 16px;
+}
+
+.form-group label {
+    display: block;
+    font-weight: 600;
+    font-size: 13px;
+    color: #333;
+    margin-bottom: 4px;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: inherit;
+    transition: border-color 0.2s;
+    background: white;
+    color: #333;
+    box-sizing: border-box;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+    outline: none;
+    border-color: #0f3460;
+    box-shadow: 0 0 0 3px rgba(15, 52, 96, 0.1);
+}
+
+.form-group textarea {
+    resize: vertical;
+    min-height: 80px;
+}
+
+.form-group small {
+    display: block;
+    color: #888;
+    font-size: 12px;
+    margin-top: 4px;
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+/* ===== SPINNER ===== */
 .spinner {
     border: 3px solid #f3f3f3;
     border-top: 3px solid #0f3460;
@@ -108,84 +471,12 @@
     }
 }
 
+/* ===== UTILITY ===== */
 .text-center {
     text-align: center;
 }
 
-/* ---- Modal styles (global) ---- */
-.modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 999;
-}
-
-.modal {
-    background: #fff;
-    border-radius: 8px;
-    max-width: 600px;
-    width: 100%;
-    padding: 1.5rem;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    max-height: 90vh;
-    overflow-y: auto;
-}
-
-.modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border-bottom: 1px solid #dee2e6;
-    padding-bottom: 0.75rem;
-    margin-bottom: 1rem;
-}
-
-.modal-footer {
-    border-top: 1px solid #dee2e6;
-    padding-top: 0.75rem;
-    margin-top: 1rem;
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-}
-
-.close {
-    background: none;
-    border: none;
-    font-size: 1.5rem;
-    cursor: pointer;
-    padding: 0 0.5rem;
-}
-
-/* ---- Badge variants (global) ---- */
-.badge-danger {
-    background-color: #dc3545;
-    color: white;
-    padding: 0.25rem 0.5rem;
-    border-radius: 0.25rem;
-}
-
-.badge-info {
-    background-color: #17a2b8;
-    color: white;
-    padding: 0.25rem 0.5rem;
-    border-radius: 0.25rem;
-}
-
-.badge-secondary {
-    background-color: #6c757d;
-    color: white;
-    padding: 0.25rem 0.5rem;
-    border-radius: 0.25rem;
-}
-
-/* Vital Signs Validation Styles */
+/* ===== VITAL SIGNS VALIDATION ===== */
 .vital-warning {
     color: #ef4444;
     font-size: 12px;
@@ -224,21 +515,51 @@
     background-color: #f0fdf4 !important;
 }
 
-/* New button styles for Patient Intake */
-.btn-warning {
-    background: #f59e0b;
-    color: white;
+/* ===== RESPONSIVE ===== */
+@media (max-width: 768px) {
+    .form-row {
+        grid-template-columns: 1fr;
+    }
+
+    .dashboard .page-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .stats-grid {
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    }
+
+    .table-container td {
+        padding: 8px 10px;
+        font-size: 12px;
+    }
+
+    .table-container th {
+        padding: 8px 10px;
+        font-size: 12px;
+    }
 }
 
-.btn-warning:hover {
-    background: #d97706;
+@media (max-width: 480px) {
+    .stat-card {
+        padding: 12px 16px;
+    }
+
+    .stat-value {
+        font-size: 20px;
+    }
+
+    .modal-content {
+        margin: 16px;
+        max-width: 100%;
+    }
 }
 
-.btn-danger {
-    background: #ef4444;
-    color: white;
+.table-container tbody tr {
+    display: table-row;
 }
 
-.btn-danger:hover {
-    background: #dc2626;
+.table-container tbody tr td {
+    display: table-cell;
 }

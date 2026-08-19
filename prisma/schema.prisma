@@ -9,36 +9,51 @@ datasource db {
 }
 
 // 1. Core Patient Model
+// prisma/schema.prisma
+
 model Patient {
-  id           String   @id @default(cuid())
-  hospitalId   String   @unique
-  firstName    String
-  lastName     String
-  dateOfBirth  DateTime
-  gender       String
-  phone        String?
-  email        String?   @unique
-  address      String?
-  emergencyContact String?
-  allergies    String?
-  // --- NEXT OF KIN FIELDS ---
-  nextOfKinName       String?
-  nextOfKinPhone      String?
+  id                String    @id @default(cuid())
+  hospitalId        String    @unique
+  firstName         String
+  lastName          String
+  dateOfBirth       DateTime
+  gender            String
+  phone             String?
+  email             String?   @unique
+  address           String?
+  emergencyContact  String?
+  allergies         String?
+  nextOfKinName     String?
+  nextOfKinPhone    String?
   nextOfKinRelationship String?
-  // ----------------------------
+  
+  // ✅ NEW: Patient Category / Classification
+  patientCategory   String    @default("FPP") // FPP, NHIS, CORPORATE
+  insuranceProvider String?   // For NHIS and Corporate - store the provider name
+  insuranceId       String?   // NHIS number or Corporate employee ID
+  corporateCompany  String?   // For Corporate patients - company name
+  
+  // ✅ NEW: Archive fields
+  isArchived        Boolean   @default(false)
+  archivedAt        DateTime?
+  archivedReason    String?
+  archivedBy        String?   
+  autoArchived      Boolean   @default(false)
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
   // Relations
-  appointments Appointment[]
-  clinicalNotes ClinicalNote[]
-  billingRecords BillingRecord[]
-  prescriptions Prescription[]
-  labOrders    LabOrder[]
-  admissions   Admission[]
-  historyRecords PatientHistoryRecord[]
-  journeys     PatientJourney[]
-  vitals       VitalSign[]
-  pregnancies  Pregnancy[]                     // <--- NEW
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  appointments      Appointment[]
+  clinicalNotes     ClinicalNote[]
+  billingRecords    BillingRecord[]
+  prescriptions     Prescription[]
+  labOrders         LabOrder[]
+  admissions        Admission[]
+  historyRecords    PatientHistoryRecord[]
+  journeys          PatientJourney[]
+  vitals            VitalSign[]
+  pregnancies       Pregnancy[]
 }
 
 // 2. Staff Model
@@ -340,6 +355,10 @@ model PatientJourney {
   cardGeneratedAt DateTime?
   sentToDestinationAt DateTime?
   
+  // ✅ NEW: Journey completion tracking
+  completedAt    DateTime? // When journey was marked COMPLETED
+  archivedAt     DateTime? // When patient was archived (if different from completion)
+  
   billingRecordId String?  @unique
   billingRecord   BillingRecord? @relation("BillingJourney", fields: [billingRecordId], references: [id])
 
@@ -407,6 +426,7 @@ model RolePermission {
   nurseDashboard Boolean @default(false)
   doctorDashboard Boolean @default(false)
   antenatal   Boolean @default(false) 
+  archivedPatients Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

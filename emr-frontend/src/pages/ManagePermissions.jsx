@@ -29,7 +29,8 @@ const ManagePermissions = () => {
     { key: 'roiRequests', label: 'ROI Requests' },
     { key: 'nurseDashboard', label: 'Nurse Dashboard' },
     { key: 'doctorDashboard', label: 'Doctor Dashboard' },
-    { key: 'antenatal', label: 'Antenatal Care' }, 
+    { key: 'antenatal', label: 'Antenatal Care' },
+    { key: 'archivedPatients', label: 'Archived Patients' }, // ✅ ADD THIS
   ];
 
   const fetchPermissions = async () => {
@@ -38,11 +39,18 @@ const ManagePermissions = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       setPermissions(res.data);
-    } catch (error) { toast.error('Failed to load permissions'); } 
+    } catch (error) { 
+      console.error('Failed to load permissions:', error);
+      toast.error('Failed to load permissions'); 
+    } 
     finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchPermissions(); }, []);
+  useEffect(() => { 
+    if (token) {
+      fetchPermissions(); 
+    }
+  }, [token]);
 
   const togglePermission = async (role, moduleKey, currentValue) => {
     try {
@@ -52,7 +60,10 @@ const ManagePermissions = () => {
       );
       toast.success(`Updated ${role} permissions`);
       fetchPermissions();
-    } catch (error) { toast.error('Failed to update permission'); }
+    } catch (error) { 
+      console.error('Toggle permission error:', error);
+      toast.error('Failed to update permission'); 
+    }
   };
 
   if (loading) return <div className="spinner" />;
@@ -67,14 +78,20 @@ const ManagePermissions = () => {
         <table>
           <thead>
             <tr>
-              <th style={{ minWidth: '120px' }}>Role</th>
-              {modules.map(m => <th key={m.key} style={{ textAlign: 'center', minWidth: '80px' }}>{m.label}</th>)}
+              <th style={{ minWidth: '120px', position: 'sticky', left: 0, background: '#f8fafc' }}>Role</th>
+              {modules.map(m => (
+                <th key={m.key} style={{ textAlign: 'center', minWidth: '80px' }}>
+                  {m.label}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {permissions.map(p => (
               <tr key={p.role}>
-                <td><strong>{p.role}</strong></td>
+                <td style={{ position: 'sticky', left: 0, background: 'white', fontWeight: 'bold' }}>
+                  {p.role}
+                </td>
                 {modules.map(m => (
                   <td key={m.key} style={{ textAlign: 'center' }}>
                     <input 

@@ -18,8 +18,9 @@ const PatientIntake = () => {
   const [showReverseModal, setShowReverseModal] = useState(false);
   const [selectedJourney, setSelectedJourney] = useState(null);
   const [reverseReason, setReverseReason] = useState('');
-  const [returnToStage, setReturnToStage] = useState('');
   const [showReturnModal, setShowReturnModal] = useState(false);
+  const [returnToStage, setReturnToStage] = useState('');
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const [newJourney, setNewJourney] = useState({ 
     patientId: '', 
@@ -28,25 +29,62 @@ const PatientIntake = () => {
     wardId: '' 
   });
 
+  // ✅ Get category info
+  const getCategoryInfo = (category) => {
+    const map = {
+      'FPP': { label: '💰 FPP', className: 'category-fpp', tooltip: 'Free Paying Patient - Full Payment' },
+      'NHIS': { label: '🏥 NHIS', className: 'category-nhis', tooltip: 'National Health Insurance - 10% Payment' },
+      'CORPORATE': { label: '🏢 Corporate', className: 'category-corporate', tooltip: 'Corporate/Company - Double Rate' },
+    };
+    return map[category] || map['FPP'];
+  };
+
   const fetchData = async () => {
     setLoading(true);
     try {
       const [journeyRes, clinicRes, wardRes] = await Promise.all([
-        axios.get('http://localhost:3000/api/patient-journeys', { headers: { Authorization: `Bearer ${token}` } }),
-        axios.get('http://localhost:3000/api/clinics', { headers: { Authorization: `Bearer ${token}` } }),
-        axios.get('http://localhost:3000/api/wards', { headers: { Authorization: `Bearer ${token}` } })
+        axios.get('http://localhost:3000/api/patient-journeys', { 
+          headers: { Authorization: `Bearer ${token}` } 
+        }),
+        axios.get('http://localhost:3000/api/clinics', { 
+          headers: { Authorization: `Bearer ${token}` } 
+        }),
+        axios.get('http://localhost:3000/api/wards', { 
+          headers: { Authorization: `Bearer ${token}` } 
+        })
       ]);
-      setJourneys(journeyRes.data);
+      
+      // ✅ Add isArchived and category fields for each patient
+      const journeysWithDetails = journeyRes.data.map((journey) => {
+        return {
+          ...journey,
+          patient: {
+            ...journey.patient,
+            isArchived: journey.patient?.isArchived || false,
+            patientCategory: journey.patient?.patientCategory || 'FPP',
+            insuranceProvider: journey.patient?.insuranceProvider || '',
+            insuranceId: journey.patient?.insuranceId || '',
+            corporateCompany: journey.patient?.corporateCompany || '',
+          }
+        };
+      });
+      
+      setJourneys(journeysWithDetails);
       setClinics(clinicRes.data);
       setWards(wardRes.data);
     } catch (error) { 
+      console.error('Fetch error:', error);
       toast.error('Failed to load intake data'); 
     } finally { 
       setLoading(false); 
     }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { 
+    if (token) {
+      fetchData(); 
+    }
+  }, [token, refreshKey]);
 
   const getStatusColor = (status) => {
     const map = {
@@ -102,7 +140,7 @@ const PatientIntake = () => {
       toast.success('Patient intake started successfully!');
       setShowModal(false);
       setNewJourney({ patientId: '', destinationType: 'CLINIC', clinicId: '', wardId: '' });
-      fetchData();
+      setRefreshKey(prev => prev + 1);
     } catch (error) { 
       toast.error(error.response?.data?.error || 'Failed to start intake'); 
     }
@@ -114,13 +152,13 @@ const PatientIntake = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       toast.success(`Status updated to ${status.replace(/_/g, ' ')}`);
-      fetchData();
+      setRefreshKey(prev => prev + 1);
     } catch (error) { 
       toast.error('Failed to update status'); 
     }
   };
 
-  // ✅ NEW: Handle reverse journey
+  // ✅ Reverse journey handler
   const handleReverseJourney = async () => {
     if (!selectedJourney) return;
     if (!reverseReason) {
@@ -137,13 +175,13 @@ const PatientIntake = () => {
       setShowReverseModal(false);
       setReverseReason('');
       setSelectedJourney(null);
-      fetchData();
+      setRefreshKey(prev => prev + 1);
     } catch (error) {
       toast.error(error.response?.data?.error || 'Failed to reverse journey');
     }
   };
 
-  // ✅ NEW: Handle return to stage
+  // ✅ Return to stage handler
   const handleReturnToStage = async () => {
     if (!selectedJourney || !returnToStage) {
       toast.error('Please select a target stage');
@@ -162,13 +200,57 @@ const PatientIntake = () => {
       setShowReturnModal(false);
       setReturnToStage('');
       setSelectedJourney(null);
-      fetchData();
+      setRefreshKey(prev => prev + 1);
     } catch (error) {
       toast.error(error.response?.data?.error || 'Failed to return to stage');
     }
   };
 
-  // ✅ NEW: Handle reprint card
+  // ✅ Archive patient handler
+  const handleArchivePatient = async (patient) => {
+    if (!patient || !patient.id) {
+      toast.error('Patient data is incomplete. Please refresh the page and try again.');
+      console.error('Archive error: Patient data is missing ID', patient);
+      return;
+    }
+
+    const reason = prompt(`Reason for archiving ${patient.firstName} ${patient.lastName} (optional):`);
+    
+    try {
+      await axios.post(`http://localhost:3000/api/patients/${patient.id}/archive`, 
+        { reason: reason || 'Manual archive' },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast.success(`${patient.firstName} ${patient.lastName} archived successfully!`);
+      setRefreshKey(prev => prev + 1);
+    } catch (error) {
+      console.error('Archive error:', error);
+      toast.error(error.response?.data?.error || 'Failed to archive patient');
+    }
+  };
+
+  // ✅ Unarchive patient handler
+  const handleUnarchivePatient = async (patient) => {
+    if (!patient || !patient.id) {
+      toast.error('Invalid patient data. Please refresh and try again.');
+      return;
+    }
+
+    if (!window.confirm(`Are you sure you want to unarchive ${patient.firstName} ${patient.lastName}?`)) return;
+    
+    try {
+      await axios.post(`http://localhost:3000/api/patients/${patient.id}/unarchive`, 
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast.success(`${patient.firstName} ${patient.lastName} unarchived successfully!`);
+      setRefreshKey(prev => prev + 1);
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to unarchive patient');
+    }
+  };
+
+  // ✅ Reprint card handler
   const handleReprintCard = async (journey) => {
     try {
       const res = await axios.post(`http://localhost:3000/api/patient-journeys/${journey.id}/reprint-card`, 
@@ -192,11 +274,11 @@ const PatientIntake = () => {
     window.print();
   };
 
-  // ✅ Get available stages for return (previous stages only)
+  // ✅ Get available stages for return
   const getAvailableStages = (currentStatus) => {
     const stages = ['REGISTERED', 'PENDING_BILLING', 'BILLING_CLEARED', 'CARD_PRINTED', 'SENT_TO_DESTINATION', 'COMPLETED'];
     const currentIndex = stages.indexOf(currentStatus);
-    return stages.slice(0, currentIndex); // Only previous stages
+    return stages.slice(0, currentIndex);
   };
 
   if (loading) return <div className="spinner" />;
@@ -205,7 +287,28 @@ const PatientIntake = () => {
     <div className="dashboard">
       <div className="page-header">
         <h2>Patient Intake Pipeline</h2>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>+ Start New Patient Intake</button>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button 
+            className="btn btn-secondary" 
+            onClick={() => {
+              toast.success('Refreshing data...');
+              setRefreshKey(prev => prev + 1);
+            }}
+            style={{ 
+              background: '#0f3460', 
+              color: 'white',
+              border: 'none',
+              padding: '8px 16px',
+              borderRadius: '6px',
+              cursor: 'pointer'
+            }}
+          >
+            🔄 Refresh
+          </button>
+          <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+            + Start New Patient Intake
+          </button>
+        </div>
       </div>
       
       <div className="table-container">
@@ -214,6 +317,7 @@ const PatientIntake = () => {
             <tr>
               <th>Hospital ID</th>
               <th>Patient Name</th>
+              <th>Category</th>
               <th>Destination</th>
               <th>Status</th>
               <th>Actions</th>
@@ -223,6 +327,8 @@ const PatientIntake = () => {
             {journeys.map(j => {
               let action = null;
               const isCompleted = j.status === 'COMPLETED';
+              const patient = j.patient;
+              const categoryInfo = getCategoryInfo(patient?.patientCategory);
               
               if (j.status === 'REGISTERED') {
                 action = { label: '💰 Send to Billing', status: 'PENDING_BILLING' };
@@ -238,7 +344,6 @@ const PatientIntake = () => {
                 ? j.ward?.name 
                 : j.clinic?.name;
 
-              // ✅ Show card print button for BILLING_CLEARED, CARD_PRINTED, or SENT_TO_DESTINATION
               const showCardButton = ['BILLING_CLEARED', 'CARD_PRINTED', 'SENT_TO_DESTINATION', 'COMPLETED'].includes(j.status);
               const showReprintButton = j.status === 'COMPLETED' && j.cardGeneratedAt;
               const showReverseButton = j.status === 'COMPLETED' || j.status === 'SENT_TO_DESTINATION';
@@ -246,8 +351,34 @@ const PatientIntake = () => {
 
               return (
                 <tr key={j.id}>
-                  <td><strong>{j.patient?.hospitalId}</strong></td>
-                  <td>{j.patient?.firstName} {j.patient?.lastName}</td>
+                  <td><strong>{patient?.hospitalId}</strong></td>
+                  <td>{patient?.firstName} {patient?.lastName}</td>
+                  <td>
+                    <span 
+                      className={`category-badge ${categoryInfo.className}`}
+                      title={categoryInfo.tooltip}
+                      style={{
+                        display: 'inline-block',
+                        padding: '3px 12px',
+                        borderRadius: '12px',
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {categoryInfo.label}
+                    </span>
+                    {patient?.patientCategory === 'NHIS' && patient?.insuranceProvider && (
+                      <div style={{ fontSize: '10px', color: '#6b7280', marginTop: '2px' }}>
+                        {patient.insuranceProvider}
+                      </div>
+                    )}
+                    {patient?.patientCategory === 'CORPORATE' && patient?.corporateCompany && (
+                      <div style={{ fontSize: '10px', color: '#6b7280', marginTop: '2px' }}>
+                        {patient.corporateCompany}
+                      </div>
+                    )}
+                  </td>
                   <td>
                     {destinationName || '—'}
                     <span style={{fontSize: '0.75rem', color: '#ccc', marginLeft: '5px'}}>
@@ -262,23 +393,45 @@ const PatientIntake = () => {
                       {getStatusLabel(j.status)}
                     </span>
                   </td>
-                  <td>
+                  <td style={{ minWidth: '450px', display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center' }}>
                     {/* 🖨️ Print Card Button */}
                     {showCardButton && (
                       <button 
-                        className="btn btn-sm btn-secondary" 
-                        style={{ marginRight: '5px' }}
-                        onClick={() => handlePrintCard(j.patient)}
+                        className="btn btn-sm" 
+                        style={{ 
+                          marginRight: '4px', 
+                          background: '#0f3460', 
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          padding: '4px 10px',
+                          cursor: 'pointer',
+                          fontSize: '11px',
+                          fontWeight: '600',
+                          whiteSpace: 'nowrap'
+                        }}
+                        onClick={() => handlePrintCard(patient)}
                       >
                         🖨️ Print Card
                       </button>
                     )}
 
-                    {/* 🔄 Reprint Card Button (for completed journeys) */}
+                    {/* 🔄 Reprint Card Button */}
                     {showReprintButton && (
                       <button 
-                        className="btn btn-sm btn-warning" 
-                        style={{ marginRight: '5px' }}
+                        className="btn btn-sm" 
+                        style={{ 
+                          marginRight: '4px', 
+                          background: '#f59e0b', 
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          padding: '4px 10px',
+                          cursor: 'pointer',
+                          fontSize: '11px',
+                          fontWeight: '600',
+                          whiteSpace: 'nowrap'
+                        }}
                         onClick={() => handleReprintCard(j)}
                       >
                         🔄 Reprint
@@ -288,8 +441,19 @@ const PatientIntake = () => {
                     {/* ↩️ Reverse Button */}
                     {showReverseButton && (
                       <button 
-                        className="btn btn-sm btn-danger" 
-                        style={{ marginRight: '5px' }}
+                        className="btn btn-sm" 
+                        style={{ 
+                          marginRight: '4px', 
+                          background: '#ef4444', 
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          padding: '4px 10px',
+                          cursor: 'pointer',
+                          fontSize: '11px',
+                          fontWeight: '600',
+                          whiteSpace: 'nowrap'
+                        }}
                         onClick={() => {
                           setSelectedJourney(j);
                           setShowReverseModal(true);
@@ -302,8 +466,19 @@ const PatientIntake = () => {
                     {/* 🔄 Return to Stage Button */}
                     {showReturnButton && !isCompleted && (
                       <button 
-                        className="btn btn-sm btn-warning" 
-                        style={{ marginRight: '5px' }}
+                        className="btn btn-sm" 
+                        style={{ 
+                          marginRight: '4px', 
+                          background: '#f59e0b', 
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          padding: '4px 10px',
+                          cursor: 'pointer',
+                          fontSize: '11px',
+                          fontWeight: '600',
+                          whiteSpace: 'nowrap'
+                        }}
                         onClick={() => {
                           setSelectedJourney(j);
                           setReturnToStage('');
@@ -314,22 +489,59 @@ const PatientIntake = () => {
                       </button>
                     )}
 
-                    {/* Next Action Button */}
+                    {/* ✅ Archive Button */}
+                    {isCompleted && patient && patient.id ? (
+                      <button 
+                        className="btn btn-sm" 
+                        style={{ 
+                          marginRight: '4px', 
+                          background: '#6b7280', 
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          padding: '4px 10px',
+                          cursor: 'pointer',
+                          fontSize: '11px',
+                          fontWeight: '600',
+                          whiteSpace: 'nowrap'
+                        }}
+                        onClick={() => handleArchivePatient(patient)}
+                      >
+                        📦 Archive
+                      </button>
+                    ) : isCompleted && (
+                      <span style={{ fontSize: '11px', color: '#ef4444' }}>
+                        ⚠️ No ID
+                      </span>
+                    )}
+
+                    {/* Next Action Button or End of process */}
                     {action ? (
                       <button 
-                        className="btn btn-sm btn-primary" 
+                        className="btn btn-sm" 
+                        style={{ 
+                          background: '#0f3460', 
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          padding: '4px 10px',
+                          cursor: 'pointer',
+                          fontSize: '11px',
+                          fontWeight: '600',
+                          whiteSpace: 'nowrap'
+                        }}
                         onClick={() => handleStatusUpdate(j.id, action.status)}
                       >
                         {action.label}
                       </button>
                     ) : (
-                      <span style={{opacity: 0.6}}>End of process</span>
+                      <span style={{opacity: 0.6, fontSize: '12px', color: '#6b7280'}}>End of process</span>
                     )}
                   </td>
                 </tr>
               );
             })}
-            {journeys.length === 0 && <tr><td colSpan="5" className="text-center">No active patient intakes. Start a new one!</td></tr>}
+            {journeys.length === 0 && <tr><td colSpan="6" className="text-center">No active patient intakes. Start a new one!</td></tr>}
           </tbody>
         </table>
       </div>
@@ -429,7 +641,7 @@ const PatientIntake = () => {
         </div>
       )}
 
-      {/* Start Intake Modal - Keep existing */}
+      {/* Start Intake Modal */}
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>

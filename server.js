@@ -80,7 +80,8 @@ const checkPermission = (permissionKey) => {
             roiRequests: false,
             nurseDashboard: false,
             doctorDashboard: false,
-            antenatal: false
+            antenatal: false,
+            archivedPatients: false // ✅ ADD THIS
           }
         });
         return res.status(403).json({ error: 'Forbidden – insufficient permissions' });
@@ -273,14 +274,169 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
+// ============ PATIENT ARCHIVE ENDPOINTS ============
+// MUST COME BEFORE /api/patients/:id
+
+// Get all archived patients - Uses checkPermission('archivedPatients')
+app.get('/api/patients/archived', authenticate, checkPermission('archivedPatients'), async (req, res) => {
+  try {
+    console.log('📦 Fetching archived patients...');
+    console.log('👤 User role:', req.user?.role);
+    
+    const patients = await prisma.patient.findMany({
+      where: { isArchived: true },
+      include: {
+        journeys: {
+          where: { status: 'COMPLETED' },
+          orderBy: { createdAt: 'desc' },
+          take: 1
+        }
+      },
+      orderBy: { archivedAt: 'desc' }
+    });
+
+    console.log(`✅ Found ${patients.length} archived patients`);
+    res.json(patients);
+  } catch (error) {
+    console.error('Get archived patients error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Archive a patient (Manual)
+app.post('/api/patients/:id/archive', authenticate, authorize('Admin', 'Records'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    console.log(`📦 Archiving patient: ${id}`);
+
+    const patient = await prisma.patient.findUnique({
+      where: { id },
+      include: { 
+        journeys: {
+          where: { status: 'COMPLETED' },
+          orderBy: { createdAt: 'desc' },
+          take: 1
+        }
+      }
+    });
+
+    if (!patient) {
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+
+    if (patient.isArchived) {
+      return res.status(400).json({ error: 'Patient is already archived' });
+    }
+
+    const hasCompletedJourney = patient.journeys.some(j => j.status === 'COMPLETED');
+    if (!hasCompletedJourney) {
+      return res.status(400).json({ 
+        error: 'Patient must have a completed journey before archiving' 
+      });
+    }
+
+    const archivedPatient = await prisma.patient.update({
+      where: { id },
+      data: {
+        isArchived: true,
+        archivedAt: new Date(),
+        archivedReason: reason || 'Manually archived by staff',
+        archivedBy: req.user.id,
+        autoArchived: false
+      }
+    });
+
+    if (patient.journeys.length > 0) {
+      await prisma.patientJourney.update({
+        where: { id: patient.journeys[0].id },
+        data: { archivedAt: new Date() }
+      });
+    }
+
+    await prisma.auditLog.create({
+      data: {
+        staffId: req.user.id,
+        action: 'ARCHIVE_PATIENT',
+        module: 'Records',
+        details: `Manually archived patient ${patient.hospitalId} - ${patient.firstName} ${patient.lastName}`
+      }
+    });
+
+    console.log(`✅ Patient archived: ${patient.hospitalId}`);
+    res.json({ 
+      message: 'Patient archived successfully', 
+      patient: archivedPatient 
+    });
+  } catch (error) {
+    console.error('Archive error:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Unarchive a patient
+app.post('/api/patients/:id/unarchive', authenticate, authorize('Admin', 'Records'), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    console.log(`📂 Unarchiving patient: ${id}`);
+
+    const patient = await prisma.patient.findUnique({
+      where: { id }
+    });
+
+    if (!patient) {
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+
+    if (!patient.isArchived) {
+      return res.status(400).json({ error: 'Patient is not archived' });
+    }
+
+    const unarchivedPatient = await prisma.patient.update({
+      where: { id },
+      data: {
+        isArchived: false,
+        archivedAt: null,
+        archivedReason: null,
+        archivedBy: null,
+        autoArchived: false
+      }
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        staffId: req.user.id,
+        action: 'UNARCHIVE_PATIENT',
+        module: 'Records',
+        details: `Unarchived patient ${patient.hospitalId} - ${patient.firstName} ${patient.lastName}`
+      }
+    });
+
+    console.log(`✅ Patient unarchived: ${patient.hospitalId}`);
+    res.json({ 
+      message: 'Patient unarchived successfully', 
+      patient: unarchivedPatient 
+    });
+  } catch (error) {
+    console.error('Unarchive error:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
 // ============ PATIENT ENDPOINTS ============
 
 // Create a new patient - Only Records, Admin, ITAdmin
 app.post('/api/patients', authenticate, authorize('Admin', 'Records', 'ITAdmin'), async (req, res) => {
   try {
-    const { 
+     const { 
       firstName, lastName, dateOfBirth, gender, phone, email, address, 
-      emergencyContact, allergies, nextOfKinName, nextOfKinPhone, nextOfKinRelationship 
+      emergencyContact, allergies, nextOfKinName, nextOfKinPhone, nextOfKinRelationship,
+      patientCategory,
+      insuranceProvider,
+      insuranceId,
+      corporateCompany
     } = req.body;
 
     if (!firstName || !lastName || !dateOfBirth || !gender) {
@@ -312,12 +468,26 @@ app.post('/api/patients', authenticate, authorize('Admin', 'Records', 'ITAdmin')
                           .padStart(6, '0');
 
         patient = await prisma.patient.create({
-          data: {
-            hospitalId, firstName, lastName, dateOfBirth: new Date(dateOfBirth), gender,
-            phone, email, address, emergencyContact, allergies,
-            nextOfKinName, nextOfKinPhone, nextOfKinRelationship 
-          }
-        });
+      data: {
+        hospitalId, 
+        firstName, 
+        lastName, 
+        dateOfBirth: new Date(dateOfBirth), 
+        gender,
+        phone, 
+        email, 
+        address, 
+        emergencyContact, 
+        allergies,
+        nextOfKinName, 
+        nextOfKinPhone, 
+        nextOfKinRelationship,
+        patientCategory: patientCategory || 'FPP',
+        insuranceProvider: insuranceProvider || null,
+        insuranceId: insuranceId || null,
+        corporateCompany: corporateCompany || null
+      }
+    });
         
         break;
       } catch (err) {
@@ -464,19 +634,42 @@ app.put('/api/patients/:id', authenticate, authorize('Admin', 'Records', 'ITAdmi
     const { id } = req.params;
     const { 
       firstName, lastName, dateOfBirth, gender, phone, email, address, 
-      emergencyContact, allergies, nextOfKinName, nextOfKinPhone, nextOfKinRelationship 
+      emergencyContact, allergies, nextOfKinName, nextOfKinPhone, nextOfKinRelationship,
+      patientCategory,
+      insuranceProvider,
+      insuranceId,
+      corporateCompany
     } = req.body;
+
+    console.log('📝 Updating patient:', id);
+    console.log('📝 New category:', patientCategory);
 
     const patient = await prisma.patient.update({
       where: { id },
       data: {
-        firstName, lastName, dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
-        gender, phone, email, address, emergencyContact, allergies,
-        nextOfKinName, nextOfKinPhone, nextOfKinRelationship
+        firstName, 
+        lastName, 
+        dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
+        gender, 
+        phone, 
+        email, 
+        address, 
+        emergencyContact, 
+        allergies,
+        nextOfKinName, 
+        nextOfKinPhone, 
+        nextOfKinRelationship,
+        patientCategory: patientCategory || 'FPP',
+        insuranceProvider: insuranceProvider || null,
+        insuranceId: insuranceId || null,
+        corporateCompany: corporateCompany || null
       }
     });
+
+    console.log('✅ Patient updated:', patient);
     res.json(patient);
   } catch (error) {
+    console.error('Update patient error:', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -1192,6 +1385,22 @@ app.patch('/api/lab-orders/:id/results', authenticate, authorize('Doctor', 'Nurs
 
 // ============ BILLING ENDPOINTS ============
 
+// Function to calculate amount based on patient category
+function calculateAmountByCategory(baseAmount, patientCategory) {
+  switch (patientCategory) {
+    case 'NHIS':
+      // NHIS pays 10% of the base amount
+      return Math.round(baseAmount * 0.1);
+    case 'CORPORATE':
+      // Corporate pays double the base amount
+      return baseAmount * 2;
+    case 'FPP':
+    default:
+      // FPP pays the full amount
+      return baseAmount;
+  }
+}
+
 // Get all billing records for a patient - All authenticated users
 app.get('/api/patients/:patientId/bills', authenticate, async (req, res) => {
   try {
@@ -1212,22 +1421,16 @@ app.get('/api/billing', authenticate, authorize('Admin', 'ITAdmin', 'Accountant'
   try {
     const { search, status, dateFrom, dateTo, limit = 100, offset = 0 } = req.query;
 
-    // Build where clause
     let where = {};
-
-    // Status filter
     if (status && status !== 'All') {
       where.status = status;
     }
-
-    // Date range filter
     if (dateFrom || dateTo) {
       where.createdAt = {};
       if (dateFrom) where.createdAt.gte = new Date(dateFrom);
       if (dateTo) where.createdAt.lte = new Date(dateTo + 'T23:59:59');
     }
 
-    // Search filter - by patient name, hospital ID, or invoice number
     let patientFilter = {};
     if (search) {
       patientFilter = {
@@ -1251,7 +1454,10 @@ app.get('/api/billing', authenticate, authorize('Admin', 'ITAdmin', 'Accountant'
             hospitalId: true,
             firstName: true,
             lastName: true,
-            phone: true
+            phone: true,
+            patientCategory: true,
+            insuranceProvider: true,
+            corporateCompany: true
           }
         },
         journey: true
@@ -1291,24 +1497,63 @@ app.post('/api/billing', authenticate, authorize('Admin', 'ITAdmin', 'Accountant
       });
     }
 
-    const discountValue = discount || 0;
-    const taxValue = tax || 0;
-    const totalAmount = amount - discountValue + taxValue;
+    // ✅ Get patient to check category
+    const patient = await prisma.patient.findUnique({
+      where: { id: patientId },
+      select: { 
+        patientCategory: true,
+        insuranceProvider: true,
+        corporateCompany: true,
+        firstName: true,
+        lastName: true,
+        hospitalId: true
+      }
+    });
+
+    if (!patient) {
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+
+    // ✅ Calculate amount based on patient category
+    const baseAmount = parseFloat(amount);
+    let finalAmount = baseAmount;
+
+    if (patient.patientCategory === 'NHIS') {
+      // NHIS pays 10%
+      finalAmount = Math.round(baseAmount * 0.1);
+    } else if (patient.patientCategory === 'CORPORATE') {
+      // Corporate pays double
+      finalAmount = baseAmount * 2;
+    }
+    // FPP pays full amount (no change)
+
+    const discountValue = parseFloat(discount) || 0;
+    const taxValue = parseFloat(tax) || 0;
+    const totalAmount = finalAmount - discountValue + taxValue;
 
     const count = await prisma.billingRecord.count();
     const invoiceNumber = `INV-${new Date().getFullYear()}-${String(count + 1).padStart(6, '0')}`;
+
+    // ✅ Create description with category info
+    let categoryDescription = description;
+    if (patient.patientCategory !== 'FPP') {
+      const categoryNote = patient.patientCategory === 'NHIS' 
+        ? `(NHIS - 10% of ${baseAmount} = ${finalAmount})` 
+        : `(CORPORATE - 200% of ${baseAmount} = ${finalAmount})`;
+      categoryDescription = `${description} ${categoryNote}`;
+    }
 
     const bill = await prisma.billingRecord.create({
       data: {
         patientId,
         invoiceNumber,
-        description,
-        amount,
+        description: categoryDescription,
+        amount: finalAmount,
         discount: discountValue,
         tax: taxValue,
         totalAmount,
         status: 'Pending',
-        insuranceProvider
+        insuranceProvider: insuranceProvider || patient.insuranceProvider || null
       },
       include: {
         patient: true
@@ -1320,7 +1565,7 @@ app.post('/api/billing', authenticate, authorize('Admin', 'ITAdmin', 'Accountant
         staffId: req.user.id,
         action: 'CREATE_BILL',
         module: 'Billing',
-        details: `Created bill ${invoiceNumber} for patient ${bill.patient.hospitalId}`
+        details: `Created bill ${invoiceNumber} for patient ${patient.hospitalId} (${patient.patientCategory}) - Amount: ${totalAmount}`
       }
     });
 
@@ -1337,7 +1582,18 @@ app.get('/api/billing/:id', authenticate, async (req, res) => {
     const bill = await prisma.billingRecord.findUnique({
       where: { id: req.params.id },
       include: { 
-        patient: true 
+        patient: {
+          select: {
+            id: true,
+            hospitalId: true,
+            firstName: true,
+            lastName: true,
+            phone: true,
+            patientCategory: true,
+            insuranceProvider: true,
+            corporateCompany: true
+          }
+        }
       }
     });
     if (!bill) {
@@ -1360,6 +1616,16 @@ app.patch('/api/billing/:id/pay', authenticate, authorize('Admin', 'ITAdmin', 'A
       return res.status(400).json({ error: 'Payment method is required' });
     }
 
+    // Get the bill with patient info for audit
+    const existingBill = await prisma.billingRecord.findUnique({
+      where: { id },
+      include: { patient: true }
+    });
+
+    if (!existingBill) {
+      return res.status(404).json({ error: 'Bill not found' });
+    }
+
     const bill = await prisma.billingRecord.update({
       where: { id },
       data: {
@@ -1378,7 +1644,7 @@ app.patch('/api/billing/:id/pay', authenticate, authorize('Admin', 'ITAdmin', 'A
         staffId: req.user.id,
         action: 'PAY_BILL',
         module: 'Billing',
-        details: `Paid bill ${bill.invoiceNumber} via ${paymentMethod}`
+        details: `Paid bill ${bill.invoiceNumber} via ${paymentMethod} for patient ${bill.patient?.hospitalId} (${bill.patient?.patientCategory})`
       }
     });
 
@@ -1568,7 +1834,6 @@ app.get('/api/audit-logs', authenticate, authorize('Admin', 'ITAdmin'), async (r
 
 // ============ DASHBOARD STATISTICS (Role-Aware) ============
 
-// Get dashboard statistics – adapted based on the logged‑in user's role
 app.get('/api/dashboard/stats', authenticate, async (req, res) => {
   try {
     const role = req.user.role;
@@ -1614,10 +1879,6 @@ app.get('/api/dashboard/stats', authenticate, async (req, res) => {
       const clinicIds = staff.clinics.map(c => c.clinicId);
       const wardIds = staff.wards.map(w => w.wardId);
 
-      console.log(`🛠️ [Stats Endpoint] Clinic IDs for ${req.user.role}:`, clinicIds);
-      console.log(`🛠️ [Stats Endpoint] Ward IDs for ${req.user.role}:`, wardIds);
-
-      // Get patients in assigned clinics/wards
       const patientJourneys = await prisma.patientJourney.findMany({
         where: {
           status: { in: ['SENT_TO_DESTINATION', 'COMPLETED'] },
@@ -1629,8 +1890,6 @@ app.get('/api/dashboard/stats', authenticate, async (req, res) => {
         select: { patientId: true }
       });
       const patientIds = patientJourneys.map(j => j.patientId);
-
-      console.log(`📊 Found ${patientIds.length} patients in assigned areas`);
 
       const [myPatientsCount, myAppointmentsCount] = await Promise.all([
         prisma.patientJourney.count({
@@ -1647,12 +1906,10 @@ app.get('/api/dashboard/stats', authenticate, async (req, res) => {
         })
       ]);
 
-      // ✅ For Doctors & Obstetricians: No vitals - use prescriptions instead
       let prescriptionsCount = 0;
       let vitalsCount = 0;
       
       if (['Doctor', 'Obstetrician'].includes(role)) {
-        // Doctors/Obstetricians: Count prescriptions they've written for their patients
         if (patientIds.length > 0) {
           prescriptionsCount = await prisma.prescription.count({
             where: { 
@@ -1662,21 +1919,16 @@ app.get('/api/dashboard/stats', authenticate, async (req, res) => {
           });
         }
         console.log(`💊 Found ${prescriptionsCount} prescriptions written by doctor`);
-        
-        // ✅ Build response for Doctors/Obstetricians - NO VITALS
         responseData = { 
           myPatientsCount, 
           myAppointmentsCount, 
           myPrescriptionsCount: prescriptionsCount
         };
       } else {
-        // ✅ For Nurses & Midwives: Count vitals they recorded
         vitalsCount = await prisma.vitalSign.count({ 
           where: { nurseId: req.user.id } 
         });
         console.log(`❤️ Found ${vitalsCount} vitals recorded by nurse`);
-        
-        // ✅ Build response for Nurses/Midwives - WITH VITALS
         responseData = { 
           myPatientsCount, 
           myAppointmentsCount, 
@@ -1925,19 +2177,45 @@ app.delete('/api/clinics/:id', authenticate, authorize('Admin'), async (req, res
 // ============ PATIENT INTAKE & JOURNEY (Records Staff) ============
 
 // Get all active patient journeys (Pipeline)
+// Get all active patient journeys (Pipeline)
 app.get('/api/patient-journeys', authenticate, authorize('Admin', 'Records'), async (req, res) => {
   try {
     const journeys = await prisma.patientJourney.findMany({
       include: {
-        patient: { select: { firstName: true, lastName: true, hospitalId: true, gender: true, dateOfBirth: true } },
+        patient: { 
+          select: { 
+            id: true,
+            hospitalId: true, 
+            firstName: true, 
+            lastName: true, 
+            gender: true, 
+            dateOfBirth: true,
+            isArchived: true,
+            // ✅ Include category fields
+            patientCategory: true,
+            insuranceProvider: true,
+            insuranceId: true,
+            corporateCompany: true
+          } 
+        },
         clinic: true,
         ward: true,
-        registeredBy: { select: { firstName: true, lastName: true } }
+        registeredBy: { 
+          select: { 
+            id: true,
+            firstName: true, 
+            lastName: true 
+          } 
+        },
+        billingRecord: true
       },
       orderBy: { createdAt: 'desc' }
     });
     res.json(journeys);
-  } catch (error) { res.status(500).json({ error: error.message }); }
+  } catch (error) { 
+    console.error('Get journeys error:', error);
+    res.status(500).json({ error: error.message }); 
+  }
 });
 
 // Start a new patient journey (Records registers patient and sends to destination)
@@ -2135,8 +2413,6 @@ app.patch('/api/patient-journeys/:id/status', authenticate, authorize('Admin', '
 
 // ============ PATIENT INTAKE - REVERSE/UNDO ENDPOINTS ============
 
-// ============ PATIENT INTAKE - REVERSE/UNDO ENDPOINTS ============
-
 // Reverse a completed journey (undo COMPLETED status)
 app.patch('/api/patient-journeys/:id/reverse', authenticate, authorize('Admin', 'Records'), async (req, res) => {
   try {
@@ -2152,19 +2428,15 @@ app.patch('/api/patient-journeys/:id/reverse', authenticate, authorize('Admin', 
       return res.status(404).json({ error: 'Journey not found' });
     }
 
-    // ✅ Only allow reversing from COMPLETED or SENT_TO_DESTINATION
     if (!['COMPLETED', 'SENT_TO_DESTINATION'].includes(journey.status)) {
       return res.status(400).json({ 
         error: 'Only COMPLETED or SENT_TO_DESTINATION journeys can be reversed' 
       });
     }
 
-    // ✅ Reverse to previous status based on destination type
     let newStatus = 'SENT_TO_DESTINATION';
 
-    // If the journey has a billing record, handle it
     if (journey.billingRecordId) {
-      // Keep the bill but reset its status to Pending
       await prisma.billingRecord.update({
         where: { id: journey.billingRecordId },
         data: { 
@@ -2175,7 +2447,6 @@ app.patch('/api/patient-journeys/:id/reverse', authenticate, authorize('Admin', 
       });
     }
 
-    // If there's an admission, discharge it
     if (journey.wardId) {
       const admission = await prisma.admission.findFirst({
         where: { 
@@ -2195,7 +2466,6 @@ app.patch('/api/patient-journeys/:id/reverse', authenticate, authorize('Admin', 
       }
     }
 
-    // Update the journey
     const updatedJourney = await prisma.patientJourney.update({
       where: { id },
       data: { 
@@ -2211,7 +2481,6 @@ app.patch('/api/patient-journeys/:id/reverse', authenticate, authorize('Admin', 
       }
     });
 
-    // Audit log
     await prisma.auditLog.create({
       data: {
         staffId: req.user.id,
@@ -2246,23 +2515,20 @@ app.post('/api/patient-journeys/:id/reprint-card', authenticate, authorize('Admi
       return res.status(404).json({ error: 'Journey not found' });
     }
 
-    // ✅ Only allow reprint if card was already printed
     if (!journey.cardGeneratedAt) {
       return res.status(400).json({ 
         error: 'Card has not been printed yet. Please mark as CARD_PRINTED first.' 
       });
     }
 
-    // ✅ Update the card generation timestamp (for reprint tracking)
     const updatedJourney = await prisma.patientJourney.update({
       where: { id },
       data: { 
-        cardGeneratedAt: new Date() // Update to current time
+        cardGeneratedAt: new Date()
       },
       include: { patient: true }
     });
 
-    // Audit log
     await prisma.auditLog.create({
       data: {
         staffId: req.user.id,
@@ -2305,7 +2571,6 @@ app.patch('/api/patient-journeys/:id/return-to-stage', authenticate, authorize('
       return res.status(404).json({ error: 'Journey not found' });
     }
 
-    // ✅ Prevent moving forward (only backward)
     const statusOrder = ['REGISTERED', 'PENDING_BILLING', 'BILLING_CLEARED', 'CARD_PRINTED', 'SENT_TO_DESTINATION', 'COMPLETED'];
     const currentIndex = statusOrder.indexOf(journey.status);
     const targetIndex = statusOrder.indexOf(targetStatus);
@@ -2316,11 +2581,9 @@ app.patch('/api/patient-journeys/:id/return-to-stage', authenticate, authorize('
       });
     }
 
-    // ✅ Clear related data based on target status
     let updateData = { status: targetStatus };
     
     if (targetStatus === 'REGISTERED') {
-      // Clear everything
       updateData.cardGeneratedAt = null;
       updateData.sentToDestinationAt = null;
       updateData.billingRecordId = null;
@@ -2340,7 +2603,6 @@ app.patch('/api/patient-journeys/:id/return-to-stage', authenticate, authorize('
       include: { patient: true, clinic: true, ward: true }
     });
 
-    // Audit log
     await prisma.auditLog.create({
       data: {
         staffId: req.user.id,
@@ -3118,7 +3380,6 @@ app.get('/api/pregnancies', authenticate, checkPermission('antenatal'), async (r
     const role = req.user.role;
     console.log(`🔍 Fetching pregnancies for role: ${role}`);
     
-    // ✅ RESTRICT: Only these roles can access antenatal
     const allowedRoles = ['Admin', 'ITAdmin', 'Records', 'Obstetrician', 'Midwife', 'Nurse'];
     if (!allowedRoles.includes(role)) {
       console.log(`⛔ Role ${role} not allowed to access antenatal`);
@@ -3127,7 +3388,6 @@ app.get('/api/pregnancies', authenticate, checkPermission('antenatal'), async (r
       });
     }
     
-    // ✅ RESTRICT: Regular Doctors (not Obstetrician) cannot access
     if (role === 'Doctor') {
       console.log(`⛔ Regular Doctors cannot access antenatal module`);
       return res.status(403).json({ 
@@ -3176,7 +3436,6 @@ app.get('/api/pregnancies', authenticate, checkPermission('antenatal'), async (r
       }
     };
 
-    // For Nurse and Midwife roles, filter by assigned clinics/wards
     if (['Nurse', 'Midwife'].includes(role)) {
       console.log(`🔍 Filtering pregnancies for ${role}: ${req.user.id}`);
       
@@ -3416,7 +3675,6 @@ app.post('/api/deliveries', authenticate, checkPermission('antenatal'), async (r
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Create delivery record
       const delivery = await tx.delivery.create({
         data: {
           pregnancyId,
@@ -3433,7 +3691,6 @@ app.post('/api/deliveries', authenticate, checkPermission('antenatal'), async (r
         include: { pregnancy: { include: { patient: true } } }
       });
 
-      // 2. Update pregnancy status to Delivered
       await tx.pregnancy.update({
         where: { id: pregnancyId },
         data: { status: 'Delivered' }
@@ -3441,7 +3698,6 @@ app.post('/api/deliveries', authenticate, checkPermission('antenatal'), async (r
 
       const mother = delivery.pregnancy.patient;
       
-      // 3. Generate unique hospital ID for baby
       const allPatients = await tx.patient.findMany({
         select: { hospitalId: true }
       });
@@ -3456,14 +3712,12 @@ app.post('/api/deliveries', authenticate, checkPermission('antenatal'), async (r
       let babyHospitalId;
       let attempts = 0;
       
-      // 4. Generate unique hospital ID with retry
       while (attempts < 5) {
         babyHospitalId = ((nextIdNumber * 9301 + 12345) % 1000000)
           .toString()
           .padStart(6, '0');
         
         try {
-          // Check if this hospitalId already exists
           const existing = await tx.patient.findUnique({
             where: { hospitalId: babyHospitalId }
           });
@@ -3480,7 +3734,6 @@ app.post('/api/deliveries', authenticate, checkPermission('antenatal'), async (r
         throw new Error('Failed to generate unique hospital ID for baby');
       }
 
-      // 5. Generate unique email for baby
       let babyEmail;
       const emailPrefix = `baby_${babyHospitalId}`;
       
@@ -3491,7 +3744,6 @@ app.post('/api/deliveries', authenticate, checkPermission('antenatal'), async (r
         babyEmail = `${emailPrefix}@hospital.com`;
       }
       
-      // 6. Check if email already exists and make it unique if needed
       let emailExists = await tx.patient.findUnique({
         where: { email: babyEmail }
       });
@@ -3505,7 +3757,6 @@ app.post('/api/deliveries', authenticate, checkPermission('antenatal'), async (r
         counter++;
       }
 
-      // 7. Create baby patient record
       const baby = await tx.patient.create({
         data: {
           hospitalId: babyHospitalId,
@@ -3524,7 +3775,6 @@ app.post('/api/deliveries', authenticate, checkPermission('antenatal'), async (r
         }
       });
 
-      // 8. Find or create Paediatrics clinic
       let paediatricsClinic = await tx.clinic.findFirst({
         where: { 
           name: {
@@ -3545,7 +3795,6 @@ app.post('/api/deliveries', authenticate, checkPermission('antenatal'), async (r
         console.log('✅ Created Paediatrics clinic automatically');
       }
 
-      // 9. Create patient journey for baby to Paediatrics
       await tx.patientJourney.create({
         data: {
           patientId: baby.id,
@@ -3556,7 +3805,6 @@ app.post('/api/deliveries', authenticate, checkPermission('antenatal'), async (r
         }
       });
 
-      // 10. Create audit log
       await tx.auditLog.create({
         data: {
           staffId: req.user.id,
@@ -3575,6 +3823,125 @@ app.post('/api/deliveries', authenticate, checkPermission('antenatal'), async (r
     res.status(400).json({ error: error.message });
   }
 });
+
+// ============ AUTO-ARCHIVE SCHEDULED JOB ============
+
+// Auto-archive function (can be called manually or via cron)
+async function autoArchivePatients() {
+  console.log('🔄 Running auto-archive job...');
+  
+  try {
+    const threeDaysAgo = new Date();
+    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+    
+    const completedJourneys = await prisma.patientJourney.findMany({
+      where: {
+        status: 'COMPLETED',
+        completedAt: {
+          lte: threeDaysAgo
+        }
+      },
+      select: {
+        patientId: true,
+        patient: {
+          select: {
+            isArchived: true,
+            hospitalId: true,
+            firstName: true,
+            lastName: true
+          }
+        }
+      },
+      distinct: ['patientId']
+    });
+
+    const patientsToArchive = completedJourneys
+      .filter(j => !j.patient.isArchived)
+      .map(j => j.patient);
+
+    console.log(`📊 Found ${patientsToArchive.length} patients to auto-archive`);
+
+    let archivedCount = 0;
+    for (const patient of patientsToArchive) {
+      try {
+        await prisma.patient.update({
+          where: { id: patient.id },
+          data: {
+            isArchived: true,
+            archivedAt: new Date(),
+            archivedReason: 'Auto-archived after 3 days of completion',
+            archivedBy: null,
+            autoArchived: true
+          }
+        });
+
+        const journey = await prisma.patientJourney.findFirst({
+          where: {
+            patientId: patient.id,
+            status: 'COMPLETED'
+          },
+          orderBy: { completedAt: 'desc' }
+        });
+
+        if (journey) {
+          await prisma.patientJourney.update({
+            where: { id: journey.id },
+            data: { archivedAt: new Date() }
+          });
+        }
+
+        await prisma.auditLog.create({
+          data: {
+            staffId: null,
+            action: 'AUTO_ARCHIVE_PATIENT',
+            module: 'System',
+            details: `Auto-archived patient ${patient.hospitalId} - ${patient.firstName} ${patient.lastName} (3 days after completion)`
+          }
+        });
+
+        archivedCount++;
+        console.log(`✅ Auto-archived: ${patient.hospitalId} - ${patient.firstName} ${patient.lastName}`);
+      } catch (error) {
+        console.error(`❌ Failed to archive patient ${patient.id}:`, error);
+      }
+    }
+
+    console.log(`✅ Auto-archive completed. Archived ${archivedCount} patients.`);
+    return { archivedCount, total: patientsToArchive.length };
+  } catch (error) {
+    console.error('Auto-archive error:', error);
+    return { error: error.message };
+  }
+}
+
+// Endpoint to manually trigger auto-archive (Admin only)
+app.post('/api/system/auto-archive', authenticate, authorize('Admin', 'ITAdmin'), async (req, res) => {
+  try {
+    const result = await autoArchivePatients();
+    res.json({ 
+      message: 'Auto-archive job completed', 
+      ...result 
+    });
+  } catch (error) {
+    console.error('Manual auto-archive error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ✅ Start auto-archive schedule (runs every 6 hours)
+const cron = require('node-cron');
+
+cron.schedule('0 */6 * * *', async () => {
+  console.log(`🔄 Auto-archive job started at ${new Date().toISOString()}`);
+  await autoArchivePatients();
+});
+
+cron.schedule('0 2 * * *', async () => {
+  console.log(`🌙 Nightly auto-archive job started at ${new Date().toISOString()}`);
+  await autoArchivePatients();
+});
+
+console.log('✅ Auto-archive scheduler started (runs every 6 hours)');
 
 // ============ START SERVER ============
 const PORT = process.env.PORT || 3000;
@@ -3618,5 +3985,7 @@ app.listen(PORT, () => {
   console.log(`  🩺 Doctor Patients: /api/doctor/patients (Doctor/Obstetrician only)`);
   console.log(`  🔐 Permissions: /api/permissions (Admin only)`);
   console.log(`  🤰 Antenatal: /api/pregnancies, /api/pregnancies/:id, /api/pregnancies/:id/visits, /api/deliveries (permission-based)`);
+  console.log(`  📦 Archived Patients: /api/patients/archived (GET), /api/patients/:id/archive (POST), /api/patients/:id/unarchive (POST)`);
+  console.log(`  🤖 Auto-Archive: /api/system/auto-archive (POST, Admin only)`);
   console.log('='.repeat(50));
 });
