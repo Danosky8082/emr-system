@@ -14,39 +14,42 @@ const Layout = () => {
   const [permissions, setPermissions] = useState(null);
   const [loadingPermissions, setLoadingPermissions] = useState(true);
 
-  const allGroups = {
-    Clinical: [
-      { path: '/appointments', label: '📅 Appointments' },
-      { path: '/prescriptions', label: '💊 Prescriptions' },
-      { path: '/lab-orders', label: '🔬 Lab Orders' },
-      { path: '/pharmacy', label: '🏥 Pharmacy' },
-    ],
-    Finance: [
-      { path: '/billing', label: '💰 Billing' },
-      { path: '/billing-officer', label: '💵 Billing Desk' },
-    ],
-    Admin: [
-      { path: '/staff', label: '👨‍⚕️ Staff' },
-      { path: '/clinics', label: '🏥 Manage Clinics' },
-      { path: '/wards', label: '🛏️ Manage Wards' },
-      { path: '/pricing', label: '💲 Service Pricing' },
-      { path: '/nurse-dashboard', label: '🩺 Nurse Dashboard' },
-      { path: '/permissions', label: '🔐 Role Permissions' },
-    ],
-    Records: [
-      { path: '/patient-intake', label: '🔄 Patient Intake' },
-      { path: '/admissions', label: '🏥 ADT' },
-      { path: '/patient-history', label: '📂 Patient History' },
-      { path: '/roi-requests', label: '📄 ROI Requests' },
-      { path: '/archived-patients', label: '📦 Archived Patients' },
-    ],
-    Doctor: [
-      { path: '/doctor-dashboard', label: '🩺 Doctor Dashboard' },
-      { path: '/appointments', label: '📅 Appointments' },
-      { path: '/prescriptions', label: '💊 Prescriptions' },
-      { path: '/lab-orders', label: '🔬 Lab Orders' },
-    ],
-  };
+ const allGroups = {
+  Clinical: [
+    { path: '/appointments', label: '📅 Appointments' },
+    { path: '/prescriptions', label: '💊 Prescriptions' },
+    { path: '/lab-orders', label: '🔬 Lab Orders' },
+    { path: '/pharmacy', label: '🏥 Pharmacy' },
+    { path: '/antenatal', label: '🤰 Antenatal Care' },
+    { path: '/pharmacy-dashboard', label: '💊 Pharmacy Dashboard' }, // ✅ NEW
+    { path: '/nhis-drugs', label: '🏥 NHIS Drugs' }, // ✅ Moved from separate to Clinical
+  ] ,
+  Finance: [
+    { path: '/billing', label: '💰 Billing' },
+    { path: '/billing-officer', label: '💵 Billing Desk' },
+    { path: '/pricing', label: '💲 Service Pricing' }, // ✅ Moved from Admin to Finance
+  ],
+  Admin: [
+    { path: '/staff', label: '👨‍⚕️ Staff' },
+    { path: '/clinics', label: '🏥 Manage Clinics' },
+    { path: '/wards', label: '🛏️ Manage Wards' },
+    { path: '/nurse-dashboard', label: '🩺 Nurse Dashboard' },
+    { path: '/permissions', label: '🔐 Role Permissions' },
+  ],
+  Records: [
+    { path: '/patient-intake', label: '🔄 Patient Intake' },
+    { path: '/admissions', label: '🏥 ADT' },
+    { path: '/patient-history', label: '📂 Patient History' },
+    { path: '/roi-requests', label: '📄 ROI Requests' },
+    { path: '/archived-patients', label: '📦 Archived Patients' },
+  ],
+  Doctor: [
+    { path: '/doctor-dashboard', label: '🩺 Doctor Dashboard' },
+    { path: '/appointments', label: '📅 Appointments' },
+    { path: '/prescriptions', label: '💊 Prescriptions' },
+    { path: '/lab-orders', label: '🔬 Lab Orders' },
+  ],
+};
 
   const pathToPermissionKey = {
     '/appointments': 'appointments',
@@ -67,7 +70,9 @@ const Layout = () => {
     '/roi-requests': 'roiRequests',
     '/patients': 'patients',
     '/antenatal': 'antenatal',
-    '/archived-patients': 'archivedPatients', // ✅ FIXED: Now uses its own permission
+    '/archived-patients': 'archivedPatients',
+    '/nhis-drugs': 'nhisManagement', 
+    '/pharmacy-dashboard': 'pharmacy',
   };
 
   useEffect(() => {

@@ -9,124 +9,131 @@ datasource db {
 }
 
 // 1. Core Patient Model
-// prisma/schema.prisma
-
 model Patient {
-  id                String    @id @default(cuid())
-  hospitalId        String    @unique
-  firstName         String
-  lastName          String
-  dateOfBirth       DateTime
-  gender            String
-  phone             String?
-  email             String?   @unique
-  address           String?
-  emergencyContact  String?
-  allergies         String?
-  nextOfKinName     String?
-  nextOfKinPhone    String?
+  id                    String   @id @default(cuid())
+  hospitalId            String   @unique
+  firstName             String
+  lastName              String
+  dateOfBirth           DateTime
+  gender                String
+  phone                 String?
+  email                 String?  @unique
+  address               String?
+  emergencyContact      String?
+  allergies             String?
+  nextOfKinName         String?
+  nextOfKinPhone        String?
   nextOfKinRelationship String?
-  
-  // ✅ NEW: Patient Category / Classification
-  patientCategory   String    @default("FPP") // FPP, NHIS, CORPORATE
-  insuranceProvider String?   // For NHIS and Corporate - store the provider name
-  insuranceId       String?   // NHIS number or Corporate employee ID
-  corporateCompany  String?   // For Corporate patients - company name
-  
-  // ✅ NEW: Archive fields
-  isArchived        Boolean   @default(false)
-  archivedAt        DateTime?
-  archivedReason    String?
-  archivedBy        String?   
-  autoArchived      Boolean   @default(false)
-  
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  
+
+  // Patient Category / Classification
+  patientCategory   String  @default("FPP")
+  insuranceProvider String?
+  insuranceId       String?
+  corporateCompany  String?
+
+  // Archive fields
+  isArchived     Boolean   @default(false)
+  archivedAt     DateTime?
+  archivedReason String?
+  archivedBy     String?
+  autoArchived   Boolean   @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   // Relations
-  appointments      Appointment[]
-  clinicalNotes     ClinicalNote[]
-  billingRecords    BillingRecord[]
-  prescriptions     Prescription[]
-  labOrders         LabOrder[]
-  admissions        Admission[]
-  historyRecords    PatientHistoryRecord[]
-  journeys          PatientJourney[]
-  vitals            VitalSign[]
-  pregnancies       Pregnancy[]
+  appointments   Appointment[]
+  clinicalNotes  ClinicalNote[]
+  billingRecords BillingRecord[]
+  prescriptions  Prescription[]
+  labOrders      LabOrder[]
+  admissions     Admission[]
+  historyRecords PatientHistoryRecord[]
+  journeys       PatientJourney[]
+  vitals         VitalSign[]
+  pregnancies    Pregnancy[]
+
+  // NHIS Relations
+  nhisAuthorizations NHISAuthorization[]
+  nhisClaims         NHISClaim[]
 }
 
 // 2. Staff Model
 model Staff {
-  id         String   @id @default(cuid())
-  employeeId String   @unique
-  username   String   @unique  
+  id         String  @id @default(cuid())
+  employeeId String  @unique
+  username   String  @unique
   firstName  String
   lastName   String
-  email      String   @unique
+  email      String  @unique
   role       String
   department String?
   password   String
-  isActive   Boolean  @default(true)
-  
-  // Relations
-  appointments Appointment[] @relation("DoctorAppointments")
-  clinicalNotes ClinicalNote[] @relation("AuthorNotes")
-  prescriptions Prescription[] @relation("PrescribingStaff")
-  dispensedPrescriptions Prescription[] @relation("DispensingStaff")
-  labOrders    LabOrder[] @relation("OrderingStaff")
-  performedLabOrders LabOrder[] @relation("PerformingStaff")
-  auditLogs    AuditLog[]
-  admissions   Admission[] @relation("DoctorAdmissions")
-  registeredJourneys PatientJourney[] @relation("RegisteredJourneys")
-  vitals       VitalSign[]
-  
-  // --- Many-to-Many relations for Clinics and Wards ---
-  clinics      StaffClinic[]
-  wards        StaffWard[]
+  isActive   Boolean @default(true)
 
-  // --- NEW ANTENATAL RELATIONS ---
+  // Relations
+  appointments           Appointment[]    @relation("DoctorAppointments")
+  clinicalNotes          ClinicalNote[]   @relation("AuthorNotes")
+  prescriptions          Prescription[]   @relation("PrescribingStaff")
+  dispensedPrescriptions Prescription[]   @relation("DispensingStaff")
+  labOrders              LabOrder[]       @relation("OrderingStaff")
+  performedLabOrders     LabOrder[]       @relation("PerformingStaff")
+  auditLogs              AuditLog[]
+  admissions             Admission[]      @relation("DoctorAdmissions")
+  registeredJourneys     PatientJourney[] @relation("RegisteredJourneys")
+  vitals                 VitalSign[]
+
+  clinics StaffClinic[]
+  wards   StaffWard[]
+
   antenatalVisits AntenatalVisit[] @relation("AntenatalVisits")
-  deliveries     Delivery[] @relation("Deliveries")
-  // -------------------------------------------------
-  
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  deliveries      Delivery[]       @relation("Deliveries")
+
+  // NHIS Relations
+  nhisAuthorizationsApproved NHISAuthorization[]   @relation("ApprovedByNHIS")
+  nhisClaimsSubmitted        NHISClaim[]           @relation("SubmittedByNHIS")
+  nhisClaimsApproved         NHISClaim[]           @relation("ApprovedByClaim")
+  pharmacyStaff              PharmacyStaff[]
+  pharmacyTransactions       PharmacyTransaction[]
+
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  nhisauthorizations NHISAuthorization[]
 }
 
-// --- JOIN TABLES FOR STAFF ASSIGNMENTS ---
+// JOIN TABLES FOR STAFF ASSIGNMENTS
 model StaffClinic {
-  staffId   String
-  clinicId  String
-  staff     Staff  @relation(fields: [staffId], references: [id])
-  clinic    Clinic @relation(fields: [clinicId], references: [id])
+  staffId  String
+  clinicId String
+  staff    Staff  @relation(fields: [staffId], references: [id])
+  clinic   Clinic @relation(fields: [clinicId], references: [id])
+
   @@id([staffId, clinicId])
 }
 
 model StaffWard {
-  staffId   String
-  wardId    String
-  staff     Staff  @relation(fields: [staffId], references: [id])
-  ward      Ward   @relation(fields: [wardId], references: [id])
+  staffId String
+  wardId  String
+  staff   Staff  @relation(fields: [staffId], references: [id])
+  ward    Ward   @relation(fields: [wardId], references: [id])
+
   @@id([staffId, wardId])
 }
-// ------------------------------------------------
 
 // 3. Appointment Model
 model Appointment {
-  id          String   @id @default(cuid())
-  patientId   String
-  staffId     String
-  dateTime    DateTime
-  duration    Int      @default(30)
-  status      String   @default("Scheduled") // Scheduled, CheckedIn, InProgress, Completed, Cancelled, NoShow
-  type        String   @default("Consultation")
-  notes       String?
-  // Relations
-  patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  staff       Staff    @relation("DoctorAppointments", fields: [staffId], references: [id])
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  patientId String
+  staffId   String
+  dateTime  DateTime
+  duration  Int      @default(30)
+  status    String   @default("Scheduled")
+  type      String   @default("Consultation")
+  notes     String?
+  patient   Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  staff     Staff    @relation("DoctorAppointments", fields: [staffId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // 4. Clinical Notes (SOAP)
@@ -134,158 +141,154 @@ model ClinicalNote {
   id          String   @id @default(cuid())
   patientId   String
   authorId    String
-  type        String   @default("SOAP") // SOAP, Progress Note, Discharge Summary, Referral
-  subjective  String?  // What the patient says
-  objective   String?  // Examination findings, vital signs
-  assessment  String?  // Diagnosis or impression
-  plan        String?  // Treatment plan
-  fullContent String?  // Optional full text
-  // Relations
+  type        String   @default("SOAP")
+  subjective  String?
+  objective   String?
+  assessment  String?
+  plan        String?
+  fullContent String?
   patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
   author      Staff    @relation("AuthorNotes", fields: [authorId], references: [id])
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
 
-// 5. Prescriptions
+// 5. Prescriptions (Keep your existing simple version)
 model Prescription {
-  id          String   @id @default(cuid())
-  patientId   String
+  id                 String              @id @default(cuid())
+  patientId          String
   prescribingStaffId String
   dispensingStaffId  String?
-  medication  String
-  dosage      String
-  frequency   String
-  duration    String
-  instructions String?
-  status      String   @default("Prescribed") // Prescribed, Dispensed, PartiallyDispensed, Cancelled
-  // Relations
-  patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  prescribedBy Staff   @relation("PrescribingStaff", fields: [prescribingStaffId], references: [id])
-  dispensedBy Staff?   @relation("DispensingStaff", fields: [dispensingStaffId], references: [id])
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  medication         String
+  dosage             String
+  frequency          String
+  duration           String
+  instructions       String?
+  status             String              @default("Prescribed")
+  patient            Patient             @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  prescribedBy       Staff               @relation("PrescribingStaff", fields: [prescribingStaffId], references: [id])
+  dispensedBy        Staff?              @relation("DispensingStaff", fields: [dispensingStaffId], references: [id])
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  nhisauthorizations NHISAuthorization[]
+  nhisclaims         NHISClaim[]
 }
 
 // 6. Lab Orders
 model LabOrder {
-  id          String   @id @default(cuid())
-  patientId   String
+  id              String    @id @default(cuid())
+  patientId       String
   orderingStaffId String
-  labStaffId  String?
-  testName    String
-  testType    String   // Haematology, Biochemistry, Microbiology, Radiology
-  priority    String   @default("Routine") // Routine, Urgent, Emergency
-  status      String   @default("Ordered") // Ordered, InProgress, Completed, Reviewed
-  result      String?
-  resultDate  DateTime?
-  notes       String?
-  // Relations
-  patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  orderedBy   Staff    @relation("OrderingStaff", fields: [orderingStaffId], references: [id])
-  performedBy Staff?   @relation("PerformingStaff", fields: [labStaffId], references: [id])
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  labStaffId      String?
+  testName        String
+  testType        String
+  priority        String    @default("Routine")
+  status          String    @default("Ordered")
+  result          String?
+  resultDate      DateTime?
+  notes           String?
+  patient         Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  orderedBy       Staff     @relation("OrderingStaff", fields: [orderingStaffId], references: [id])
+  performedBy     Staff?    @relation("PerformingStaff", fields: [labStaffId], references: [id])
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 }
 
 // 7. Billing Records
 model BillingRecord {
-  id          String   @id @default(cuid())
-  patientId   String
-  invoiceNumber String  @unique
-  description String
-  amount      Float
-  discount    Float    @default(0)
-  tax         Float    @default(0)
-  totalAmount Float
-  status      String   @default("Pending") // Pending, Paid, InsuranceClaim, Write-off, Overdue
-  paymentMethod String? // Cash, Transfer, Card, Insurance
-  paymentDate DateTime?
+  id                String          @id @default(cuid())
+  patientId         String
+  invoiceNumber     String          @unique
+  description       String
+  amount            Float
+  discount          Float           @default(0)
+  tax               Float           @default(0)
+  totalAmount       Float
+  status            String          @default("Pending")
+  paymentMethod     String?
+  paymentDate       DateTime?
   insuranceProvider String?
-  insuranceClaimId String?
-  // Relations
-  patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  journey     PatientJourney? @relation("BillingJourney")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  insuranceClaimId  String?
+  patient           Patient         @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  journey           PatientJourney? @relation("BillingJourney")
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 }
 
 // 8. Pharmacy Inventory
 model Medication {
-  id          String   @id @default(cuid())
-  name        String
-  genericName String?
-  category    String   // Antibiotics, Analgesics, Antihypertensives, etc.
-  supplier    String?
-  unitPrice   Float
-  stockQuantity Int
-  reorderLevel Int
-  expiryDate  DateTime
-  batchNumber String?
-  // Relations
-  transactions MedicationTransaction[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                   String                  @id @default(cuid())
+  name                 String
+  genericName          String?
+  category             String
+  supplier             String?
+  unitPrice            Float
+  stockQuantity        Int
+  reorderLevel         Int
+  expiryDate           DateTime
+  batchNumber          String?
+  transactions         MedicationTransaction[]
+  // NHIS Drug Pricing
+  nhisPrices           NHISDrugPrice[]
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+  pharmacyTransactions PharmacyTransaction[]
 }
 
 // 9. Medication Transactions
 model MedicationTransaction {
-  id          String   @id @default(cuid())
-  medicationId String
-  transactionType String // Purchase, Dispensed, Returned, Adjusted
-  quantity    Int
-  unitPrice   Float
-  note        String?
-  staffId     String?
-  // Relations
-  medication  Medication @relation(fields: [medicationId], references: [id])
-  createdAt   DateTime @default(now())
+  id              String     @id @default(cuid())
+  medicationId    String
+  transactionType String
+  quantity        Int
+  unitPrice       Float
+  note            String?
+  staffId         String?
+  medication      Medication @relation(fields: [medicationId], references: [id])
+  createdAt       DateTime   @default(now())
 }
 
 // 10. Audit Logs
 model AuditLog {
   id        String   @id @default(cuid())
   staffId   String
-  action    String   // LOGIN, LOGOUT, VIEW_PATIENT, UPDATE_PATIENT, CREATE_BILL, VIEW_REPORT
-  module    String   // Patient, Billing, Pharmacy, Lab, Admin
+  action    String
+  module    String
   details   String?
   ipAddress String?
-  // Relations
   staff     Staff    @relation(fields: [staffId], references: [id])
   createdAt DateTime @default(now())
 }
 
-// --- 11. WARD MODEL ---
+// 11. WARD MODEL
 model Ward {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  description String?
-  capacity    Int?
-  // Relations
-  admissions  Admission[]
-  patientJourneys PatientJourney[]
+  id               String           @id @default(cuid())
+  name             String           @unique
+  description      String?
+  capacity         Int?
+  admissions       Admission[]
+  patientJourneys  PatientJourney[]
   staffAssignments StaffWard[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 }
 
-// --- 12. ADMISSION MODEL ---
+// 12. ADMISSION MODEL
 model Admission {
-  id              String   @id @default(uuid())
-  admissionNumber String   @unique
+  id              String    @id @default(uuid())
+  admissionNumber String    @unique
   patientId       String
-  patient         Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  staffId         String   
-  staff           Staff    @relation("DoctorAdmissions", fields: [staffId], references: [id])
+  patient         Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  staffId         String
+  staff           Staff     @relation("DoctorAdmissions", fields: [staffId], references: [id])
   wardId          String?
-  ward            Ward?    @relation(fields: [wardId], references: [id])
-  admissionDate   DateTime @default(now())
+  ward            Ward?     @relation(fields: [wardId], references: [id])
+  admissionDate   DateTime  @default(now())
   dischargeDate   DateTime?
-  status          String   @default("Admitted")
+  status          String    @default("Admitted")
   notes           String?
-
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 }
 
 // 13. Patient History & Coding
@@ -295,11 +298,10 @@ model PatientHistoryRecord {
   patient       Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
   encounterDate DateTime @default(now())
   doctorName    String
-  encounterType String   // Outpatient, Inpatient, Emergency
+  encounterType String
   diagnosis     String
   icd10Code     String?
   notes         String?
-
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
@@ -310,183 +312,307 @@ model ROIRequest {
   requestorName String
   patientName   String
   requestDate   DateTime @default(now())
-  requestType   String   // Legal, Insurance, Transfer
-  status        String   @default("Pending") // Pending, Approved, Denied, Completed
-
+  requestType   String
+  status        String   @default("Pending")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
 
-// --- 15. CLINIC MODEL ---
+// 15. CLINIC MODEL
 model Clinic {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  description String?
-  location    String?
-  isActive    Boolean  @default(true)
-  // Relations
-  journeys    PatientJourney[]
-  servicePrices ServicePrice[]
+  id               String           @id @default(cuid())
+  name             String           @unique
+  description      String?
+  location         String?
+  isActive         Boolean          @default(true)
+  journeys         PatientJourney[]
+  servicePrices    ServicePrice[]
   staffAssignments StaffClinic[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 }
 
-// --- 16. PATIENT JOURNEY MODEL ---
+// 16. PATIENT JOURNEY MODEL
 model PatientJourney {
-  id             String   @id @default(cuid())
-  patientId      String
-  patient        Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  
-  destinationType String   @default("CLINIC") // "CLINIC" or "WARD"
-  
-  clinicId       String?
-  clinic         Clinic?  @relation(fields: [clinicId], references: [id])
-  
-  wardId         String?
-  ward           Ward?    @relation(fields: [wardId], references: [id])
-  
-  registeredById String
-  registeredBy   Staff    @relation("RegisteredJourneys", fields: [registeredById], references: [id])
-  
-  status         String   @default("REGISTERED") 
-  // REGISTERED ➔ BILLING_CLEARED ➔ CARD_PRINTED ➔ SENT_TO_DESTINATION ➔ COMPLETED
-
-  cardGeneratedAt DateTime?
+  id                  String         @id @default(cuid())
+  patientId           String
+  patient             Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  destinationType     String         @default("CLINIC")
+  clinicId            String?
+  clinic              Clinic?        @relation(fields: [clinicId], references: [id])
+  wardId              String?
+  ward                Ward?          @relation(fields: [wardId], references: [id])
+  registeredById      String
+  registeredBy        Staff          @relation("RegisteredJourneys", fields: [registeredById], references: [id])
+  status              String         @default("REGISTERED")
+  cardGeneratedAt     DateTime?
   sentToDestinationAt DateTime?
-  
-  // ✅ NEW: Journey completion tracking
-  completedAt    DateTime? // When journey was marked COMPLETED
-  archivedAt     DateTime? // When patient was archived (if different from completion)
-  
-  billingRecordId String?  @unique
-  billingRecord   BillingRecord? @relation("BillingJourney", fields: [billingRecordId], references: [id])
-
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  completedAt         DateTime?
+  archivedAt          DateTime?
+  billingRecordId     String?        @unique
+  billingRecord       BillingRecord? @relation("BillingJourney", fields: [billingRecordId], references: [id])
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
 }
 
-// --- 17. SERVICE PRICING CATALOG ---
+// 17. SERVICE PRICING CATALOG
 model ServicePrice {
   id          String   @id @default(cuid())
-  name        String   // e.g., "Consultation", "Admission Fee"
+  name        String
   description String?
-  amount      Float    // The price (e.g., 7500.00)
-  clinicId    String?  // Optional: Link to a specific clinic (e.g., Cardiology)
+  amount      Float
+  clinicId    String?
   clinic      Clinic?  @relation(fields: [clinicId], references: [id])
   isActive    Boolean  @default(true)
-  
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
 
-// --- 18. VITAL SIGNS ---
+// 18. SERVICE PRICING BY CATEGORY
+model ServicePricing {
+  id             String   @id @default(cuid())
+  name           String   @unique
+  description    String?
+  category       String   @default("FPP")
+  basePrice      Float    @default(0)
+  nhisPrice      Float    @default(0)
+  corporatePrice Float    @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+// 19. VITAL SIGNS
 model VitalSign {
-  id                   String   @id @default(cuid())
-  patientId            String
-  patient              Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  nurseId              String
-  nurse                Staff    @relation(fields: [nurseId], references: [id])
-  recordedAt           DateTime @default(now())
-  
-  bloodPressureSystolic Int?    // mmHg
-  bloodPressureDiastolic Int?   // mmHg
-  heartRate             Int?    // bpm
-  temperature           Float?  // °C
-  respiratoryRate       Int?    // breaths/min
-  oxygenSaturation      Int?    // %
-  weight                Float?  // kg
-  height                Float?  // cm
-  notes                 String?
-
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  id                     String   @id @default(cuid())
+  patientId              String
+  patient                Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  nurseId                String
+  nurse                  Staff    @relation(fields: [nurseId], references: [id])
+  recordedAt             DateTime @default(now())
+  bloodPressureSystolic  Int?
+  bloodPressureDiastolic Int?
+  heartRate              Int?
+  temperature            Float?
+  respiratoryRate        Int?
+  oxygenSaturation       Int?
+  weight                 Float?
+  height                 Float?
+  notes                  String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 }
 
-// --- 19. DYNAMIC ROLE PERMISSIONS ---
+// 20. DYNAMIC ROLE PERMISSIONS
 model RolePermission {
-  id        String   @id @default(cuid())
-  role      String   @unique // e.g., "Nurse", "Doctor"
-  dashboard Boolean  @default(true)
-  patients  Boolean  @default(false)
-  staff     Boolean  @default(false)
-  appointments Boolean @default(false)
-  prescriptions Boolean @default(false)
-  labOrders Boolean @default(false)
-  billing   Boolean @default(false)
-  pharmacy  Boolean @default(false)
-  clinics   Boolean @default(false)
-  wards     Boolean @default(false)
-  pricing   Boolean @default(false)
-  billingOfficer Boolean @default(false)
-  patientIntake Boolean @default(false)
-  admissions Boolean @default(false)
-  patientHistory Boolean @default(false)
-  roiRequests Boolean @default(false)
-  nurseDashboard Boolean @default(false)
-  doctorDashboard Boolean @default(false)
-  antenatal   Boolean @default(false) 
-  archivedPatients Boolean @default(false)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id               String   @id @default(cuid())
+  role             String   @unique
+  dashboard        Boolean  @default(true)
+  patients         Boolean  @default(false)
+  staff            Boolean  @default(false)
+  appointments     Boolean  @default(false)
+  prescriptions    Boolean  @default(false)
+  labOrders        Boolean  @default(false)
+  billing          Boolean  @default(false)
+  pharmacy         Boolean  @default(false)
+  clinics          Boolean  @default(false)
+  wards            Boolean  @default(false)
+  pricing          Boolean  @default(false)
+  billingOfficer   Boolean  @default(false)
+  patientIntake    Boolean  @default(false)
+  admissions       Boolean  @default(false)
+  patientHistory   Boolean  @default(false)
+  roiRequests      Boolean  @default(false)
+  nurseDashboard   Boolean  @default(false)
+  doctorDashboard  Boolean  @default(false)
+  antenatal        Boolean  @default(false)
+  archivedPatients Boolean  @default(false)
+  nhisManagement   Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
 
-// --- 20. ANTENATAL / PREGNANCY MODULE ---
-
+// 21. ANTENATAL / PREGNANCY MODULE
 model Pregnancy {
-  id                String        @id @default(cuid())
-  patientId         String
-  patient           Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  expectedDelivery  DateTime
-  gravida           Int?
-  para              Int?
+  id                  String           @id @default(cuid())
+  patientId           String
+  patient             Patient          @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  expectedDelivery    DateTime
+  gravida             Int?
+  para                Int?
   lastMenstrualPeriod DateTime?
-  estimatedDueDate   DateTime?
-  riskLevel          String?      // Low, Medium, High
-  status             String       @default("Active") // Active, Delivered, Miscarried
-  notes              String?
-
-  visits             AntenatalVisit[]
-  delivery           Delivery?
-
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
+  estimatedDueDate    DateTime?
+  riskLevel           String?
+  status              String           @default("Active")
+  notes               String?
+  visits              AntenatalVisit[]
+  delivery            Delivery?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
 }
 
 model AntenatalVisit {
-  id                String        @id @default(cuid())
-  pregnancyId       String
-  pregnancy         Pregnancy     @relation(fields: [pregnancyId], references: [id], onDelete: Cascade)
-  visitDate         DateTime      @default(now())
-  gestationalWeeks  Int?
-  bloodPressure     String?       // e.g., "120/80"
-  heartRate         Int?          // fetal heart rate (bpm)
-  weight            Float?        // mother's weight
-  fundalHeight      Float?        // cm
-  notes             String?
-  staffId           String
-  staff             Staff         @relation("AntenatalVisits", fields: [staffId], references: [id])
-
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  id               String    @id @default(cuid())
+  pregnancyId      String
+  pregnancy        Pregnancy @relation(fields: [pregnancyId], references: [id], onDelete: Cascade)
+  visitDate        DateTime  @default(now())
+  gestationalWeeks Int?
+  bloodPressure    String?
+  heartRate        Int?
+  weight           Float?
+  fundalHeight     Float?
+  notes            String?
+  staffId          String
+  staff            Staff     @relation("AntenatalVisits", fields: [staffId], references: [id])
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 }
 
 model Delivery {
-  id                String        @id @default(cuid())
-  pregnancyId       String        @unique   // <-- FIXED: added @unique for one-to-one relation
-  pregnancy         Pregnancy     @relation(fields: [pregnancyId], references: [id], onDelete: Cascade)
-  deliveryDate      DateTime      @default(now())
-  type              String        // Vaginal, C-section, Assisted
-  durationHours     Float?
-  babyGender        String        // Male, Female
-  babyWeight        Float?        // kg
-  babyApgar         Int?          // Apgar score
-  outcome           String        // Live birth, Stillbirth
-  notes             String?
-  staffId           String
-  staff             Staff         @relation("Deliveries", fields: [staffId], references: [id])
+  id            String    @id @default(cuid())
+  pregnancyId   String    @unique
+  pregnancy     Pregnancy @relation(fields: [pregnancyId], references: [id], onDelete: Cascade)
+  deliveryDate  DateTime  @default(now())
+  type          String
+  durationHours Float?
+  babyGender    String
+  babyWeight    Float?
+  babyApgar     Int?
+  outcome       String
+  notes         String?
+  staffId       String
+  staff         Staff     @relation("Deliveries", fields: [staffId], references: [id])
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
 
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+// ============================================================
+// 🆕 NHIS & PHARMACY MODULES (NEW ADDITIONS)
+// ============================================================
+
+// 22. NHIS Drug Pricing
+model NHISDrugPrice {
+  id                String     @id @default(cuid())
+  medicationId      String
+  medication        Medication @relation(fields: [medicationId], references: [id])
+  nhisCode          String
+  nhisName          String?
+  standardPrice     Float
+  nhisPrice         Float
+  patientCopay      Float
+  nhisCoverage      Float
+  maxQuantity       Int?
+  refillLimit       Int        @default(3)
+  validityPeriod    Int        @default(30)
+  drugClass         String?
+  requiresPriorAuth Boolean    @default(false)
+  isActive          Boolean    @default(true)
+  effectiveDate     DateTime   @default(now())
+  expiryDate        DateTime?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  @@unique([medicationId, nhisCode])
+}
+
+// 23. NHIS Authorization
+model NHISAuthorization {
+  id                  String        @id @default(cuid())
+  authorizationNumber String        @unique
+  patientId           String
+  patient             Patient       @relation(fields: [patientId], references: [id])
+  prescriptionId      String?
+  prescription        Prescription? @relation(fields: [prescriptionId], references: [id])
+  medications         String
+  totalAmount         Float
+  nhisAmount          Float
+  patientAmount       Float
+  status              String        @default("Pending")
+  requestedBy         String
+  requestedByStaff    Staff         @relation(fields: [requestedBy], references: [id])
+  approvedBy          String?
+  approvedByStaff     Staff?        @relation("ApprovedByNHIS", fields: [approvedBy], references: [id])
+  requestDate         DateTime      @default(now())
+  approvalDate        DateTime?
+  expiryDate          DateTime?
+  denialReason        String?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  nhisclaims          NHISClaim[]
+}
+
+// 24. NHIS Claim
+model NHISClaim {
+  id               String             @id @default(cuid())
+  claimNumber      String             @unique
+  patientId        String
+  patient          Patient            @relation(fields: [patientId], references: [id])
+  authorizationId  String?
+  authorization    NHISAuthorization? @relation(fields: [authorizationId], references: [id])
+  prescriptionId   String?
+  prescription     Prescription?      @relation(fields: [prescriptionId], references: [id])
+  totalAmount      Float
+  nhisAmount       Float
+  patientAmount    Float
+  copayCollected   Float              @default(0)
+  status           String             @default("Draft")
+  submissionDate   DateTime?
+  approvalDate     DateTime?
+  paymentDate      DateTime?
+  submittedBy      String
+  submittedByStaff Staff              @relation("SubmittedByNHIS", fields: [submittedBy], references: [id])
+  approvedBy       String?
+  approvedByStaff  Staff?             @relation("ApprovedByClaim", fields: [approvedBy], references: [id])
+  notes            String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+}
+
+// 25. Pharmacy Branch
+model PharmacyBranch {
+  id           String                @id @default(cuid())
+  name         String
+  code         String                @unique
+  location     String?
+  phone        String?
+  email        String?
+  isActive     Boolean               @default(true)
+  staff        PharmacyStaff[]
+  transactions PharmacyTransaction[]
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+}
+
+// 26. Pharmacy Staff
+model PharmacyStaff {
+  id         String         @id @default(cuid())
+  pharmacyId String
+  pharmacy   PharmacyBranch @relation(fields: [pharmacyId], references: [id])
+  staffId    String
+  staff      Staff          @relation(fields: [staffId], references: [id])
+  role       String
+  isActive   Boolean        @default(true)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  @@unique([pharmacyId, staffId])
+}
+
+// 27. Pharmacy Transaction
+model PharmacyTransaction {
+  id                String         @id @default(cuid())
+  transactionNumber String         @unique
+  pharmacyId        String
+  pharmacy          PharmacyBranch @relation(fields: [pharmacyId], references: [id])
+  medicationId      String
+  medication        Medication     @relation(fields: [medicationId], references: [id])
+  transactionType   String
+  quantity          Int
+  unitPrice         Float
+  totalPrice        Float
+  reference         String?
+  note              String?
+  staffId           String
+  staff             Staff          @relation(fields: [staffId], references: [id])
+  createdAt         DateTime       @default(now())
 }

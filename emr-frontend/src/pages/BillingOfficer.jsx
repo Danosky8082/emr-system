@@ -25,6 +25,16 @@ const BillingOfficer = () => {
   const [viewingHistory, setViewingHistory] = useState(false);
   const receiptRef = useRef(null);
 
+  // ✅ Get category info for display
+  const getCategoryInfo = (category) => {
+    const map = {
+      'FPP': { label: '💰 FPP', className: 'category-fpp', multiplier: '100%', tooltip: 'Free Paying Patient - Full Payment' },
+      'NHIS': { label: '🏥 NHIS', className: 'category-nhis', multiplier: '10%', tooltip: 'National Health Insurance - 10% Payment' },
+      'CORPORATE': { label: '🏢 Corporate', className: 'category-corporate', multiplier: '200%', tooltip: 'Corporate/Company - Double Rate' },
+    };
+    return map[category] || map['FPP'];
+  };
+
   const fetchPending = async () => {
     try {
       const res = await axios.get('http://localhost:3000/api/billing-officer/pending', {
@@ -44,13 +54,9 @@ const BillingOfficer = () => {
       if (dateFrom) params.append('dateFrom', dateFrom);
       if (dateTo) params.append('dateTo', dateTo);
       
-      console.log('📋 Fetching payment history with params:', params.toString());
-      
       const res = await axios.get(`http://localhost:3000/api/billing?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      
-      console.log('📋 Payment history response:', res.data);
       
       if (res.data && res.data.data) {
         setPaymentHistory(res.data.data);
@@ -82,8 +88,63 @@ const BillingOfficer = () => {
     }
   }, [searchTerm, statusFilter, dateFrom, dateTo]);
 
+  // ✅ Auto-calculate amount based on category
+  const getCalculatedAmount = (journey) => {
+    const bill = journey.billingRecord;
+    if (!bill) return { baseAmount: 0, calculatedAmount: 0, category: 'FPP', multiplier: '100%' };
+    
+    const category = journey.patient?.patientCategory || 'FPP';
+    const baseAmount = bill.amount || 5000;
+    const categoryInfo = getCategoryInfo(category);
+    let calculatedAmount = baseAmount;
+    
+    if (category === 'NHIS') {
+      calculatedAmount = Math.round(baseAmount * 0.1);
+    } else if (category === 'CORPORATE') {
+      calculatedAmount = baseAmount * 2;
+    }
+    
+    return { 
+      baseAmount, 
+      calculatedAmount, 
+      category, 
+      multiplier: categoryInfo.multiplier,
+      categoryLabel: categoryInfo.label
+    };
+  };
+
   const handlePay = async (journey) => {
-    const paymentMethod = prompt('Enter payment method (Cash/Transfer/Card/Insurance):') || 'Cash';
+    const bill = journey.billingRecord;
+    if (!bill) {
+      toast.error('No bill found. Please contact support.');
+      return;
+    }
+
+    // ✅ Get automatic calculation
+    const { baseAmount, calculatedAmount, category, multiplier, categoryLabel } = getCalculatedAmount(journey);
+    const categoryInfo = getCategoryInfo(category);
+    
+    // ✅ Show automated calculation summary
+    const confirmMessage = 
+      `💰 AUTOMATED PAYMENT SUMMARY\n\n` +
+      `Patient: ${journey.patient?.firstName} ${journey.patient?.lastName}\n` +
+      `Category: ${categoryLabel}\n` +
+      `Base Amount: ₦${baseAmount.toLocaleString()}\n` +
+      `Multiplier: ${multiplier}\n` +
+      `─────────────────────────\n` +
+      `💰 Amount to Pay: ₦${calculatedAmount.toLocaleString()}\n\n` +
+      `✅ This amount has been automatically calculated based on the patient's category.\n` +
+      `Click OK to process payment.`;
+
+    if (!window.confirm(confirmMessage)) return;
+
+    // ✅ Just ask for payment method (no manual calculation)
+    const paymentMethod = prompt(
+      `Enter payment method:\n` +
+      `Patient: ${journey.patient?.firstName} ${journey.patient?.lastName}\n` +
+      `Amount: ₦${calculatedAmount.toLocaleString()}\n\n` +
+      `Options: Cash, Transfer, Card, Insurance`
+    ) || 'Cash';
 
     setProcessingId(journey.id);
     try {
@@ -95,11 +156,16 @@ const BillingOfficer = () => {
       });
       
       const paidBill = res.data.bill;
-      setReceiptData(paidBill);
+      const categoryInfoRes = res.data.categoryInfo;
+      
+      setReceiptData({
+        ...paidBill,
+        _categoryInfo: categoryInfoRes
+      });
       setShowReceipt(true);
       setViewingHistory(false);
       
-      toast.success('Payment confirmed successfully! Receipt ready.');
+      toast.success(`✅ Payment confirmed! ₦${paidBill.totalAmount.toLocaleString()} (${categoryInfoRes?.multiplier || '100%'} of base amount)`);
       fetchPending();
       fetchPaymentHistory();
     } catch (error) {
@@ -138,6 +204,7 @@ const BillingOfficer = () => {
           .label { font-weight: bold; width: 40%; }
           .total-row { border-top: 2px solid #333; font-size: 18px; font-weight: bold; margin-top: 10px; padding-top: 10px; }
           .footer { text-align: center; margin-top: 30px; font-size: 12px; border-top: 1px dashed #ccc; padding-top: 10px; }
+          .category-badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 11px; }
         </style>
         </head><body>
         ${printContent.innerHTML}
@@ -176,12 +243,29 @@ const BillingOfficer = () => {
     return classes[status] || 'status-pending';
   };
 
+  // ✅ Format amount display with category info
+  const formatAmountDisplay = (journey) => {
+    const bill = journey.billingRecord;
+    if (!bill) return { display: 'N/A', tooltip: '' };
+    
+    const category = journey.patient?.patientCategory || 'FPP';
+    const baseAmount = bill.amount || 5000;
+    const { calculatedAmount, multiplier } = getCalculatedAmount(journey);
+    const categoryInfo = getCategoryInfo(category);
+    
+    return {
+      display: `₦${calculatedAmount.toLocaleString()}`,
+      tooltip: `${categoryInfo.multiplier} of ₦${baseAmount.toLocaleString()}`,
+      baseDisplay: `₦${baseAmount.toLocaleString()}`
+    };
+  };
+
   if (loading) return <div className="spinner" />;
 
   return (
     <div className="dashboard">
       <div className="page-header">
-        <h2>Billing Desk</h2>
+        <h2>💳 Billing Desk - Automated Payments</h2>
         <div style={{ display: 'flex', gap: '10px' }}>
           <button 
             className={`btn ${activeTab === 'pending' ? 'btn-primary' : 'btn-secondary'}`}
@@ -198,7 +282,33 @@ const BillingOfficer = () => {
         </div>
       </div>
 
-      {/* Search and Filters */}
+      {/* Info Banner - Automated Billing */}
+      <div style={{
+        background: '#eff6ff',
+        border: '1px solid #3b82f6',
+        borderRadius: '8px',
+        padding: '12px 16px',
+        marginBottom: '16px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        flexWrap: 'wrap'
+      }}>
+        <span style={{ fontSize: '20px' }}>🤖</span>
+        <div>
+          <span style={{ fontWeight: '600', color: '#1e3a5f' }}>Automated Billing System</span>
+          <span style={{ fontSize: '14px', color: '#1e3a5f', marginLeft: '8px' }}>
+            Amounts are automatically calculated based on patient category:
+          </span>
+          <div style={{ display: 'flex', gap: '16px', marginTop: '4px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '13px', color: '#1e40af' }}>💰 FPP: 100%</span>
+            <span style={{ fontSize: '13px', color: '#065f46' }}>🏥 NHIS: 10%</span>
+            <span style={{ fontSize: '13px', color: '#92400e' }}>🏢 Corporate: 200%</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Search and Filters - Same as before */}
       {activeTab === 'history' && (
         <div style={{ 
           background: 'white', 
@@ -257,7 +367,6 @@ const BillingOfficer = () => {
                 border: '1px solid #d1d5db',
                 fontSize: '14px'
               }}
-              placeholder="From"
             />
           </div>
           <div>
@@ -271,7 +380,6 @@ const BillingOfficer = () => {
                 border: '1px solid #d1d5db',
                 fontSize: '14px'
               }}
-              placeholder="To"
             />
           </div>
           <button 
@@ -288,7 +396,7 @@ const BillingOfficer = () => {
         </div>
       )}
 
-      {/* PENDING PAYMENTS TABLE */}
+      {/* PENDING PAYMENTS TABLE - Automated */}
       {activeTab === 'pending' && (
         <div className="table-container">
           <table>
@@ -296,32 +404,76 @@ const BillingOfficer = () => {
               <tr>
                 <th>Hospital ID</th>
                 <th>Patient Name</th>
-                <th>Destination</th>
-                <th>Invoice #</th>
-                <th>Amount (₦)</th>
+                <th>Category</th>
+                <th>Base Amount</th>
+                <th>Multiplier</th>
+                <th>Amount Due</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {pendingJourneys.map(j => {
-                const destination = j.clinic ? `Clinic: ${j.clinic.name}` : (j.ward ? `Ward: ${j.ward.name}` : 'N/A');
                 const bill = j.billingRecord;
-
+                const category = j.patient?.patientCategory || 'FPP';
+                const categoryInfo = getCategoryInfo(category);
+                const { baseAmount, calculatedAmount, multiplier } = getCalculatedAmount(j);
+                const isNHIS = category === 'NHIS';
+                const isCorporate = category === 'CORPORATE';
+                
                 return (
-                  <tr key={j.id}>
+                  <tr key={j.id} style={isNHIS ? { background: '#f0fdf4' } : isCorporate ? { background: '#fffbeb' } : {}}>
                     <td><strong>{j.patient?.hospitalId}</strong></td>
                     <td>{j.patient?.firstName} {j.patient?.lastName}</td>
-                    <td>{destination}</td>
-                    <td>{bill?.invoiceNumber || 'Generating...'}</td>
                     <td>
-                      {bill ? (
-                        <strong style={{color: '#0f3460'}}>₦{bill.amount.toLocaleString()}</strong>
-                      ) : '...'}
+                      <span 
+                        className={`category-badge ${categoryInfo.className}`}
+                        style={{
+                          display: 'inline-block',
+                          padding: '3px 12px',
+                          borderRadius: '12px',
+                          fontSize: '12px',
+                          fontWeight: '600'
+                        }}
+                      >
+                        {categoryInfo.label}
+                      </span>
+                      {isNHIS && j.patient?.insuranceProvider && (
+                        <div style={{ fontSize: '10px', color: '#6b7280', marginTop: '2px' }}>
+                          {j.patient.insuranceProvider}
+                        </div>
+                      )}
+                      {isCorporate && j.patient?.corporateCompany && (
+                        <div style={{ fontSize: '10px', color: '#6b7280', marginTop: '2px' }}>
+                          {j.patient.corporateCompany}
+                        </div>
+                      )}
+                    </td>
+                    <td>₦{baseAmount.toLocaleString()}</td>
+                    <td>
+                      <span style={{ 
+                        fontWeight: '600',
+                        color: isNHIS ? '#065f46' : isCorporate ? '#92400e' : '#1e40af'
+                      }}>
+                        {multiplier}
+                      </span>
+                    </td>
+                    <td>
+                      <strong style={{ 
+                        color: isNHIS ? '#065f46' : isCorporate ? '#92400e' : '#0f3460',
+                        fontSize: '18px'
+                      }}>
+                        ₦{calculatedAmount.toLocaleString()}
+                      </strong>
+                      {bill && bill.totalAmount !== calculatedAmount && (
+                        <div style={{ fontSize: '10px', color: '#ef4444' }}>
+                          ⚠️ Amount updated to match category
+                        </div>
+                      )}
                     </td>
                     <td>
                       <span className="role-badge" style={{ background: '#ffcc00', color: '#000' }}>
-                        Pending Payment
+                        Pending
                       </span>
                     </td>
                     <td>
@@ -330,21 +482,21 @@ const BillingOfficer = () => {
                         onClick={() => handlePay(j)}
                         disabled={processingId === j.id || !bill}
                       >
-                        {processingId === j.id ? 'Processing...' : 'Confirm Payment'}
+                        {processingId === j.id ? 'Processing...' : '✅ Pay Now'}
                       </button>
                     </td>
                   </tr>
                 );
               })}
               {pendingJourneys.length === 0 && (
-                <tr><td colSpan="7" className="text-center">No pending payments at this time.</td></tr>
+                <tr><td colSpan="8" className="text-center">No pending payments at this time.</td></tr>
               )}
             </tbody>
           </table>
         </div>
       )}
 
-      {/* PAYMENT HISTORY TABLE */}
+      {/* PAYMENT HISTORY TABLE - Same as before */}
       {activeTab === 'history' && (
         <div className="table-container">
           <table>
@@ -353,7 +505,7 @@ const BillingOfficer = () => {
                 <th>Date</th>
                 <th>Invoice #</th>
                 <th>Patient</th>
-                <th>Description</th>
+                <th>Category</th>
                 <th>Amount (₦)</th>
                 <th>Payment Method</th>
                 <th>Status</th>
@@ -362,35 +514,52 @@ const BillingOfficer = () => {
             </thead>
             <tbody>
               {paymentHistory.length > 0 ? (
-                paymentHistory.map(bill => (
-                  <tr key={bill.id}>
-                    <td>{new Date(bill.createdAt).toLocaleDateString()}</td>
-                    <td><strong>{bill.invoiceNumber}</strong></td>
-                    <td>{bill.patient?.firstName} {bill.patient?.lastName}</td>
-                    <td>{bill.description}</td>
-                    <td>₦{bill.totalAmount.toLocaleString()}</td>
-                    <td>{bill.paymentMethod || '-'}</td>
-                    <td>
-                      <span 
-                        className={`role-badge ${getStatusBadgeClass(bill.status)}`}
-                        style={{ 
-                          background: getStatusColor(bill.status), 
-                          color: bill.status === 'Pending' ? '#000' : '#fff' 
-                        }}
-                      >
-                        {bill.status}
-                      </span>
-                    </td>
-                    <td>
-                      <button 
-                        className="btn btn-sm btn-secondary"
-                        onClick={() => viewReceipt(bill.id)}
-                      >
-                        📄 View Receipt
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                paymentHistory.map(bill => {
+                  const category = bill.patient?.patientCategory || 'FPP';
+                  const categoryInfo = getCategoryInfo(category);
+                  return (
+                    <tr key={bill.id}>
+                      <td>{new Date(bill.createdAt).toLocaleDateString()}</td>
+                      <td><strong>{bill.invoiceNumber}</strong></td>
+                      <td>{bill.patient?.firstName} {bill.patient?.lastName}</td>
+                      <td>
+                        <span 
+                          className={`category-badge ${categoryInfo.className}`}
+                          style={{
+                            display: 'inline-block',
+                            padding: '2px 10px',
+                            borderRadius: '12px',
+                            fontSize: '11px',
+                            fontWeight: '600'
+                          }}
+                        >
+                          {categoryInfo.label}
+                        </span>
+                      </td>
+                      <td>₦{bill.totalAmount.toLocaleString()}</td>
+                      <td>{bill.paymentMethod || '-'}</td>
+                      <td>
+                        <span 
+                          className={`role-badge ${getStatusBadgeClass(bill.status)}`}
+                          style={{ 
+                            background: getStatusColor(bill.status), 
+                            color: bill.status === 'Pending' ? '#000' : '#fff' 
+                          }}
+                        >
+                          {bill.status}
+                        </span>
+                      </td>
+                      <td>
+                        <button 
+                          className="btn btn-sm btn-secondary"
+                          onClick={() => viewReceipt(bill.id)}
+                        >
+                          📄 View Receipt
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
               ) : (
                 <tr><td colSpan="8" className="text-center">No payment records found.</td></tr>
               )}
@@ -400,59 +569,94 @@ const BillingOfficer = () => {
       )}
 
       {/* Receipt Modal */}
-      {showReceipt && receiptData && (
-        <div className="modal-overlay" onClick={() => setShowReceipt(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{maxWidth: '600px', padding: '20px'}}>
-            <div ref={receiptRef}>
-              <div className="receipt-header" style={{textAlign: 'center', marginBottom: '20px'}}>
-                <h1 style={{margin: 0}}>🏥 NEXGEN EMR CLINIC</h1>
-                <p style={{margin: 0, fontSize: '14px'}}>Medical Centre, Lagos</p>
-                <p style={{fontSize: '12px', color: '#666', marginTop: '5px'}}>
-                  {viewingHistory ? 'Payment Receipt (Historical)' : 'Official Payment Receipt'}
-                </p>
-                <hr style={{border: '1px dashed #ccc'}} />
-              </div>
-              
-              <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '20px'}}>
-                <div><strong>Invoice No:</strong> <br/>{receiptData.invoiceNumber}</div>
-                <div style={{textAlign: 'right'}}>
-                  <strong>Date:</strong> <br/>
-                  {new Date(receiptData.createdAt).toLocaleDateString()}
-                </div>
-              </div>
-
-              <table style={{width: '100%', borderCollapse: 'collapse', marginBottom: '20px'}}>
-                <tbody>
-                  <tr><td style={{padding: '5px 0', fontWeight: 'bold'}}>Patient ID:</td>
-                    <td>{receiptData.patient?.hospitalId || 'N/A'}</td></tr>
-                  <tr><td style={{padding: '5px 0', fontWeight: 'bold'}}>Patient Name:</td>
-                    <td>{receiptData.patient ? `${receiptData.patient.firstName} ${receiptData.patient.lastName}` : 'N/A'}</td></tr>
-                  <tr><td style={{padding: '5px 0', fontWeight: 'bold'}}>Description:</td>
-                    <td>{receiptData.description}</td></tr>
-                  <tr><td style={{padding: '5px 0', fontWeight: 'bold'}}>Payment Method:</td>
-                    <td>{receiptData.paymentMethod || 'N/A'}</td></tr>
-                  <tr><td style={{padding: '5px 0', fontWeight: 'bold'}}>Status:</td>
-                    <td>{receiptData.status}</td></tr>
-                </tbody>
-              </table>
-
-              <div style={{borderTop: '2px solid #000', paddingTop: '15px', textAlign: 'right', fontSize: '20px', fontWeight: 'bold'}}>
-                Total Amount: ₦{receiptData.totalAmount.toLocaleString()}
-              </div>
-
-              <div style={{textAlign: 'center', marginTop: '30px', fontSize: '12px', color: '#999', borderTop: '1px dashed #ccc', paddingTop: '10px'}}>
-                {viewingHistory ? 'Historical record for reference.' : 'Thank you for your visit.'}
-                <br/> This is a computer-generated receipt.
-              </div>
-            </div>
-
-            <div style={{display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px'}}>
-              <button type="button" className="btn btn-secondary modal-close-btn" onClick={() => setShowReceipt(false)}>Close</button>
-              <button type="button" className="btn btn-primary" onClick={handlePrintReceipt}>🖨️ Print Receipt</button>
-            </div>
+{showReceipt && receiptData && (
+  <div className="modal-overlay" onClick={() => setShowReceipt(false)}>
+    <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{maxWidth: '600px', padding: '20px'}}>
+      <div ref={receiptRef}>
+        <div className="receipt-header" style={{textAlign: 'center', marginBottom: '20px'}}>
+          <h1 style={{margin: 0}}>🏥 NEXGEN EMR CLINIC</h1>
+          <p style={{margin: 0, fontSize: '14px'}}>Medical Centre, Lagos</p>
+          <p style={{fontSize: '12px', color: '#666', marginTop: '5px'}}>
+            {viewingHistory ? 'Payment Receipt (Historical)' : 'Official Payment Receipt'}
+          </p>
+          <hr style={{border: '1px dashed #ccc'}} />
+        </div>
+        
+        <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '20px'}}>
+          <div><strong>Invoice No:</strong> <br/>{receiptData.invoiceNumber}</div>
+          <div style={{textAlign: 'right'}}>
+            <strong>Date:</strong> <br/>
+            {new Date(receiptData.createdAt).toLocaleDateString()}
           </div>
         </div>
-      )}
+
+        <table style={{width: '100%', borderCollapse: 'collapse', marginBottom: '20px'}}>
+          <tbody>
+            <tr><td style={{padding: '5px 0', fontWeight: 'bold'}}>Patient ID:</td>
+              <td>{receiptData.patient?.hospitalId || 'N/A'}</td></tr>
+            <tr><td style={{padding: '5px 0', fontWeight: 'bold'}}>Patient Name:</td>
+              <td>{receiptData.patient ? `${receiptData.patient.firstName} ${receiptData.patient.lastName}` : 'N/A'}</td></tr>
+            <tr><td style={{padding: '5px 0', fontWeight: 'bold'}}>Category:</td>
+              <td>{receiptData.patient?.patientCategory || 'FPP'}</td></tr>
+            <tr><td style={{padding: '5px 0', fontWeight: 'bold'}}>Description:</td>
+              <td>{receiptData.description}</td></tr>
+            <tr><td style={{padding: '5px 0', fontWeight: 'bold'}}>Payment Method:</td>
+              <td>{receiptData.paymentMethod || 'N/A'}</td></tr>
+            <tr><td style={{padding: '5px 0', fontWeight: 'bold'}}>Status:</td>
+              <td>{receiptData.status}</td></tr>
+          </tbody>
+        </table>
+
+        <div style={{borderTop: '2px solid #000', paddingTop: '15px', textAlign: 'right', fontSize: '20px', fontWeight: 'bold'}}>
+          Total Amount: ₦{receiptData.totalAmount.toLocaleString()}
+        </div>
+
+        <div style={{textAlign: 'center', marginTop: '30px', fontSize: '12px', color: '#999', borderTop: '1px dashed #ccc', paddingTop: '10px'}}>
+          {viewingHistory ? 'Historical record for reference.' : 'Thank you for your visit.'}
+          <br/> This is a computer-generated receipt.
+        </div>
+      </div>
+
+      {/* ✅ FIXED: Buttons with visible backgrounds */}
+      <div style={{display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px'}}>
+        <button 
+          type="button" 
+          className="btn btn-secondary" 
+          onClick={() => setShowReceipt(false)}
+          style={{
+            background: '#e5e7eb',
+            color: '#1f2937',
+            border: '1px solid #d1d5db',
+            padding: '10px 24px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            fontWeight: '600',
+            fontSize: '14px'
+          }}
+        >
+          Close
+        </button>
+        <button 
+          type="button" 
+          className="btn btn-primary" 
+          onClick={handlePrintReceipt}
+          style={{
+            background: '#0f3460',
+            color: 'white',
+            border: 'none',
+            padding: '10px 24px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            fontWeight: '600',
+            fontSize: '14px'
+          }}
+        >
+          🖨️ Print Receipt
+        </button>
+      </div>
+    </div>
+  </div>
+)}
 
       <style>{`
         .status-paid { background: #10b981; color: white; }
@@ -460,6 +664,10 @@ const BillingOfficer = () => {
         .status-insurance { background: #3b82f6; color: white; }
         .status-writeoff { background: #ef4444; color: white; }
         .status-overdue { background: #f59e0b; color: white; }
+        
+        .category-fpp { background: #dbeafe; color: #1e40af; }
+        .category-nhis { background: #d1fae5; color: #065f46; }
+        .category-corporate { background: #fef3c7; color: #92400e; }
       `}</style>
     </div>
   );

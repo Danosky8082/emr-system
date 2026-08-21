@@ -14,7 +14,13 @@ const Billing = () => {
       const res = await axios.get('http://localhost:3000/api/billing', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setBills(res.data);
+      
+      // ✅ Handle both array and object responses
+      const billsData = Array.isArray(res.data) 
+        ? res.data 
+        : (res.data?.data || []);
+      
+      setBills(billsData);
     } catch (error) {
       console.error('Error fetching bills:', error);
     } finally {
@@ -47,17 +53,18 @@ const Billing = () => {
             </tr>
           </thead>
           <tbody>
-            {bills.map((b) => (
-              <tr key={b.id}>
-                <td><strong>{b.invoiceNumber}</strong></td>
-                <td>{b.patient?.firstName} {b.patient?.lastName || 'N/A'}</td>
-                <td>{b.description}</td>
-                <td>₦{b.totalAmount.toLocaleString()}</td>
-                <td><span className={`status-badge status-${b.status.toLowerCase()}`}>{b.status}</span></td>
-                <td>{b.paymentMethod || '-'}</td>
-              </tr>
-            ))}
-            {bills.length === 0 && (
+            {bills.length > 0 ? (
+              bills.map((b) => (
+                <tr key={b.id}>
+                  <td><strong>{b.invoiceNumber}</strong></td>
+                  <td>{b.patient?.firstName} {b.patient?.lastName || 'N/A'}</td>
+                  <td>{b.description}</td>
+                  <td>₦{b.totalAmount?.toLocaleString() || '0'}</td>
+                  <td><span className={`status-badge status-${(b.status || 'pending').toLowerCase()}`}>{b.status || 'Pending'}</span></td>
+                  <td>{b.paymentMethod || '-'}</td>
+                </tr>
+              ))
+            ) : (
               <tr><td colSpan="6" className="text-center">No bills found</td></tr>
             )}
           </tbody>

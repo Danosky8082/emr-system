@@ -28,6 +28,9 @@ import ManagePermissions from './pages/ManagePermissions';
 import AntenatalDashboard from './pages/AntenatalDashboard';
 import PregnancyProfile from './pages/PregnancyProfile';
 import ArchivedPatients from './pages/ArchivedPatients';
+// ✅ NEW IMPORTS
+import NHISDrugManagement from './pages/NHISDrugManagement';
+import PharmacyDashboard from './pages/PharmacyDashboard';
 // --------------------------------------------
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -95,6 +98,9 @@ function App() {
           <Route path="pregnancy/new" element={<PregnancyProfile />} />
           <Route path="pregnancy/:id" element={<PregnancyProfile />} />
           <Route path="archived-patients" element={<ArchivedPatients />} />
+          {/* ✅ NEW ROUTES */}
+          <Route path="nhis-drugs" element={<NHISDrugManagement />} />
+          <Route path="pharmacy-dashboard" element={<PharmacyDashboard />} />
         </Route>
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
