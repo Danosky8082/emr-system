@@ -594,3 +594,73 @@
 .modal-content .btn-print-receipt:hover {
     background: #1a4a7a !important;
 }
+
+/* ===== STATUS BADGE STYLES ===== */
+.status-badge {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-block;
+  white-space: nowrap;
+}
+
+/* Prescription Status */
+.status-prescribed {
+  background: #f59e0b;
+  color: #1a1a2e;
+}
+
+.status-dispensed {
+  background: #10b981;
+  color: white;
+}
+
+.status-cancelled {
+  background: #ef4444;
+  color: white;
+}
+
+/* Lab Order Status */
+.status-ordered {
+  background: #f59e0b;
+  color: #1a1a2e;
+}
+
+.status-completed {
+  background: #10b981;
+  color: white;
+}
+
+.status-in-progress {
+  background: #3b82f6;
+  color: white;
+}
+
+/* Priority Badges */
+.priority-routine {
+  background: #3b82f6;
+  color: white;
+}
+
+.priority-urgent {
+  background: #ef4444;
+  color: white;
+}
+
+.priority-emergency {
+  background: #dc2626;
+  color: white;
+}
+
+/* Role Badge Fix */
+.role-badge {
+  background: rgba(15, 52, 96, 0.85) !important;
+  color: #ffffff !important;
+  padding: 4px 12px !important;
+  border-radius: 12px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  display: inline-block !important;
+  border: none !important;
+}

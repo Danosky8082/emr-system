@@ -86,17 +86,19 @@ const StaffManagement = () => {
 
   // Fetch assignments when editing a nurse or doctor
   const fetchAssignments = async (staffId) => {
-    try {
-      const res = await axios.get(`http://localhost:3000/api/staff/${staffId}/assignments`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setAssignedClinicIds(res.data.clinicIds);
-      setAssignedWardIds(res.data.wardIds);
-    } catch (error) {
-      console.error('Error fetching assignments:', error);
-      toast.error('Failed to load assignments');
-    }
-  };
+  try {
+    const res = await axios.get(`http://localhost:3000/api/staff/${staffId}/assignments`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    setAssignedClinicIds(res.data.clinicIds || []);
+    setAssignedWardIds(res.data.wardIds || []);
+  } catch (error) {
+    console.error('Error fetching assignments:', error);
+    // Don't show error toast, just set empty arrays
+    setAssignedClinicIds([]);
+    setAssignedWardIds([]);
+  }
+};
 
   // Filter staff by search term
   const filteredStaff = staff.filter(s => {

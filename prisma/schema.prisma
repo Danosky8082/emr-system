@@ -31,6 +31,13 @@ model Patient {
   insuranceId       String?
   corporateCompany  String?
 
+  // 🆕 Patient Portal Fields
+  password         String?   // Hashed password for patient portal
+  portalAccess     Boolean   @default(false)  // Enable/disable portal access
+  lastLogin        DateTime?
+  isVerified       Boolean   @default(false)
+  pinCode          String?   // For quick access (optional)
+
   // Archive fields
   isArchived     Boolean   @default(false)
   archivedAt     DateTime?
@@ -52,6 +59,12 @@ model Patient {
   journeys       PatientJourney[]
   vitals         VitalSign[]
   pregnancies    Pregnancy[]
+
+  // 🆕 Patient Portal Relations
+  notifications  PatientNotification[]
+  messages       PatientMessage[]
+  queueEntries   PatientQueue[]      // ✅ Patient Queue entries
+  kioskSessions  KioskSession[]      // ✅ Kiosk sessions
 
   // NHIS Relations
   nhisAuthorizations NHISAuthorization[]
@@ -96,6 +109,10 @@ model Staff {
   pharmacyStaff              PharmacyStaff[]
   pharmacyTransactions       PharmacyTransaction[]
 
+  // 🆕 Patient Portal Relations
+  patientMessages            PatientMessage[]
+  assignedQueueEntries       PatientQueue[]        @relation("AssignedQueue") // ✅ Staff assigned to queue
+
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
   nhisauthorizations NHISAuthorization[]
@@ -134,6 +151,10 @@ model Appointment {
   staff     Staff    @relation("DoctorAppointments", fields: [staffId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // 🆕 Queue Relations
+  queueEntries     PatientQueue[]        // ✅ Queue entries linked to appointment
+  reminders        AppointmentReminder[] // ✅ Appointment reminders
 }
 
 // 4. Clinical Notes (SOAP)
@@ -153,7 +174,7 @@ model ClinicalNote {
   updatedAt   DateTime @updatedAt
 }
 
-// 5. Prescriptions (Keep your existing simple version)
+// 5. Prescriptions
 model Prescription {
   id                 String              @id @default(cuid())
   patientId          String
@@ -271,6 +292,9 @@ model Ward {
   staffAssignments StaffWard[]
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
+
+  // 🆕 Queue Relations
+  queueEntries     PatientQueue[]   // ✅ Queue entries for ward
 }
 
 // 12. ADMISSION MODEL
@@ -330,6 +354,9 @@ model Clinic {
   staffAssignments StaffClinic[]
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
+
+  // 🆕 Queue Relations
+  queueEntries     PatientQueue[]   // ✅ Queue entries for clinic
 }
 
 // 16. PATIENT JOURNEY MODEL
@@ -405,31 +432,40 @@ model VitalSign {
 
 // 20. DYNAMIC ROLE PERMISSIONS
 model RolePermission {
-  id               String   @id @default(cuid())
-  role             String   @unique
-  dashboard        Boolean  @default(true)
-  patients         Boolean  @default(false)
-  staff            Boolean  @default(false)
-  appointments     Boolean  @default(false)
-  prescriptions    Boolean  @default(false)
-  labOrders        Boolean  @default(false)
-  billing          Boolean  @default(false)
-  pharmacy         Boolean  @default(false)
-  clinics          Boolean  @default(false)
-  wards            Boolean  @default(false)
-  pricing          Boolean  @default(false)
-  billingOfficer   Boolean  @default(false)
-  patientIntake    Boolean  @default(false)
-  admissions       Boolean  @default(false)
-  patientHistory   Boolean  @default(false)
-  roiRequests      Boolean  @default(false)
-  nurseDashboard   Boolean  @default(false)
-  doctorDashboard  Boolean  @default(false)
-  antenatal        Boolean  @default(false)
-  archivedPatients Boolean  @default(false)
-  nhisManagement   Boolean  @default(false)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id                    String   @id @default(cuid())
+  role                  String   @unique
+  dashboard             Boolean  @default(true)
+  patients              Boolean  @default(false)
+  staff                 Boolean  @default(false)
+  appointments          Boolean  @default(false)
+  prescriptions         Boolean  @default(false)
+  labOrders             Boolean  @default(false)
+  billing               Boolean  @default(false)
+  pharmacy              Boolean  @default(false)
+  pharmacyDashboard     Boolean  @default(false)
+  pharmacyInventory     Boolean  @default(false)
+  nhisManagement        Boolean  @default(false)
+  nhisAuthorizations    Boolean  @default(false)
+  pharmacyStock         Boolean  @default(false)
+  pharmacyTransactions  Boolean  @default(false)
+  pharmacyBranches      Boolean  @default(false)
+  clinics               Boolean  @default(false)
+  wards                 Boolean  @default(false)
+  pricing               Boolean  @default(false)
+  billingOfficer        Boolean  @default(false)
+  patientIntake         Boolean  @default(false)
+  admissions            Boolean  @default(false)
+  patientHistory        Boolean  @default(false)
+  roiRequests           Boolean  @default(false)
+  nurseDashboard        Boolean  @default(false)
+  doctorDashboard       Boolean  @default(false)
+  antenatal             Boolean  @default(false)
+  archivedPatients      Boolean  @default(false)
+  archivedPatientsView  Boolean  @default(false)
+  queueManagement       Boolean  @default(false)
+  doctorQueue           Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 }
 
 // 21. ANTENATAL / PREGNANCY MODULE
@@ -487,7 +523,7 @@ model Delivery {
 }
 
 // ============================================================
-// 🆕 NHIS & PHARMACY MODULES (NEW ADDITIONS)
+// 🆕 NHIS & PHARMACY MODULES
 // ============================================================
 
 // 22. NHIS Drug Pricing
@@ -615,4 +651,106 @@ model PharmacyTransaction {
   staffId           String
   staff             Staff          @relation(fields: [staffId], references: [id])
   createdAt         DateTime       @default(now())
+}
+
+// ============================================================
+// 🆕 PATIENT QUEUE MANAGEMENT & PATIENT PORTAL
+// ============================================================
+
+// 28. Patient Queue / Check-in ✅
+model PatientQueue {
+  id              String   @id @default(cuid())
+  patientId       String
+  patient         Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  
+  checkInTime     DateTime @default(now())
+  checkInMethod   String   @default("manual_entry") // card_scan, manual_entry, phone_lookup, self_kiosk
+  
+  // Queue Details
+  status          String   @default("waiting") // waiting, in_progress, completed, cancelled, no_show
+  priority        String   @default("normal")  // normal, urgent, emergency
+  
+  // Appointment Link
+  appointmentId   String?
+  appointment     Appointment? @relation(fields: [appointmentId], references: [id])
+  
+  // Destination
+  destinationType String   @default("CLINIC") // clinic, ward, lab, pharmacy, radiology
+  clinicId        String?
+  clinic          Clinic?  @relation(fields: [clinicId], references: [id])
+  wardId          String?
+  ward            Ward?    @relation(fields: [wardId], references: [id])
+  
+  // Staff Assignment
+  assignedTo      String?
+  assignedStaff   Staff?   @relation("AssignedQueue", fields: [assignedTo], references: [id])
+  
+  // Timeline
+  calledTime      DateTime?
+  startTime       DateTime?
+  endTime         DateTime?
+  
+  // Notes
+  notes           String?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// 29. Appointment Reminders
+model AppointmentReminder {
+  id             String   @id @default(cuid())
+  appointmentId  String
+  appointment    Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  
+  type           String   // sms, email, push_notification
+  sentAt         DateTime @default(now())
+  status         String   // pending, sent, failed
+  message        String
+  
+  createdAt      DateTime @default(now())
+}
+
+// 30. Patient Notifications (Portal)
+model PatientNotification {
+  id         String   @id @default(cuid())
+  patientId  String
+  patient    Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  
+  title      String
+  message    String
+  type       String   // appointment_reminder, bill_due, lab_result, prescription_ready, etc.
+  isRead     Boolean  @default(false)
+  link       String?  // Optional link to related page
+  createdAt  DateTime @default(now())
+}
+
+// 31. Patient Messages
+model PatientMessage {
+  id             String   @id @default(cuid())
+  patientId      String
+  patient        Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  staffId        String
+  staff          Staff    @relation(fields: [staffId], references: [id])
+  
+  subject        String
+  message        String
+  isRead         Boolean  @default(false)
+  isFromPatient  Boolean  @default(true) // true = patient sent, false = staff sent
+  createdAt      DateTime @default(now())
+}
+
+// 32. Check-in Kiosk Sessions
+model KioskSession {
+  id             String   @id @default(cuid())
+  patientId      String
+  patient        Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  
+  sessionToken   String   @unique
+  startedAt      DateTime @default(now())
+  endedAt        DateTime?
+  status         String   @default("active") // active, completed, expired
+  
+  deviceInfo     String?
+  ipAddress      String?
 }

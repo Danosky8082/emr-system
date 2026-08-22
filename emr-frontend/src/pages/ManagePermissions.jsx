@@ -23,6 +23,7 @@ const ManagePermissions = () => {
     { key: 'antenatal', label: 'Antenatal Care' },
     { key: 'nurseDashboard', label: 'Nurse Dashboard' },
     { key: 'doctorDashboard', label: 'Doctor Dashboard' },
+    { key: 'doctorQueue', label: 'Doctor Queue' },
     
     // Pharmacy Modules
     { key: 'pharmacy', label: 'Pharmacy' },
@@ -44,11 +45,15 @@ const ManagePermissions = () => {
     { key: 'admissions', label: 'ADT' },
     { key: 'patientHistory', label: 'Patient History' },
     { key: 'roiRequests', label: 'ROI Requests' },
-    { key: 'archivedPatients', label: 'Archived Patients' },
+    { key: 'archivedPatients', label: 'Archived Patients (Manage)' },
+    { key: 'archivedPatientsView', label: 'Archived Patients (View Only)' },
     
     // Admin Modules
     { key: 'clinics', label: 'Manage Clinics' },
     { key: 'wards', label: 'Manage Wards' },
+    
+    // Queue Management
+    { key: 'queueManagement', label: 'Queue Management' },
   ];
 
   const fetchPermissions = async () => {
@@ -110,7 +115,13 @@ const ManagePermissions = () => {
       // Only Admin/ITAdmin can manage wards
       'wards': ['Doctor', 'Nurse', 'Pharmacist', 'LabTechnician', 'Receptionist', 'Accountant', 'BillingOfficer', 'ITSupport', 'Obstetrician', 'Midwife', 'Records'],
       
-      // 🆕 Pharmacy locks
+      // 🆕 Doctor Queue - Only Doctors and Obstetricians should have it
+      'doctorQueue': ['Nurse', 'Pharmacist', 'LabTechnician', 'Receptionist', 'Accountant', 'BillingOfficer', 'ITSupport', 'Midwife', 'Records'],
+      
+      // 🆕 Queue Management - Only Admin, Records, Nurse, Doctor should have it
+      'queueManagement': ['Pharmacist', 'LabTechnician', 'Receptionist', 'Accountant', 'BillingOfficer', 'ITSupport'],
+      
+      // Pharmacy locks
       'pharmacyInventory': ['Doctor', 'Nurse', 'Accountant', 'BillingOfficer', 'Receptionist', 'LabTechnician', 'ITSupport'],
       'pharmacyStock': ['Doctor', 'Nurse', 'Accountant', 'BillingOfficer', 'Receptionist', 'LabTechnician', 'ITSupport'],
       'pharmacyTransactions': ['Doctor', 'Nurse', 'Accountant', 'BillingOfficer', 'Receptionist', 'LabTechnician', 'ITSupport'],
@@ -128,14 +139,19 @@ const ManagePermissions = () => {
       'pricing': 'Billing Officer can view pricing but not manage it',
       'billingOfficer': 'Accountant should use the main Billing module',
       'antenatal': 'Only Obstetricians, Midwives, and Nurses can access antenatal care',
-      'archivedPatients': 'This role does not have permission to view archived patients',
+      'archivedPatients': 'Only Records staff can manage archived patients',
+      'archivedPatientsView': 'This role can view archived patients but not manage them',
       'patientIntake': 'Only Records staff can manage patient intake',
       'admissions': 'Only Records staff can manage admissions',
       'staff': 'Only Admin, ITAdmin, and Records can manage staff',
       'clinics': 'Only Admin and ITAdmin can manage clinics',
       'wards': 'Only Admin and ITAdmin can manage wards',
       
-      // 🆕 Pharmacy tooltips
+      // 🆕 Doctor Queue tooltips
+      'doctorQueue': '🔒 Only Doctors and Obstetricians can access their patient queue',
+      'queueManagement': '🔒 Only Admin, Records, and clinical staff can manage the queue',
+      
+      // Pharmacy tooltips
       'pharmacyInventory': 'Only Pharmacist, Admin, and ITAdmin can manage inventory',
       'pharmacyStock': 'Only Pharmacist, Admin, and ITAdmin can manage stock',
       'pharmacyTransactions': 'Only Pharmacist, Admin, and ITAdmin can view transactions',
@@ -177,6 +193,9 @@ const ManagePermissions = () => {
         doctorDashboard: true,
         antenatal: true,
         archivedPatients: true,
+        archivedPatientsView: true,
+        doctorQueue: true,
+        queueManagement: true,
       },
       'ITAdmin': {
         dashboard: true,
@@ -206,6 +225,9 @@ const ManagePermissions = () => {
         doctorDashboard: true,
         antenatal: true,
         archivedPatients: true,
+        archivedPatientsView: true,
+        doctorQueue: true,
+        queueManagement: true,
       },
       'Records': {
         dashboard: true,
@@ -235,6 +257,9 @@ const ManagePermissions = () => {
         doctorDashboard: false,
         antenatal: false,
         archivedPatients: true,
+        archivedPatientsView: true,
+        doctorQueue: false,
+        queueManagement: true,
       },
       'Doctor': {
         dashboard: true,
@@ -264,6 +289,9 @@ const ManagePermissions = () => {
         doctorDashboard: true,
         antenatal: false,
         archivedPatients: false,
+        archivedPatientsView: true,
+        doctorQueue: true,
+        queueManagement: false,
       },
       'Nurse': {
         dashboard: true,
@@ -293,6 +321,9 @@ const ManagePermissions = () => {
         doctorDashboard: false,
         antenatal: true,
         archivedPatients: false,
+        archivedPatientsView: true,
+        doctorQueue: false,
+        queueManagement: true,
       },
       'Obstetrician': {
         dashboard: true,
@@ -322,6 +353,9 @@ const ManagePermissions = () => {
         doctorDashboard: true,
         antenatal: true,
         archivedPatients: false,
+        archivedPatientsView: true,
+        doctorQueue: true,
+        queueManagement: false,
       },
       'Midwife': {
         dashboard: true,
@@ -351,6 +385,9 @@ const ManagePermissions = () => {
         doctorDashboard: false,
         antenatal: true,
         archivedPatients: false,
+        archivedPatientsView: true,
+        doctorQueue: false,
+        queueManagement: true,
       },
       'Pharmacist': {
         dashboard: true,
@@ -380,6 +417,9 @@ const ManagePermissions = () => {
         doctorDashboard: false,
         antenatal: false,
         archivedPatients: false,
+        archivedPatientsView: false,
+        doctorQueue: false,
+        queueManagement: false,
       },
       'Accountant': {
         dashboard: true,
@@ -409,6 +449,9 @@ const ManagePermissions = () => {
         doctorDashboard: false,
         antenatal: false,
         archivedPatients: false,
+        archivedPatientsView: false,
+        doctorQueue: false,
+        queueManagement: false,
       },
       'BillingOfficer': {
         dashboard: true,
@@ -438,6 +481,9 @@ const ManagePermissions = () => {
         doctorDashboard: false,
         antenatal: false,
         archivedPatients: false,
+        archivedPatientsView: false,
+        doctorQueue: false,
+        queueManagement: false,
       },
       'LabTechnician': {
         dashboard: true,
@@ -467,6 +513,9 @@ const ManagePermissions = () => {
         doctorDashboard: false,
         antenatal: false,
         archivedPatients: false,
+        archivedPatientsView: false,
+        doctorQueue: false,
+        queueManagement: false,
       },
       'Receptionist': {
         dashboard: true,
@@ -496,6 +545,9 @@ const ManagePermissions = () => {
         doctorDashboard: false,
         antenatal: false,
         archivedPatients: false,
+        archivedPatientsView: false,
+        doctorQueue: false,
+        queueManagement: false,
       },
       'ITSupport': {
         dashboard: true,
@@ -525,6 +577,9 @@ const ManagePermissions = () => {
         doctorDashboard: false,
         antenatal: false,
         archivedPatients: false,
+        archivedPatientsView: false,
+        doctorQueue: false,
+        queueManagement: false,
       },
     };
     return defaults[role] || {};

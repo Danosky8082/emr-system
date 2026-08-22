@@ -31,6 +31,10 @@ import ArchivedPatients from './pages/ArchivedPatients';
 // ✅ NEW IMPORTS
 import NHISDrugManagement from './pages/NHISDrugManagement';
 import PharmacyDashboard from './pages/PharmacyDashboard';
+import ArchivedPatientsView from './pages/ArchivedPatientsView';
+import QueueDashboard from './pages/QueueDashboard';
+import KioskMode from './components/KioskMode';
+import DoctorQueue from './pages/DoctorQueue';
 // --------------------------------------------
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -101,6 +105,10 @@ function App() {
           {/* ✅ NEW ROUTES */}
           <Route path="nhis-drugs" element={<NHISDrugManagement />} />
           <Route path="pharmacy-dashboard" element={<PharmacyDashboard />} />
+          <Route path="/archived-patients-view" element={<ArchivedPatientsView />} />
+          <Route path="/queue" element={<QueueDashboard />} />
+          <Route path="/kiosk" element={<KioskMode />} />
+          <Route path="/doctor-queue" element={<DoctorQueue />} />
         </Route>
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>

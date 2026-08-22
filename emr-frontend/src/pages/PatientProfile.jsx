@@ -324,7 +324,7 @@ const PatientProfile = () => {
           </>
         )}
 
-        {/* 🆕 PRESCRIPTIONS TAB WITH NEW BUTTON */}
+        {/* 🆕 PRESCRIPTIONS TAB WITH NEW BUTTON - FIXED */}
         {currentTab === 'prescriptions' && (
           <div className="table-container">
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
@@ -332,15 +332,50 @@ const PatientProfile = () => {
               <button className="btn btn-primary btn-sm" onClick={() => setShowPrescriptionModal(true)}>➕ New Prescription</button>
             </div>
             <table>
-              <thead><tr><th>Medication</th><th>Dosage</th><th>Frequency</th><th>Status</th><th>Prescribed By</th></tr></thead>
-              <tbody>{patient.prescriptions && patient.prescriptions.map(p => (
-                <tr key={p.id}><td><strong>{p.medication}</strong></td><td>{p.dosage}</td><td>{p.frequency}</td><td><span className={`role-badge ${p.status === 'Dispensed' ? 'status-active' : ''}`}>{p.status}</span></td><td>{p.prescribedBy?.firstName} {p.prescribedBy?.lastName}</td></tr>
-              ))}</tbody>
+              <thead>
+                <tr>
+                  <th>Medication</th>
+                  <th>Dosage</th>
+                  <th>Frequency</th>
+                  <th>Status</th>
+                  <th>Prescribed By</th>
+                </tr>
+              </thead>
+              <tbody>
+                {patient.prescriptions && patient.prescriptions.length > 0 ? (
+                  patient.prescriptions.map(p => (
+                    <tr key={p.id}>
+                      <td><strong>{p.medication}</strong></td>
+                      <td>{p.dosage}</td>
+                      <td>{p.frequency}</td>
+                      <td>
+                        <span 
+                          className="status-badge"
+                          style={{
+                            background: p.status === 'Dispensed' ? '#10b981' : '#f59e0b',
+                            color: p.status === 'Dispensed' ? 'white' : '#1a1a2e',
+                            padding: '4px 12px',
+                            borderRadius: '12px',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            display: 'inline-block'
+                          }}
+                        >
+                          {p.status || 'Prescribed'}
+                        </span>
+                      </td>
+                      <td>{p.prescribedBy?.firstName} {p.prescribedBy?.lastName}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr><td colSpan="5" className="text-center">No prescriptions found.</td></tr>
+                )}
+              </tbody>
             </table>
           </div>
         )}
 
-        {/* 🆕 LAB ORDERS TAB WITH NEW BUTTON */}
+        {/* 🆕 LAB ORDERS TAB WITH NEW BUTTON - FIXED */}
         {currentTab === 'lab-orders' && (
           <div className="table-container">
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
@@ -348,39 +383,100 @@ const PatientProfile = () => {
               <button className="btn btn-primary btn-sm" onClick={() => setShowLabOrderModal(true)}>➕ New Lab Order</button>
             </div>
             <table>
-              <thead><tr><th>Test Name</th><th>Type</th><th>Priority</th><th>Status</th><th>Result</th></tr></thead>
-              <tbody>{patient.labOrders && patient.labOrders.map(l => (
-                <tr key={l.id}><td><strong>{l.testName}</strong></td><td>{l.testType}</td><td><span className={`role-badge ${l.priority === 'Urgent' ? 'status-inactive' : ''}`}>{l.priority}</span></td><td>{l.status}</td><td>{l.result || '-'}</td></tr>
-              ))}</tbody>
+              <thead>
+                <tr>
+                  <th>Test Name</th>
+                  <th>Type</th>
+                  <th>Priority</th>
+                  <th>Status</th>
+                  <th>Result</th>
+                </tr>
+              </thead>
+              <tbody>
+                {patient.labOrders && patient.labOrders.length > 0 ? (
+                  patient.labOrders.map(l => (
+                    <tr key={l.id}>
+                      <td><strong>{l.testName}</strong></td>
+                      <td>{l.testType}</td>
+                      <td>
+                        <span 
+                          className="status-badge"
+                          style={{
+                            background: l.priority === 'Urgent' ? '#ef4444' : l.priority === 'Emergency' ? '#dc2626' : '#3b82f6',
+                            color: 'white',
+                            padding: '4px 12px',
+                            borderRadius: '12px',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            display: 'inline-block'
+                          }}
+                        >
+                          {l.priority || 'Routine'}
+                        </span>
+                      </td>
+                      <td>
+                        <span 
+                          className="status-badge"
+                          style={{
+                            background: l.status === 'Completed' ? '#10b981' : l.status === 'Ordered' ? '#f59e0b' : '#6b7280',
+                            color: l.status === 'Completed' ? 'white' : '#1a1a2e',
+                            padding: '4px 12px',
+                            borderRadius: '12px',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            display: 'inline-block'
+                          }}
+                        >
+                          {l.status || 'Ordered'}
+                        </span>
+                      </td>
+                      <td>{l.result || '-'}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr><td colSpan="5" className="text-center">No lab orders found.</td></tr>
+                )}
+              </tbody>
             </table>
           </div>
         )}
       </div>
 
-      {/* --- VITAL SIGNS MODAL (Unchanged) --- */}
+      {/* --- VITAL SIGNS MODAL --- */}
       {showVitalModal && (
         <div className="modal-overlay" onClick={() => setShowVitalModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header"><h3>Record Vitals – {patient.firstName} {patient.lastName}</h3><button className="modal-close" onClick={() => setShowVitalModal(false)}>×</button></div>
             <form onSubmit={handleVitalSubmit}>
               <div className="modal-body">
-                <div className="form-row"><div className="form-group"><label>BP Systolic (mmHg)</label><input type="number" value={vitalsForm.bloodPressureSystolic} onChange={e => setVitalsForm({...vitalsForm, bloodPressureSystolic: e.target.value})} /></div>
-                <div className="form-group"><label>BP Diastolic (mmHg)</label><input type="number" value={vitalsForm.bloodPressureDiastolic} onChange={e => setVitalsForm({...vitalsForm, bloodPressureDiastolic: e.target.value})} /></div></div>
-                <div className="form-row"><div className="form-group"><label>Heart Rate (bpm)</label><input type="number" value={vitalsForm.heartRate} onChange={e => setVitalsForm({...vitalsForm, heartRate: e.target.value})} /></div>
-                <div className="form-group"><label>Temperature (°C)</label><input type="number" step="0.1" value={vitalsForm.temperature} onChange={e => setVitalsForm({...vitalsForm, temperature: e.target.value})} /></div></div>
-                <div className="form-row"><div className="form-group"><label>Respiratory Rate (breaths/min)</label><input type="number" value={vitalsForm.respiratoryRate} onChange={e => setVitalsForm({...vitalsForm, respiratoryRate: e.target.value})} /></div>
-                <div className="form-group"><label>Oxygen Saturation (%)</label><input type="number" value={vitalsForm.oxygenSaturation} onChange={e => setVitalsForm({...vitalsForm, oxygenSaturation: e.target.value})} /></div></div>
-                <div className="form-row"><div className="form-group"><label>Weight (kg)</label><input type="number" step="0.1" value={vitalsForm.weight} onChange={e => setVitalsForm({...vitalsForm, weight: e.target.value})} /></div>
-                <div className="form-group"><label>Height (cm)</label><input type="number" value={vitalsForm.height} onChange={e => setVitalsForm({...vitalsForm, height: e.target.value})} /></div></div>
+                <div className="form-row">
+                  <div className="form-group"><label>BP Systolic (mmHg)</label><input type="number" value={vitalsForm.bloodPressureSystolic} onChange={e => setVitalsForm({...vitalsForm, bloodPressureSystolic: e.target.value})} /></div>
+                  <div className="form-group"><label>BP Diastolic (mmHg)</label><input type="number" value={vitalsForm.bloodPressureDiastolic} onChange={e => setVitalsForm({...vitalsForm, bloodPressureDiastolic: e.target.value})} /></div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group"><label>Heart Rate (bpm)</label><input type="number" value={vitalsForm.heartRate} onChange={e => setVitalsForm({...vitalsForm, heartRate: e.target.value})} /></div>
+                  <div className="form-group"><label>Temperature (°C)</label><input type="number" step="0.1" value={vitalsForm.temperature} onChange={e => setVitalsForm({...vitalsForm, temperature: e.target.value})} /></div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group"><label>Respiratory Rate (breaths/min)</label><input type="number" value={vitalsForm.respiratoryRate} onChange={e => setVitalsForm({...vitalsForm, respiratoryRate: e.target.value})} /></div>
+                  <div className="form-group"><label>Oxygen Saturation (%)</label><input type="number" value={vitalsForm.oxygenSaturation} onChange={e => setVitalsForm({...vitalsForm, oxygenSaturation: e.target.value})} /></div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group"><label>Weight (kg)</label><input type="number" step="0.1" value={vitalsForm.weight} onChange={e => setVitalsForm({...vitalsForm, weight: e.target.value})} /></div>
+                  <div className="form-group"><label>Height (cm)</label><input type="number" value={vitalsForm.height} onChange={e => setVitalsForm({...vitalsForm, height: e.target.value})} /></div>
+                </div>
                 <div className="form-group"><label>Notes</label><textarea value={vitalsForm.notes} onChange={e => setVitalsForm({...vitalsForm, notes: e.target.value})} rows="2" /></div>
               </div>
-              <div className="modal-footer"><button type="button" className="btn btn-secondary" onClick={() => setShowVitalModal(false)}>Cancel</button><button type="submit" className="btn btn-primary">Save Vitals</button></div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={() => setShowVitalModal(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Save Vitals</button>
+              </div>
             </form>
           </div>
         </div>
       )}
 
-            {/* NOTES MODAL */}
+      {/* NOTES MODAL */}
       {showNoteModal && (
         <div className="modal-overlay profile-modal" onClick={() => setShowNoteModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -416,7 +512,6 @@ const PatientProfile = () => {
                 </div>
               </div>
               <div className="modal-footer">
-                {/* 🟢 Visible Cancel Button Added */}
                 <button type="button" className="btn btn-secondary" onClick={() => setShowNoteModal(false)}>Cancel</button>
                 <button type="submit" className="btn btn-primary">{editingNote ? 'Update Note' : 'Save Note'}</button>
               </div>
@@ -470,4 +565,5 @@ const PatientProfile = () => {
     </div>
   );
 };
+
 export default PatientProfile;
