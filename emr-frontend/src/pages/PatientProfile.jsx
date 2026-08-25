@@ -17,6 +17,8 @@ const PatientProfile = () => {
 
   const [patient, setPatient] = useState(null);
   const [vitals, setVitals] = useState([]);
+  const [imagingOrders, setImagingOrders] = useState([]);
+  const [recentActivities, setRecentActivities] = useState([]);
 
   // -------- NOTE MODAL STATE --------
   const [showNoteModal, setShowNoteModal] = useState(false);
@@ -37,28 +39,82 @@ const PatientProfile = () => {
     respiratoryRate: '', oxygenSaturation: '', weight: '', height: '', notes: ''
   });
 
-  // -------- NEW: PRESCRIPTION MODAL STATE --------
+  // -------- PRESCRIPTION MODAL STATE --------
   const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
   const [prescriptionForm, setPrescriptionForm] = useState({
     medication: '', dosage: '', frequency: '', duration: '', instructions: ''
   });
 
-  // -------- NEW: LAB ORDER MODAL STATE --------
+  // -------- LAB ORDER MODAL STATE --------
   const [showLabOrderModal, setShowLabOrderModal] = useState(false);
   const [labOrderForm, setLabOrderForm] = useState({
     testName: '', testType: 'Haematology', priority: 'Routine', notes: ''
   });
 
+  // -------- IMAGING ORDER DETAIL MODAL STATE --------
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [showOrderModal, setShowOrderModal] = useState(false);
+
+  // -------- X-RAY / IMAGING MODAL STATE --------
+  const [showImagingModal, setShowImagingModal] = useState(false);
+  const [imagingForm, setImagingForm] = useState({
+    imagingType: 'X-Ray',
+    bodyPart: '',
+    priority: 'Routine',
+    clinicalHistory: '',
+    clinicalQuestion: '',
+    notes: ''
+  });
+
+  const imagingTypes = [
+    'X-Ray',
+    'CT Scan',
+    'MRI',
+    'Ultrasound',
+    'Mammogram',
+    'PET Scan',
+    'Fluoroscopy',
+    'Angiography'
+  ];
+
+  const bodyParts = [
+    'Chest',
+    'Head',
+    'Abdomen',
+    'Pelvis',
+    'Spine',
+    'Neck',
+    'Shoulder',
+    'Elbow',
+    'Wrist',
+    'Hand',
+    'Hip',
+    'Knee',
+    'Ankle',
+    'Foot',
+    'Full Body'
+  ];
+
+  const isDoctor = ['Doctor', 'Obstetrician'].includes(user?.role);
+  const isNurse = ['Nurse', 'Midwife'].includes(user?.role);
+
   const fetchAllData = async () => {
     setLoading(true);
     setError(null);
     try {
-      const [patientRes, vitalsRes] = await Promise.all([
+      const [patientRes, vitalsRes, imagingRes] = await Promise.all([
         axios.get(`http://localhost:3000/api/patients/${id}`, { headers: { Authorization: `Bearer ${token}` } }),
-        axios.get(`http://localhost:3000/api/patients/${id}/vitals`, { headers: { Authorization: `Bearer ${token}` } })
+        axios.get(`http://localhost:3000/api/patients/${id}/vitals`, { headers: { Authorization: `Bearer ${token}` } }),
+        axios.get(`http://localhost:3000/api/patients/${id}/imaging-orders`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => ({ data: [] }))
       ]);
       setPatient(patientRes.data);
       setVitals(vitalsRes.data);
+      setImagingOrders(imagingRes.data || []);
+      
+      // Build recent activities from all data
+      buildRecentActivities(patientRes.data, vitalsRes.data, imagingRes.data || []);
+      
+      console.log('📸 Imaging Orders with images:', imagingRes.data.filter(o => o.images && o.images.length > 0));
     } catch (err) {
       const status = err.response?.status;
       const message = err.response?.data?.error || err.message;
@@ -74,6 +130,100 @@ const PatientProfile = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Build recent activities timeline
+  const buildRecentActivities = (patientData, vitalsData, imagingData) => {
+    const activities = [];
+
+    // Add vitals activities
+    if (vitalsData && vitalsData.length > 0) {
+      vitalsData.forEach(v => {
+        activities.push({
+          id: `vital-${v.id}`,
+          type: 'vital',
+          date: v.recordedAt,
+          title: 'Vital Signs Recorded',
+          description: `BP: ${v.bloodPressureSystolic}/${v.bloodPressureDiastolic} | HR: ${v.heartRate} | Temp: ${v.temperature}°C`,
+          staff: v.nurse?.firstName && v.nurse?.lastName ? `${v.nurse.firstName} ${v.nurse.lastName}` : 'Unknown Nurse',
+          icon: '❤️',
+          color: '#ef4444',
+          details: v
+        });
+      });
+    }
+
+    // Add clinical notes activities (from patient data)
+    if (patientData?.clinicalNotes && patientData.clinicalNotes.length > 0) {
+      patientData.clinicalNotes.forEach(n => {
+        activities.push({
+          id: `note-${n.id}`,
+          type: 'note',
+          date: n.createdAt,
+          title: `Clinical Note (${n.type || 'SOAP'})`,
+          description: n.subjective || n.assessment || n.fullContent || 'Clinical note recorded',
+          staff: n.author?.firstName && n.author?.lastName ? `${n.author.firstName} ${n.author.lastName}` : 'Unknown Staff',
+          icon: '📝',
+          color: '#3b82f6',
+          details: n
+        });
+      });
+    }
+
+    // Add prescriptions activities
+    if (patientData?.prescriptions && patientData.prescriptions.length > 0) {
+      patientData.prescriptions.forEach(p => {
+        activities.push({
+          id: `prescription-${p.id}`,
+          type: 'prescription',
+          date: p.createdAt,
+          title: `Prescription: ${p.medication}`,
+          description: `${p.dosage} - ${p.frequency} (${p.status || 'Prescribed'})`,
+          staff: p.prescribedBy?.firstName && p.prescribedBy?.lastName ? `${p.prescribedBy.firstName} ${p.prescribedBy.lastName}` : 'Unknown Doctor',
+          icon: '💊',
+          color: '#8b5cf6',
+          details: p
+        });
+      });
+    }
+
+    // Add lab orders activities
+    if (patientData?.labOrders && patientData.labOrders.length > 0) {
+      patientData.labOrders.forEach(l => {
+        activities.push({
+          id: `lab-${l.id}`,
+          type: 'lab',
+          date: l.createdAt,
+          title: `Lab Order: ${l.testName}`,
+          description: `${l.testType} - ${l.status || 'Ordered'}`,
+          staff: l.orderedBy?.firstName && l.orderedBy?.lastName ? `${l.orderedBy.firstName} ${l.orderedBy.lastName}` : 'Unknown Staff',
+          icon: '🔬',
+          color: '#10b981',
+          details: l
+        });
+      });
+    }
+
+    // Add imaging orders activities
+    if (imagingData && imagingData.length > 0) {
+      imagingData.forEach(i => {
+        activities.push({
+          id: `imaging-${i.id}`,
+          type: 'imaging',
+          date: i.createdAt,
+          title: `Imaging: ${i.imagingType}`,
+          description: `${i.bodyPart} - ${i.status || 'Ordered'}`,
+          staff: i.orderingStaff?.firstName && i.orderingStaff?.lastName ? `${i.orderingStaff.firstName} ${i.orderingStaff.lastName}` : 'Unknown Staff',
+          icon: '📷',
+          color: '#f59e0b',
+          details: i
+        });
+      });
+    }
+
+    // Sort by date (newest first) and take top 20
+    activities.sort((a, b) => new Date(b.date) - new Date(a.date));
+    setRecentActivities(activities.slice(0, 20));
   };
 
   useEffect(() => {
@@ -155,10 +305,11 @@ const PatientProfile = () => {
       });
       const vitalsRes = await axios.get(`http://localhost:3000/api/patients/${id}/vitals`, { headers: { Authorization: `Bearer ${token}` } });
       setVitals(vitalsRes.data);
+      fetchAllData();
     } catch (error) { toast.error('Failed to record vitals'); }
   };
 
-  // ---------- NEW: PRESCRIPTION HANDLERS ----------
+  // ---------- PRESCRIPTION HANDLERS ----------
   const handlePrescriptionSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -174,7 +325,7 @@ const PatientProfile = () => {
     }
   };
 
-  // ---------- NEW: LAB ORDER HANDLERS ----------
+  // ---------- LAB ORDER HANDLERS ----------
   const handleLabOrderSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -190,6 +341,38 @@ const PatientProfile = () => {
     }
   };
 
+  // ---------- IMAGING/X-RAY HANDLERS ----------
+  const handleImagingSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.post('http://localhost:3000/api/imaging-orders', { patientId: id, ...imagingForm }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      toast.success('Imaging order created successfully!');
+      setShowImagingModal(false);
+      setImagingForm({
+        imagingType: 'X-Ray',
+        bodyPart: '',
+        priority: 'Routine',
+        clinicalHistory: '',
+        clinicalQuestion: '',
+        notes: ''
+      });
+      const imagingRes = await axios.get(`http://localhost:3000/api/patients/${id}/imaging-orders`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setImagingOrders(imagingRes.data);
+      fetchAllData();
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to create imaging order');
+    }
+  };
+
+  const handleImagingInputChange = (e) => {
+    const { name, value } = e.target;
+    setImagingForm(prev => ({ ...prev, [name]: value }));
+  };
+
   const calculateAge = (dob) => {
     if (!dob) return 'N/A';
     const birthDate = new Date(dob);
@@ -202,6 +385,54 @@ const PatientProfile = () => {
 
   const canModifyNote = (note) => {
     return user?.role === 'Admin' || note.authorId === user?.id;
+  };
+
+  const canOrderImaging = isDoctor;
+
+  // Helper function to get proper image URL
+  const getImageUrl = (url) => {
+    if (!url) return '';
+    let cleanUrl = url.trim();
+    if (!cleanUrl.startsWith('http')) {
+      const filename = cleanUrl.split('/').pop();
+      cleanUrl = `http://localhost:3000/images/${filename}`;
+    }
+    return cleanUrl;
+  };
+
+  // Get activity icon and color based on type
+  const getActivityIcon = (type) => {
+    const icons = {
+      vital: '❤️',
+      note: '📝',
+      prescription: '💊',
+      lab: '🔬',
+      imaging: '📷'
+    };
+    return icons[type] || '📋';
+  };
+
+  const getActivityColor = (type) => {
+    const colors = {
+      vital: '#ef4444',
+      note: '#3b82f6',
+      prescription: '#8b5cf6',
+      lab: '#10b981',
+      imaging: '#f59e0b'
+    };
+    return colors[type] || '#6b7280';
+  };
+
+  const formatDate = (date) => {
+    if (!date) return 'N/A';
+    const d = new Date(date);
+    return d.toLocaleString('en-NG', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
   };
 
   if (loading) return <div className="spinner" />;
@@ -227,6 +458,7 @@ const PatientProfile = () => {
         <button className={`profile-tab-btn ${currentTab === 'notes' ? 'active' : ''}`} onClick={() => setCurrentTab('notes')}><span className="icon">📝</span> Clinical Notes</button>
         <button className={`profile-tab-btn ${currentTab === 'prescriptions' ? 'active' : ''}`} onClick={() => setCurrentTab('prescriptions')}><span className="icon">💊</span> Prescriptions</button>
         <button className={`profile-tab-btn ${currentTab === 'lab-orders' ? 'active' : ''}`} onClick={() => setCurrentTab('lab-orders')}><span className="icon">🔬</span> Lab Orders</button>
+        <button className={`profile-tab-btn ${currentTab === 'imaging' ? 'active' : ''}`} onClick={() => setCurrentTab('imaging')}><span className="icon">📷</span> Imaging/X-Ray</button>
         
         <div style={{ marginTop: '20px', padding: '0 20px' }}>
           <button onClick={handleBack} className="btn btn-secondary" style={{ width: '100%', display: 'block', textAlign: 'center', cursor: 'pointer' }}>
@@ -237,21 +469,141 @@ const PatientProfile = () => {
 
       {/* MAIN CONTENT */}
       <div className="profile-content">
-        <h3>{patient.firstName} {patient.lastName}</h3>
+        <h3 style={{ marginBottom: '20px' }}>{patient.firstName} {patient.lastName}</h3>
 
-        {/* PROFILE TAB */}
+        {/* ===== PATIENT PROFILE SUMMARY (ALWAYS VISIBLE - NO SCROLL) ===== */}
+        <div className="profile-grid" style={{ marginBottom: '20px' }}>
+          <div className="profile-grid-item"><span className="label">Hospital ID</span><span className="value">{patient.hospitalId}</span></div>
+          <div className="profile-grid-item"><span className="label">Age</span><span className="value">{calculateAge(patient.dateOfBirth)} years</span></div>
+          <div className="profile-grid-item"><span className="label">Gender</span><span className="value">{patient.gender}</span></div>
+          <div className="profile-grid-item"><span className="label">Date of Birth</span><span className="value">{new Date(patient.dateOfBirth).toLocaleDateString()}</span></div>
+          <div className="profile-grid-item"><span className="label">Phone</span><span className="value">{patient.phone || '-'}</span></div>
+          <div className="profile-grid-item"><span className="label">Email</span><span className="value">{patient.email || '-'}</span></div>
+          <div className="profile-grid-item"><span className="label">Address</span><span className="value">{patient.address || '-'}</span></div>
+          <div className="profile-grid-item"><span className="label">Emergency Contact</span><span className="value">{patient.emergencyContact || '-'}</span></div>
+          <div className="profile-grid-item"><span className="label">Allergies</span><span className="value" style={{ color: patient.allergies ? '#ef4444' : 'inherit' }}>{patient.allergies || 'None'}</span></div>
+          <div className="profile-grid-item" style={{ gridColumn: '1 / -1' }}><span className="label">Next of Kin</span><span className="value">{patient.nextOfKinName || '-'} {patient.nextOfKinPhone ? ` (${patient.nextOfKinPhone})` : ''} {patient.nextOfKinRelationship ? ` - ${patient.nextOfKinRelationship}` : ''}</span></div>
+        </div>
+
+        {/* ===== RECENT ACTIVITY TIMELINE (SCROLLABLE) ===== */}
+        {recentActivities.length > 0 && (
+          <div style={{
+            background: 'white',
+            borderRadius: '12px',
+            padding: '20px',
+            marginBottom: '20px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+            maxHeight: '400px',
+            overflowY: 'auto'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', position: 'sticky', top: 0, background: 'white', zIndex: 1, paddingBottom: '8px' }}>
+              <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '600', color: '#1a1a2e' }}>
+                📋 Recent Activities
+              </h4>
+              <span style={{ fontSize: '12px', color: '#6b7280' }}>
+                {recentActivities.length} activities
+              </span>
+            </div>
+            
+            <div style={{ position: 'relative', paddingLeft: '20px' }}>
+              {/* Timeline line */}
+              <div style={{
+                position: 'absolute',
+                left: '6px',
+                top: '4px',
+                bottom: '4px',
+                width: '2px',
+                background: '#e5e7eb'
+              }} />
+              
+              {recentActivities.map((activity, index) => (
+                <div key={activity.id} style={{
+                  position: 'relative',
+                  padding: '10px 12px 10px 20px',
+                  marginBottom: '4px',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  transition: 'background 0.2s',
+                  borderLeft: `3px solid ${getActivityColor(activity.type)}`,
+                  background: index % 2 === 0 ? '#fafafa' : 'white'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = '#f0f7ff'}
+                onMouseLeave={(e) => e.currentTarget.style.background = index % 2 === 0 ? '#fafafa' : 'white'}
+                onClick={() => {
+                  // Navigate to the appropriate tab based on activity type
+                  const tabMap = {
+                    vital: 'vitals',
+                    note: 'notes',
+                    prescription: 'prescriptions',
+                    lab: 'lab-orders',
+                    imaging: 'imaging'
+                  };
+                  setCurrentTab(tabMap[activity.type] || 'profile');
+                }}
+                >
+                  {/* Timeline dot */}
+                  <div style={{
+                    position: 'absolute',
+                    left: '-20px',
+                    top: '14px',
+                    width: '12px',
+                    height: '12px',
+                    borderRadius: '50%',
+                    background: getActivityColor(activity.type),
+                    border: '2px solid white',
+                    boxShadow: '0 0 0 2px ' + getActivityColor(activity.type)
+                  }} />
+                  
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '18px' }}>{getActivityIcon(activity.type)}</span>
+                    <span style={{ fontSize: '13px', fontWeight: '600', color: '#1a1a2e', flex: '1' }}>
+                      {activity.title}
+                    </span>
+                    <span style={{ fontSize: '11px', color: '#6b7280' }}>
+                      {formatDate(activity.date)}
+                    </span>
+                  </div>
+                  
+                  <div style={{ fontSize: '13px', color: '#374151', marginTop: '2px' }}>
+                    {activity.description}
+                  </div>
+                  
+                  <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>
+                    👤 {activity.staff}
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            <div style={{ textAlign: 'center', marginTop: '12px', fontSize: '12px', color: '#9ca3af' }}>
+              💡 Click any activity to jump to its section
+            </div>
+          </div>
+        )}
+
+        {/* ===== TAB CONTENT (Below the timeline) ===== */}
+        {/* PROFILE TAB - Now shows additional details */}
         {currentTab === 'profile' && (
-          <div className="profile-grid">
-            <div className="profile-grid-item"><span className="label">Hospital ID</span><span className="value">{patient.hospitalId}</span></div>
-            <div className="profile-grid-item"><span className="label">Age</span><span className="value">{calculateAge(patient.dateOfBirth)} years</span></div>
-            <div className="profile-grid-item"><span className="label">Gender</span><span className="value">{patient.gender}</span></div>
-            <div className="profile-grid-item"><span className="label">Date of Birth</span><span className="value">{new Date(patient.dateOfBirth).toLocaleDateString()}</span></div>
-            <div className="profile-grid-item"><span className="label">Phone</span><span className="value">{patient.phone || '-'}</span></div>
-            <div className="profile-grid-item"><span className="label">Email</span><span className="value">{patient.email || '-'}</span></div>
-            <div className="profile-grid-item"><span className="label">Address</span><span className="value">{patient.address || '-'}</span></div>
-            <div className="profile-grid-item"><span className="label">Emergency Contact</span><span className="value">{patient.emergencyContact || '-'}</span></div>
-            <div className="profile-grid-item"><span className="label">Allergies</span><span className="value" style={{ color: patient.allergies ? '#ef4444' : 'inherit' }}>{patient.allergies || 'None'}</span></div>
-            <div className="profile-grid-item" style={{ gridColumn: '1 / -1' }}><span className="label">Next of Kin</span><span className="value">{patient.nextOfKinName || '-'} {patient.nextOfKinPhone ? ` (${patient.nextOfKinPhone})` : ''} {patient.nextOfKinRelationship ? ` - ${patient.nextOfKinRelationship}` : ''}</span></div>
+          <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+            <h4 style={{ margin: '0 0 16px 0' }}>📋 Full Patient Information</h4>
+            <div className="profile-grid">
+              <div className="profile-grid-item"><span className="label">Hospital ID</span><span className="value">{patient.hospitalId}</span></div>
+              <div className="profile-grid-item"><span className="label">Age</span><span className="value">{calculateAge(patient.dateOfBirth)} years</span></div>
+              <div className="profile-grid-item"><span className="label">Gender</span><span className="value">{patient.gender}</span></div>
+              <div className="profile-grid-item"><span className="label">Date of Birth</span><span className="value">{new Date(patient.dateOfBirth).toLocaleDateString()}</span></div>
+              <div className="profile-grid-item"><span className="label">Phone</span><span className="value">{patient.phone || '-'}</span></div>
+              <div className="profile-grid-item"><span className="label">Email</span><span className="value">{patient.email || '-'}</span></div>
+              <div className="profile-grid-item"><span className="label">Address</span><span className="value">{patient.address || '-'}</span></div>
+              <div className="profile-grid-item"><span className="label">Emergency Contact</span><span className="value">{patient.emergencyContact || '-'}</span></div>
+              <div className="profile-grid-item"><span className="label">Allergies</span><span className="value" style={{ color: patient.allergies ? '#ef4444' : 'inherit' }}>{patient.allergies || 'None'}</span></div>
+              <div className="profile-grid-item" style={{ gridColumn: '1 / -1' }}><span className="label">Next of Kin</span><span className="value">{patient.nextOfKinName || '-'} {patient.nextOfKinPhone ? ` (${patient.nextOfKinPhone})` : ''} {patient.nextOfKinRelationship ? ` - ${patient.nextOfKinRelationship}` : ''}</span></div>
+              <div className="profile-grid-item"><span className="label">Patient Category</span><span className="value">{patient.patientCategory || 'FPP'}</span></div>
+              <div className="profile-grid-item"><span className="label">Insurance</span><span className="value">{patient.insuranceProvider || 'None'}</span></div>
+              <div className="profile-grid-item"><span className="label">Insurance ID</span><span className="value">{patient.insuranceId || '—'}</span></div>
+              <div className="profile-grid-item"><span className="label">Corporate Company</span><span className="value">{patient.corporateCompany || '—'}</span></div>
+              <div className="profile-grid-item"><span className="label">Registered</span><span className="value">{new Date(patient.createdAt).toLocaleDateString()}</span></div>
+              <div className="profile-grid-item"><span className="label">Last Updated</span><span className="value">{new Date(patient.updatedAt).toLocaleDateString()}</span></div>
+            </div>
           </div>
         )}
 
@@ -286,7 +638,7 @@ const PatientProfile = () => {
           </>
         )}
 
-        {/* NOTES TAB WITH EDIT/DELETE */}
+        {/* NOTES TAB */}
         {currentTab === 'notes' && (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -324,7 +676,7 @@ const PatientProfile = () => {
           </>
         )}
 
-        {/* 🆕 PRESCRIPTIONS TAB WITH NEW BUTTON - FIXED */}
+        {/* PRESCRIPTIONS TAB */}
         {currentTab === 'prescriptions' && (
           <div className="table-container">
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
@@ -375,7 +727,7 @@ const PatientProfile = () => {
           </div>
         )}
 
-        {/* 🆕 LAB ORDERS TAB WITH NEW BUTTON - FIXED */}
+        {/* LAB ORDERS TAB */}
         {currentTab === 'lab-orders' && (
           <div className="table-container">
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
@@ -440,9 +792,227 @@ const PatientProfile = () => {
             </table>
           </div>
         )}
+
+        {/* IMAGING / X-RAY TAB WITH IMAGE VIEWING */}
+        {currentTab === 'imaging' && (
+          <div className="table-container">
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
+              <h3 style={{ border: 'none', padding: 0, margin: 0 }}>📷 Imaging & X-Ray Orders</h3>
+              {canOrderImaging && (
+                <button className="btn btn-primary btn-sm" onClick={() => setShowImagingModal(true)}>
+                  ➕ New Imaging Order
+                </button>
+              )}
+            </div>
+
+            {/* Display images if available */}
+            {imagingOrders.some(order => order.images && order.images.length > 0) && (
+              <div style={{ 
+                marginBottom: '20px', 
+                padding: '16px', 
+                background: '#f8fafc', 
+                borderRadius: '8px',
+                border: '1px solid #e2e8f0'
+              }}>
+                <h5 style={{ margin: '0 0 8px 0', fontSize: '14px', color: '#374151' }}>
+                  📷 Images ({imagingOrders.reduce((count, order) => 
+                    count + (order.images ? order.images.split(',').length : 0), 0
+                  )})
+                </h5>
+                <div style={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', 
+                  gap: '12px'
+                }}>
+                  {imagingOrders
+                    .filter(order => order.images && order.images.length > 0)
+                    .flatMap(order => order.images.split(','))
+                    .filter(url => url && url.trim() !== '')
+                    .map((url, idx) => {
+                      const imageUrl = getImageUrl(url);
+                      return (
+                        <div key={idx} style={{ 
+                          position: 'relative',
+                          background: '#f1f5f9',
+                          borderRadius: '8px',
+                          overflow: 'hidden',
+                          border: '1px solid #e2e8f0',
+                          aspectRatio: '1 / 1'
+                        }}>
+                          <img 
+                            src={imageUrl}
+                            alt={`Imaging ${idx + 1}`}
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              objectFit: 'cover',
+                              cursor: 'pointer',
+                              transition: 'transform 0.2s'
+                            }}
+                            onClick={() => window.open(imageUrl, '_blank')}
+                            onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+                            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                            onError={(e) => {
+                              console.error(`❌ Failed to load image: ${imageUrl}`);
+                              e.target.onerror = null;
+                              e.target.style.display = 'none';
+                              const parent = e.target.parentElement;
+                              const fallback = document.createElement('div');
+                              fallback.style.cssText = `
+                                width: 100%;
+                                height: 100%;
+                                display: flex;
+                                flex-direction: column;
+                                align-items: center;
+                                justify-content: center;
+                                background: #f1f5f9;
+                                color: #6b7280;
+                                font-size: 14px;
+                                padding: 10px;
+                                text-align: center;
+                              `;
+                              const filename = imageUrl.split('/').pop();
+                              fallback.innerHTML = `
+                                <span style="font-size: 32px;">🖼️</span>
+                                <span style="margin-top: 4px; font-size: 12px;">${filename}</span>
+                                <button onclick="window.open('${imageUrl}', '_blank')" style="
+                                  margin-top: 6px;
+                                  padding: 4px 12px;
+                                  background: #0f3460;
+                                  color: white;
+                                  border: none;
+                                  border-radius: 4px;
+                                  cursor: pointer;
+                                  font-size: 11px;
+                                ">View Full Size</button>
+                              `;
+                              parent.appendChild(fallback);
+                            }}
+                          />
+                          <span style={{
+                            position: 'absolute',
+                            bottom: '4px',
+                            right: '4px',
+                            background: 'rgba(0,0,0,0.7)',
+                            color: 'white',
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            fontSize: '11px'
+                          }}>
+                            {idx + 1}
+                          </span>
+                        </div>
+                      );
+                    })}
+                </div>
+                <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '8px' }}>
+                  Click on any image to view full size
+                </p>
+              </div>
+            )}
+
+            {/* Orders Table */}
+            {imagingOrders && imagingOrders.length > 0 ? (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Order #</th>
+                    <th>Type</th>
+                    <th>Body Part</th>
+                    <th>Priority</th>
+                    <th>Status</th>
+                    <th>Ordered By</th>
+                    <th>Date</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {imagingOrders.map(order => (
+                    <tr key={order.id}>
+                      <td><strong>{order.orderNumber || order.id.slice(0, 8)}</strong></td>
+                      <td>{order.imagingType}</td>
+                      <td>{order.bodyPart}</td>
+                      <td>
+                        <span 
+                          className="status-badge"
+                          style={{
+                            background: order.priority === 'Emergency' ? '#dc2626' : order.priority === 'Urgent' ? '#ef4444' : '#3b82f6',
+                            color: 'white',
+                            padding: '4px 12px',
+                            borderRadius: '12px',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            display: 'inline-block'
+                          }}
+                        >
+                          {order.priority || 'Routine'}
+                        </span>
+                      </td>
+                      <td>
+                        <span 
+                          className="status-badge"
+                          style={{
+                            background: order.status === 'Completed' ? '#10b981' : 
+                                       order.status === 'In Progress' ? '#3b82f6' : 
+                                       order.status === 'Scheduled' ? '#8b5cf6' : 
+                                       order.status === 'Cancelled' ? '#ef4444' : '#f59e0b',
+                            color: ['Completed', 'Cancelled'].includes(order.status) ? 'white' : '#1a1a2e',
+                            padding: '4px 12px',
+                            borderRadius: '12px',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            display: 'inline-block'
+                          }}
+                        >
+                          {order.status || 'Ordered'}
+                        </span>
+                      </td>
+                      <td>{order.orderingStaff?.firstName} {order.orderingStaff?.lastName}</td>
+                      <td>{new Date(order.createdAt).toLocaleDateString()}</td>
+                      <td>
+                        <button 
+                          className="btn btn-sm btn-primary"
+                          onClick={() => {
+                            setSelectedOrder(order);
+                            setShowOrderModal(true);
+                          }}
+                          style={{
+                            background: '#0f3460',
+                            color: 'white',
+                            border: 'none',
+                            padding: '6px 14px',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = '#1a4a7a'}
+                          onMouseLeave={(e) => e.currentTarget.style.background = '#0f3460'}
+                        >
+                          📄 View Details
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '40px 20px', color: '#6b7280' }}>
+                <p style={{ fontSize: '16px' }}>📷 No imaging orders found.</p>
+                <p style={{ fontSize: '14px' }}>
+                  {canOrderImaging ? 'Click "New Imaging Order" to request an X-Ray or scan.' : 'Imaging orders will appear here when requested by a doctor.'}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* --- VITAL SIGNS MODAL --- */}
+      {/* --- MODALS (Vitals, Notes, Prescriptions, Lab Orders, Imaging) --- */}
+      {/* VITAL SIGNS MODAL */}
       {showVitalModal && (
         <div className="modal-overlay" onClick={() => setShowVitalModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -520,7 +1090,7 @@ const PatientProfile = () => {
         </div>
       )}
 
-      {/* 🆕 NEW: PRESCRIPTION MODAL */}
+      {/* PRESCRIPTION MODAL */}
       {showPrescriptionModal && (
         <div className="modal-overlay" onClick={() => setShowPrescriptionModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -543,7 +1113,7 @@ const PatientProfile = () => {
         </div>
       )}
 
-      {/* 🆕 NEW: LAB ORDER MODAL */}
+      {/* LAB ORDER MODAL */}
       {showLabOrderModal && (
         <div className="modal-overlay" onClick={() => setShowLabOrderModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -558,6 +1128,312 @@ const PatientProfile = () => {
                 <div className="form-group"><label>Notes</label><textarea rows="2" value={labOrderForm.notes} onChange={e => setLabOrderForm({...labOrderForm, notes: e.target.value})} /></div>
               </div>
               <div className="modal-footer"><button type="button" className="btn btn-secondary" onClick={() => setShowLabOrderModal(false)}>Cancel</button><button type="submit" className="btn btn-primary">Create Lab Order</button></div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* IMAGING ORDER DETAILS MODAL */}
+      {showOrderModal && selectedOrder && (
+        <div className="modal-overlay" onClick={() => setShowOrderModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px' }}>
+            <div className="modal-header">
+              <h3>📷 Imaging Order Details</h3>
+              <button className="modal-close" onClick={() => setShowOrderModal(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+                <div><strong>Order #:</strong> {selectedOrder.orderNumber || selectedOrder.id.slice(0, 8)}</div>
+                <div><strong>Type:</strong> {selectedOrder.imagingType}</div>
+                <div><strong>Body Part:</strong> {selectedOrder.bodyPart}</div>
+                <div><strong>Priority:</strong> {selectedOrder.priority || 'Routine'}</div>
+                <div><strong>Status:</strong> {selectedOrder.status || 'Ordered'}</div>
+                <div><strong>Ordered By:</strong> {selectedOrder.orderingStaff?.firstName || ''} {selectedOrder.orderingStaff?.lastName || ''}</div>
+                <div><strong>Date:</strong> {new Date(selectedOrder.createdAt).toLocaleString()}</div>
+                <div><strong>Images:</strong> {selectedOrder.images ? selectedOrder.images.split(',').length : 0} image(s)</div>
+              </div>
+              
+              {selectedOrder.clinicalHistory && (
+                <div style={{ marginBottom: '12px' }}>
+                  <strong>Clinical History:</strong>
+                  <p style={{ margin: '4px 0 0 0', color: '#374151' }}>{selectedOrder.clinicalHistory}</p>
+                </div>
+              )}
+              
+              {selectedOrder.clinicalQuestion && (
+                <div style={{ marginBottom: '12px' }}>
+                  <strong>Clinical Question:</strong>
+                  <p style={{ margin: '4px 0 0 0', color: '#374151' }}>{selectedOrder.clinicalQuestion}</p>
+                </div>
+              )}
+              
+              {selectedOrder.result && (
+                <div style={{ marginBottom: '12px', padding: '12px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #10b981' }}>
+                  <strong style={{ color: '#065f46' }}>Findings:</strong>
+                  <p style={{ margin: '4px 0 0 0', color: '#374151' }}>{selectedOrder.result}</p>
+                </div>
+              )}
+              
+              {selectedOrder.report && (
+                <div style={{ marginBottom: '12px', padding: '12px', background: '#eff6ff', borderRadius: '8px', border: '1px solid #3b82f6' }}>
+                  <strong style={{ color: '#1e40af' }}>Impression:</strong>
+                  <p style={{ margin: '4px 0 0 0', color: '#374151' }}>{selectedOrder.report}</p>
+                </div>
+              )}
+              
+              {selectedOrder.images && selectedOrder.images.length > 0 && (
+                <div style={{ marginTop: '16px', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
+                  <h4 style={{ margin: '0 0 12px 0' }}>📷 Images ({selectedOrder.images.split(',').length})</h4>
+                  <div style={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', 
+                    gap: '12px'
+                  }}>
+                    {selectedOrder.images.split(',').filter(url => url && url.trim() !== '').map((url, index) => {
+                      const imageUrl = getImageUrl(url);
+                      return (
+                        <div key={index} style={{ 
+                          position: 'relative',
+                          background: '#f1f5f9',
+                          borderRadius: '8px',
+                          overflow: 'hidden',
+                          border: '1px solid #e2e8f0',
+                          aspectRatio: '1 / 1'
+                        }}>
+                          <img 
+                            src={imageUrl}
+                            alt={`Image ${index + 1}`}
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              objectFit: 'cover',
+                              cursor: 'pointer'
+                            }}
+                            onClick={() => window.open(imageUrl, '_blank')}
+                            onError={(e) => {
+                              console.error(`❌ Failed to load image: ${imageUrl}`);
+                              e.target.onerror = null;
+                              e.target.style.display = 'none';
+                              const parent = e.target.parentElement;
+                              const fallback = document.createElement('div');
+                              fallback.style.cssText = `
+                                width: 100%;
+                                height: 100%;
+                                display: flex;
+                                flex-direction: column;
+                                align-items: center;
+                                justify-content: center;
+                                background: #f1f5f9;
+                                color: #6b7280;
+                                font-size: 14px;
+                                padding: 10px;
+                                text-align: center;
+                              `;
+                              const filename = imageUrl.split('/').pop();
+                              fallback.innerHTML = `
+                                <span style="font-size: 32px;">🖼️</span>
+                                <span style="margin-top: 4px; font-size: 12px;">${filename}</span>
+                                <button onclick="window.open('${imageUrl}', '_blank')" style="
+                                  margin-top: 6px;
+                                  padding: 4px 12px;
+                                  background: #0f3460;
+                                  color: white;
+                                  border: none;
+                                  border-radius: 4px;
+                                  cursor: pointer;
+                                  font-size: 11px;
+                                ">View Full Size</button>
+                              `;
+                              parent.appendChild(fallback);
+                            }}
+                          />
+                          <span style={{
+                            position: 'absolute',
+                            bottom: '4px',
+                            right: '4px',
+                            background: 'rgba(0,0,0,0.7)',
+                            color: 'white',
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            fontSize: '11px'
+                          }}>
+                            {index + 1}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '8px' }}>
+                    Click on any image to view full size
+                  </p>
+                </div>
+              )}
+              
+              {selectedOrder.notes && (
+                <div style={{ marginTop: '12px' }}>
+                  <strong>Notes:</strong>
+                  <p style={{ margin: '4px 0 0 0', color: '#374151' }}>{selectedOrder.notes}</p>
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button 
+                className="btn btn-secondary" 
+                onClick={() => setShowOrderModal(false)}
+                style={{
+                  background: '#e5e7eb',
+                  color: '#1f2937',
+                  border: '1px solid #d1d5db',
+                  padding: '10px 30px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontWeight: '600'
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* IMAGING / X-RAY MODAL */}
+      {showImagingModal && (
+        <div className="modal-overlay" onClick={() => setShowImagingModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '650px' }}>
+            <div className="modal-header">
+              <h3>📷 New Imaging/X-Ray Order</h3>
+              <button className="modal-close" onClick={() => setShowImagingModal(false)}>×</button>
+            </div>
+            <form onSubmit={handleImagingSubmit}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label>Imaging Type *</label>
+                  <select 
+                    name="imagingType" 
+                    value={imagingForm.imagingType} 
+                    onChange={handleImagingInputChange}
+                    required
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      border: '1px solid #ddd',
+                      borderRadius: '8px',
+                      fontSize: '14px'
+                    }}
+                  >
+                    {imagingTypes.map(type => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>Body Part *</label>
+                  <select 
+                    name="bodyPart" 
+                    value={imagingForm.bodyPart} 
+                    onChange={handleImagingInputChange}
+                    required
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      border: '1px solid #ddd',
+                      borderRadius: '8px',
+                      fontSize: '14px'
+                    }}
+                  >
+                    <option value="">Select Body Part...</option>
+                    {bodyParts.map(part => (
+                      <option key={part} value={part}>{part}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>Priority *</label>
+                  <select 
+                    name="priority" 
+                    value={imagingForm.priority} 
+                    onChange={handleImagingInputChange}
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      border: '1px solid #ddd',
+                      borderRadius: '8px',
+                      fontSize: '14px'
+                    }}
+                  >
+                    <option value="Routine">Routine</option>
+                    <option value="Urgent">Urgent</option>
+                    <option value="Emergency">Emergency</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>Clinical History</label>
+                  <textarea 
+                    name="clinicalHistory" 
+                    value={imagingForm.clinicalHistory} 
+                    onChange={handleImagingInputChange}
+                    rows="2"
+                    placeholder="Brief clinical history..."
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      border: '1px solid #ddd',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontFamily: 'inherit',
+                      resize: 'vertical'
+                    }}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Clinical Question</label>
+                  <textarea 
+                    name="clinicalQuestion" 
+                    value={imagingForm.clinicalQuestion} 
+                    onChange={handleImagingInputChange}
+                    rows="2"
+                    placeholder="What specific question do you want answered by this imaging?"
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      border: '1px solid #ddd',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontFamily: 'inherit',
+                      resize: 'vertical'
+                    }}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Additional Notes</label>
+                  <textarea 
+                    name="notes" 
+                    value={imagingForm.notes} 
+                    onChange={handleImagingInputChange}
+                    rows="2"
+                    placeholder="Any additional notes..."
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      border: '1px solid #ddd',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontFamily: 'inherit',
+                      resize: 'vertical'
+                    }}
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={() => setShowImagingModal(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Order Imaging</button>
+              </div>
             </form>
           </div>
         </div>

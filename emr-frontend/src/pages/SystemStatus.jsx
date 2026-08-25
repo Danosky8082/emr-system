@@ -15,6 +15,7 @@ const SystemStatus = () => {
   }, []);
 
   const fetchSystemStatus = async () => {
+    setLoading(true); // ✅ FIX: Set loading true
     try {
       const res = await axios.get('http://localhost:3000/api/system/status', {
         headers: { Authorization: `Bearer ${token}` }
@@ -28,6 +29,7 @@ const SystemStatus = () => {
     }
   };
 
+  // ✅ FIX: Show loading state
   if (loading) return <div className="spinner" />;
 
   return (

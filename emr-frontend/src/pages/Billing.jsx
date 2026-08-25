@@ -1,3 +1,4 @@
+// src/pages/Billing.jsx - FIXED
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
@@ -12,7 +13,8 @@ const Billing = () => {
   const fetchBills = async () => {
     try {
       const res = await axios.get('http://localhost:3000/api/billing', {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
+        params: { limit: 100 } // Add limit parameter
       });
       
       // ✅ Handle both array and object responses
@@ -20,9 +22,11 @@ const Billing = () => {
         ? res.data 
         : (res.data?.data || []);
       
+      console.log('✅ Billing data fetched:', billsData.length);
       setBills(billsData);
     } catch (error) {
       console.error('Error fetching bills:', error);
+      // Don't set loading to false on error so we can retry
     } finally {
       setLoading(false);
     }
@@ -60,7 +64,11 @@ const Billing = () => {
                   <td>{b.patient?.firstName} {b.patient?.lastName || 'N/A'}</td>
                   <td>{b.description}</td>
                   <td>₦{b.totalAmount?.toLocaleString() || '0'}</td>
-                  <td><span className={`status-badge status-${(b.status || 'pending').toLowerCase()}`}>{b.status || 'Pending'}</span></td>
+                  <td>
+                    <span className={`status-badge status-${(b.status || 'pending').toLowerCase()}`}>
+                      {b.status || 'Pending'}
+                    </span>
+                  </td>
                   <td>{b.paymentMethod || '-'}</td>
                 </tr>
               ))

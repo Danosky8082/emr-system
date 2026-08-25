@@ -36,7 +36,7 @@ const StaffManagement = () => {
   // Available roles
   const roles = [
     'Admin', 'ITAdmin', 'ITSupport', 'Doctor', 'Nurse',
-    'Pharmacist', 'Accountant', 'Records', 'LabTechnician', 'Receptionist', 'BillingOfficer','Obstetrician', 'Midwife'      
+    'Pharmacist', 'Accountant', 'Records', 'LabTechnician', 'Receptionist', 'BillingOfficer','Obstetrician', 'Midwife','Radiologist'      
   ];
 
   // Departments
@@ -94,7 +94,7 @@ const StaffManagement = () => {
     setAssignedWardIds(res.data.wardIds || []);
   } catch (error) {
     console.error('Error fetching assignments:', error);
-    // Don't show error toast, just set empty arrays
+    // ✅ Don't show error toast, just set empty arrays
     setAssignedClinicIds([]);
     setAssignedWardIds([]);
   }

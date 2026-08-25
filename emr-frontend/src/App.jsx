@@ -35,6 +35,12 @@ import ArchivedPatientsView from './pages/ArchivedPatientsView';
 import QueueDashboard from './pages/QueueDashboard';
 import KioskMode from './components/KioskMode';
 import DoctorQueue from './pages/DoctorQueue';
+import RadiologyDashboard from './pages/RadiologyDashboard';
+import HRDashboard from './pages/HRDashboard';
+import HREmployees from './pages/HREmployees';
+import HRDepartments from './pages/HRDepartments';
+import HRLeaveManagement from './pages/HRLeaveManagement';
+import HREmployeeDetail from './pages/HREmployeeDetail';
 // --------------------------------------------
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -109,6 +115,12 @@ function App() {
           <Route path="/queue" element={<QueueDashboard />} />
           <Route path="/kiosk" element={<KioskMode />} />
           <Route path="/doctor-queue" element={<DoctorQueue />} />
+          <Route path="/radiology-dashboard" element={<RadiologyDashboard />} />
+          <Route path="hr/dashboard" element={<HRDashboard />} />
+          <Route path="hr/employees/:id" element={<HREmployeeDetail />} />
+          <Route path="hr/employees" element={<HREmployees />} />
+          <Route path="hr/departments" element={<HRDepartments />} />
+          <Route path="hr/leaves" element={<HRLeaveManagement />} />
         </Route>
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>

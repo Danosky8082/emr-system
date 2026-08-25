@@ -12,33 +12,31 @@ const QuickCheckin = ({ onPatientCheckedIn }) => {
   const inputRef = useRef(null);
   const token = localStorage.getItem('emr_token');
 
-  // Focus input on mount
   useEffect(() => {
     if (inputRef.current) {
       inputRef.current.focus();
     }
   }, []);
 
-  // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyPress = (e) => {
-      // Ctrl+F to focus search
       if (e.ctrlKey && e.key === 'f') {
         e.preventDefault();
         inputRef.current?.focus();
       }
-      // Escape to clear
       if (e.key === 'Escape') {
         setSearchQuery('');
         setPatients([]);
-        setSelectedPatient(null);
+        setSelectedPatient(null); // ✅ FIX: Clear selected patient too
+        if (inputRef.current) {
+          inputRef.current.blur();
+        }
       }
     };
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, []);
 
-  // Search patients
   useEffect(() => {
     const searchPatients = async () => {
       if (!searchQuery || searchQuery.length < 2) {
@@ -64,7 +62,6 @@ const QuickCheckin = ({ onPatientCheckedIn }) => {
     return () => clearTimeout(delayDebounce);
   }, [searchQuery, token]);
 
-  // Handle check-in
   const handleCheckin = async (patient) => {
     setLoading(true);
     try {
@@ -86,7 +83,6 @@ const QuickCheckin = ({ onPatientCheckedIn }) => {
         onPatientCheckedIn(res.data);
       }
 
-      // Auto-open patient file
       if (res.data.autoFile) {
         window.open(res.data.autoFile.profileUrl, '_blank');
       }
@@ -97,13 +93,10 @@ const QuickCheckin = ({ onPatientCheckedIn }) => {
     }
   };
 
-  // Simulate card scan
   const handleCardScan = () => {
     setScanning(true);
-    // Simulate scanning delay
     setTimeout(() => {
       setScanning(false);
-      // In production, this would trigger the actual card reader
       toast.info('📇 Please scan patient card...');
     }, 1000);
   };
@@ -151,7 +144,6 @@ const QuickCheckin = ({ onPatientCheckedIn }) => {
         </div>
       </div>
 
-      {/* Search Results */}
       {patients.length > 0 && (
         <div style={{
           marginTop: '16px',
@@ -215,7 +207,6 @@ const QuickCheckin = ({ onPatientCheckedIn }) => {
         </div>
       )}
 
-      {/* Selected Patient Preview */}
       {selectedPatient && (
         <div style={{
           marginTop: '16px',

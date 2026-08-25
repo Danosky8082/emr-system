@@ -27,7 +27,7 @@ const AntenatalDashboard = () => {
   
   const canViewPatients = ['Admin', 'Records', 'ITAdmin', 'Doctor', 'Obstetrician', 'Nurse', 'Midwife', 'BillingOfficer'].includes(user?.role);
 
-  // ✅ Memoized fetch function
+  // ✅ Memoized fetch function - FIXED dependencies
   const fetchData = useCallback(async () => {
     // ✅ Multiple guards
     if (isFetching.current) {
@@ -37,7 +37,6 @@ const AntenatalDashboard = () => {
     
     if (hasFetched.current) {
       console.log('⏭️ Already fetched successfully');
-      // Still ensure loading is false
       if (isMounted.current) {
         setLoading(false);
       }
@@ -129,7 +128,6 @@ const AntenatalDashboard = () => {
         } else {
           toast.error('An error occurred while fetching data');
         }
-        // Keep existing data if any
         if (pregnancies.length === 0) {
           setPregnancies([]);
         }
@@ -147,27 +145,24 @@ const AntenatalDashboard = () => {
         fetchTimer.current = null;
       }
     }
-  }, [token, user?.role, canViewPatients, pregnancies.length, patients.length]);
+  // ✅ FIXED: Removed pregnancies.length and patients.length from dependencies
+  }, [token, user?.role, canViewPatients]);
 
   // ✅ useEffect with cleanup
   useEffect(() => {
     console.log('📌 AntenatalDashboard mounted');
     isMounted.current = true;
     
-    // ✅ Fetch only if not fetched yet
     if (token && !hasFetched.current && !isFetching.current) {
-      // Small delay to ensure everything is ready
       fetchTimer.current = setTimeout(() => {
         fetchData();
       }, 100);
     } else if (hasFetched.current) {
-      // If already fetched, just turn off loading
       if (isMounted.current) {
         setLoading(false);
       }
     }
     
-    // ✅ Cleanup
     return () => {
       console.log('📌 AntenatalDashboard unmounting');
       isMounted.current = false;
@@ -182,7 +177,6 @@ const AntenatalDashboard = () => {
   const activePregnancies = pregnancies.filter(p => p?.status === 'Active');
   const deliveredPregnancies = pregnancies.filter(p => p?.status === 'Delivered');
 
-  // ✅ Log the counts for debugging
   console.log(`📊 Active: ${activePregnancies.length}, Delivered: ${deliveredPregnancies.length}`);
 
   // Filter: Female patients who are NOT currently pregnant (Active)
@@ -207,7 +201,6 @@ const AntenatalDashboard = () => {
       .includes(searchTerm.toLowerCase())
   );
 
-  // Show loading spinner
   if (loading) {
     return (
       <div className="dashboard" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '400px' }}>
@@ -361,7 +354,7 @@ const AntenatalDashboard = () => {
         </table>
       </div>
 
-      {/* ✅ Delivered Pregnancies List - Always visible */}
+      {/* ✅ Delivered Pregnancies List */}
       <div className="table-container" style={{ marginBottom: '20px' }}>
         <h4 style={{ padding: '16px 16px 0 16px', margin: 0, color: '#6b7280' }}>
           📋 Completed / Delivered ({deliveredPregnancies.length})
@@ -379,7 +372,6 @@ const AntenatalDashboard = () => {
           <tbody>
             {deliveredPregnancies.length > 0 ? (
               deliveredPregnancies.map(p => {
-                // ✅ Get delivery date from delivery record or fallback
                 let deliveryDate = '—';
                 if (p?.delivery?.deliveryDate) {
                   deliveryDate = new Date(p.delivery.deliveryDate).toLocaleDateString();

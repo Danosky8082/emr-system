@@ -91,15 +91,17 @@ const PregnancyProfile = () => {
 
   // --- Validation function ---
   const validateVitals = (field, value) => {
-    const range = VITAL_RANGES[field];
-    if (!range || value === '' || value === null || value === undefined) return null;
-    const numValue = parseFloat(value);
-    if (isNaN(numValue)) return null;
-    if (numValue < range.min || numValue > range.max) {
-      return range.warning;
-    }
-    return null;
-  };
+  const range = VITAL_RANGES[field];
+  if (!range) return null;
+  if (value === '' || value === null || value === undefined) return null;
+  const numValue = parseFloat(value);
+  if (isNaN(numValue)) return null;
+  if (numValue < range.min || numValue > range.max) {
+    return range.warning;
+  }
+  return null;
+};
+
 
   // --- Check all vitals for warnings ---
   const getVitalWarnings = (vitals) => {

@@ -65,6 +65,16 @@ const Layout = () => {
       { path: '/archived-patients-view', label: '📦 Archived Patients (View)' },
       { path: '/antenatal', label: '🤰 Antenatal Care' },
     ],
+    Radiology: [
+      { path: '/radiology-dashboard', label: '📷 Radiology Dashboard' },
+    ],
+    // ✅ HR Group - Only HR-related modules
+    HR: [
+      { path: '/hr/dashboard', label: '👔 HR Dashboard' },
+      { path: '/hr/employees', label: '👤 Employees' },
+      { path: '/hr/departments', label: '🏢 Departments' },
+      { path: '/hr/leaves', label: '📋 Leave Management' },
+    ],
   };
 
   const pathToPermissionKey = {
@@ -92,6 +102,7 @@ const Layout = () => {
     '/pharmacy-dashboard': 'pharmacyDashboard',
     '/doctor-queue': 'doctorQueue',
     '/queue': 'queueManagement',
+    '/radiology-dashboard': 'dashboard',
   };
 
   useEffect(() => {
@@ -125,6 +136,20 @@ const Layout = () => {
     if (user?.role === 'Midwife' && path === '/doctor-dashboard') return false;
     // ------------------------------------------------
 
+    // ✅ HR can only access HR routes
+    if (user?.role === 'HR') {
+      // HR can access their own dashboard and HR routes
+      const hrPaths = ['/hr/dashboard', '/hr/employees', '/hr/departments', '/hr/leaves'];
+      if (hrPaths.includes(path)) return true;
+      // HR cannot access anything else
+      return false;
+    }
+
+    // ✅ Radiology Dashboard - Only Radiologists, Admin, ITAdmin
+    if (path === '/radiology-dashboard') {
+      return ['Radiologist', 'Admin', 'ITAdmin'].includes(user?.role);
+    }
+
     // ✅ Doctor Queue: Only Doctors and Obstetricians
     if (path === '/doctor-queue') {
       if (user?.role === 'Admin') return true;
@@ -135,7 +160,7 @@ const Layout = () => {
       return ['Doctor', 'Obstetrician'].includes(user?.role);
     }
 
-    // ✅ Queue Management: Admin, Records, Nurse, Midwife
+    // ✅ Queue Management: Admin, Records, Nurse, Midwife (NOT HR)
     if (path === '/queue') {
       if (user?.role === 'Admin') return true;
       if (!loadingPermissions && permissions) {
@@ -145,14 +170,14 @@ const Layout = () => {
       return ['Records', 'Nurse', 'Midwife'].includes(user?.role);
     }
 
-    // ✅ Antenatal: Only specific roles can access
+    // ✅ Antenatal: Only specific roles can access (NOT HR)
     if (path === '/antenatal') {
       const allowedRoles = ['Admin', 'ITAdmin', 'Records', 'Obstetrician', 'Midwife'];
       if (user?.role === 'Nurse') return false;
       return allowedRoles.includes(user?.role);
     }
 
-    // ✅ Archived Patients (Manage): Only Records/Admin/ITAdmin
+    // ✅ Archived Patients (Manage): Only Records/Admin/ITAdmin (NOT HR)
     if (path === '/archived-patients') {
       if (user?.role === 'Admin') return true;
       if (!loadingPermissions && permissions) {
@@ -162,7 +187,7 @@ const Layout = () => {
       return ['Records', 'ITAdmin'].includes(user?.role);
     }
 
-    // ✅ Archived Patients (View Only): Clinical staff and Records can view
+    // ✅ Archived Patients (View Only): Clinical staff, Records (NOT HR)
     if (path === '/archived-patients-view') {
       if (user?.role === 'Admin') return true;
       if (!loadingPermissions && permissions) {
@@ -177,7 +202,8 @@ const Layout = () => {
     if (loadingPermissions) return false;
     if (!permissions) return false;
     if (user?.role === 'Admin') return true;
-    
+    // ✅ REMOVED: if (user?.role === 'HR') return true; - HR should NOT have full access
+
     const permissionKey = pathToPermissionKey[path];
     if (!permissionKey) return false;
     return permissions[permissionKey] === true;
@@ -193,13 +219,26 @@ const Layout = () => {
       } else if (['Doctor', 'Obstetrician'].includes(user?.role) && location.pathname === '/') {
         sessionStorage.setItem('hasRedirected', 'true');
         navigate('/doctor-dashboard');
+      } else if (user?.role === 'HR' && location.pathname === '/') {
+        sessionStorage.setItem('hasRedirected', 'true');
+        navigate('/hr/dashboard');
       }
     }
   }, [user, location.pathname, navigate]);
 
   const isGroupVisible = (groupName) => {
+    // ✅ HR can only see HR group
+    if (user?.role === 'HR') {
+      return groupName === 'HR';
+    }
+
     // Admin and ITAdmin see all groups
     if (['Admin', 'ITAdmin'].includes(user?.role)) return true;
+
+    // Radiology group - only for Radiologists, Admin, ITAdmin
+    if (groupName === 'Radiology') {
+      return ['Radiologist', 'Admin', 'ITAdmin'].includes(user?.role);
+    }
 
     // Doctor group only for Doctors and Obstetricians
     if (groupName === 'Doctor') {
@@ -240,17 +279,33 @@ const Layout = () => {
       return <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.9rem' }}>Loading menu...</span>;
     }
 
+    // ✅ HR gets their own simplified menu
+    if (user?.role === 'HR') {
+      const hrItems = allGroups.HR.filter(item => canAccess(item.path));
+      return (
+        <>
+          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            📊 Dashboard
+          </NavLink>
+          {hrItems.map(item => (
+            <NavLink
+              key={item.path}
+              to={item.path}
+              className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+            >
+              {item.label}
+            </NavLink>
+          ))}
+        </>
+      );
+    }
+
     // ✅ For Doctors and Obstetricians - show both Clinical and Doctor dropdowns
     if (['Doctor', 'Obstetrician'].includes(user?.role)) {
-      // Get Doctor paths to exclude duplicates
       const doctorPaths = allGroups.Doctor.map(item => item.path);
-      
-      // Clinical items EXCLUDING those already in Doctor dropdown
       const clinicalItems = allGroups.Clinical.filter(item => 
         canAccess(item.path) && !doctorPaths.includes(item.path)
       );
-      
-      // Doctor items
       const doctorItems = allGroups.Doctor.filter(item => canAccess(item.path));
       
       return (
@@ -261,8 +316,6 @@ const Layout = () => {
           <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             👤 Patients
           </NavLink>
-          
-          {/* ✅ Clinical Dropdown - Only unique items */}
           {clinicalItems.length > 0 && (
             <div className="nav-dropdown">
               <button className="nav-dropdown-header">Clinical ▼</button>
@@ -279,8 +332,6 @@ const Layout = () => {
               </div>
             </div>
           )}
-          
-          {/* ✅ Doctor Dropdown */}
           {doctorItems.length > 0 && (
             <div className="nav-dropdown">
               <button className="nav-dropdown-header">Doctor ▼</button>
@@ -428,7 +479,7 @@ const Layout = () => {
       );
     }
 
-    // ✅ For other roles (Pharmacist, Accountant, etc.) - show relevant groups
+    // ✅ For other roles (Pharmacist, Accountant, BillingOfficer, etc.)
     return (
       <>
         <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
@@ -442,6 +493,14 @@ const Layout = () => {
         {Object.entries(allGroups).map(([groupName, items]) => {
           // Skip Doctor, Nurse, and Midwife groups for other roles
           if (['Doctor', 'Nurse', 'Midwife'].includes(groupName)) {
+            return null;
+          }
+          // Skip Radiology for non-Radiologist roles
+          if (groupName === 'Radiology' && !['Radiologist', 'Admin', 'ITAdmin'].includes(user?.role)) {
+            return null;
+          }
+          // Skip HR for non-HR roles (except Admin/ITAdmin)
+          if (groupName === 'HR' && !['HR', 'Admin', 'ITAdmin'].includes(user?.role)) {
             return null;
           }
           const visibleItems = items.filter(item => canAccess(item.path));

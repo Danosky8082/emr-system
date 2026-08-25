@@ -131,23 +131,30 @@ const Pharmacy = () => {
   };
 
   const handleEdit = (med) => {
-    console.log('📝 Editing medication:', med);
-    console.log('📝 Medication ID:', med.id);
-    
-    setEditing(med);
-    setFormData({
-      name: med.name || '',
-      genericName: med.genericName || '',
-      category: med.category || '',
-      supplier: med.supplier || '',
-      unitPrice: med.unitPrice || '',
-      stockQuantity: med.stockQuantity || '',
-      reorderLevel: med.reorderLevel || '10',
-      expiryDate: med.expiryDate?.split('T')[0] || '',
-      batchNumber: med.batchNumber || ''
-    });
-    setShowModal(true);
-  };
+  console.log('📝 Editing medication:', med);
+  console.log('📝 Medication ID:', med.id);
+  
+  // ✅ FIX: Check if ID exists
+  if (!med || !med.id) {
+    toast.error('Invalid medication. Please refresh and try again.');
+    return;
+  }
+  
+  setEditing(med);
+  setFormData({
+    name: med.name || '',
+    genericName: med.genericName || '',
+    category: med.category || '',
+    supplier: med.supplier || '',
+    unitPrice: med.unitPrice || '',
+    stockQuantity: med.stockQuantity || '',
+    reorderLevel: med.reorderLevel || '10',
+    expiryDate: med.expiryDate?.split('T')[0] || '',
+    batchNumber: med.batchNumber || ''
+  });
+  setShowModal(true);
+};
+
 
   const filteredMedications = medications.filter(m => {
     const searchString = `${m.name} ${m.genericName || ''} ${m.category || ''}`.toLowerCase();

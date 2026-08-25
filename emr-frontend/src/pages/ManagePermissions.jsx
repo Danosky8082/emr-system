@@ -6,7 +6,7 @@ import './Dashboard.css';
 import toast from 'react-hot-toast';
 
 const ManagePermissions = () => {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [permissions, setPermissions] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -54,6 +54,15 @@ const ManagePermissions = () => {
     
     // Queue Management
     { key: 'queueManagement', label: 'Queue Management' },
+    
+    // HR Modules
+    { key: 'hrDashboard', label: 'HR Dashboard' },
+    { key: 'hrEmployees', label: 'HR Employees' },
+    { key: 'hrDepartments', label: 'HR Departments' },
+    { key: 'hrLeaves', label: 'HR Leave Management' },
+    { key: 'hrAttendance', label: 'HR Attendance' },
+    { key: 'hrPerformance', label: 'HR Performance' },
+    { key: 'hrTrainings', label: 'HR Trainings' },
   ];
 
   const fetchPermissions = async () => {
@@ -89,10 +98,11 @@ const ManagePermissions = () => {
     }
   };
 
-  // ✅ Helper to check if a role should have certain permissions disabled
+  // Helper to check if a role should have certain permissions disabled
   const isPermissionLocked = (role, moduleKey) => {
     // Admin has all permissions (God mode) - cannot be disabled
     if (role === 'Admin') return true;
+    if (role === 'ITAdmin') return true;
     
     // Lock specific permissions for specific roles
     const locks = {
@@ -103,37 +113,50 @@ const ManagePermissions = () => {
       // Only specific roles can access antenatal
       'antenatal': ['Doctor', 'Pharmacist', 'LabTechnician', 'Receptionist', 'Accountant', 'BillingOfficer', 'ITSupport'],
       // Only specific roles can access archived patients
-      'archivedPatients': ['Doctor', 'Nurse', 'Pharmacist', 'LabTechnician', 'Receptionist', 'Accountant', 'BillingOfficer', 'ITSupport'],
+      'archivedPatients': ['Doctor', 'Nurse', 'Pharmacist', 'LabTechnician', 'Receptionist', 'Accountant', 'BillingOfficer', 'ITSupport', 'HR'],
       // Only Admin/ITAdmin/Records can manage patient intake
-      'patientIntake': ['Doctor', 'Nurse', 'Pharmacist', 'LabTechnician', 'Receptionist', 'Accountant', 'BillingOfficer', 'ITSupport', 'Obstetrician', 'Midwife'],
+      'patientIntake': ['Doctor', 'Nurse', 'Pharmacist', 'LabTechnician', 'Receptionist', 'Accountant', 'BillingOfficer', 'ITSupport', 'Obstetrician', 'Midwife', 'HR'],
       // Only Admin/ITAdmin/Records can manage admissions
-      'admissions': ['Doctor', 'Nurse', 'Pharmacist', 'LabTechnician', 'Receptionist', 'Accountant', 'BillingOfficer', 'ITSupport', 'Obstetrician', 'Midwife'],
-      // Only Admin/ITAdmin/Records can manage staff
-      'staff': ['Doctor', 'Nurse', 'Pharmacist', 'LabTechnician', 'Receptionist', 'Accountant', 'BillingOfficer', 'ITSupport', 'Obstetrician', 'Midwife'],
+      'admissions': ['Doctor', 'Nurse', 'Pharmacist', 'LabTechnician', 'Receptionist', 'Accountant', 'BillingOfficer', 'ITSupport', 'Obstetrician', 'Midwife', 'HR'],
+      // Only Admin/ITAdmin/HR can manage staff
+      'staff': ['Doctor', 'Nurse', 'Pharmacist', 'LabTechnician', 'Receptionist', 'Accountant', 'BillingOfficer', 'ITSupport', 'Obstetrician', 'Midwife', 'Records'],
       // Only Admin/ITAdmin can manage clinics
-      'clinics': ['Doctor', 'Nurse', 'Pharmacist', 'LabTechnician', 'Receptionist', 'Accountant', 'BillingOfficer', 'ITSupport', 'Obstetrician', 'Midwife', 'Records'],
+      'clinics': ['Doctor', 'Nurse', 'Pharmacist', 'LabTechnician', 'Receptionist', 'Accountant', 'BillingOfficer', 'ITSupport', 'Obstetrician', 'Midwife', 'Records', 'HR'],
       // Only Admin/ITAdmin can manage wards
-      'wards': ['Doctor', 'Nurse', 'Pharmacist', 'LabTechnician', 'Receptionist', 'Accountant', 'BillingOfficer', 'ITSupport', 'Obstetrician', 'Midwife', 'Records'],
+      'wards': ['Doctor', 'Nurse', 'Pharmacist', 'LabTechnician', 'Receptionist', 'Accountant', 'BillingOfficer', 'ITSupport', 'Obstetrician', 'Midwife', 'Records', 'HR'],
       
-      // 🆕 Doctor Queue - Only Doctors and Obstetricians should have it
-      'doctorQueue': ['Nurse', 'Pharmacist', 'LabTechnician', 'Receptionist', 'Accountant', 'BillingOfficer', 'ITSupport', 'Midwife', 'Records'],
+      // Doctor Queue - Only Doctors and Obstetricians should have it
+      'doctorQueue': ['Nurse', 'Pharmacist', 'LabTechnician', 'Receptionist', 'Accountant', 'BillingOfficer', 'ITSupport', 'Midwife', 'Records', 'HR'],
       
-      // 🆕 Queue Management - Only Admin, Records, Nurse, Doctor should have it
-      'queueManagement': ['Pharmacist', 'LabTechnician', 'Receptionist', 'Accountant', 'BillingOfficer', 'ITSupport'],
+      // Queue Management - Only Admin, Records, Nurse, Doctor should have it
+      'queueManagement': ['Pharmacist', 'LabTechnician', 'Receptionist', 'Accountant', 'BillingOfficer', 'ITSupport', 'HR'],
       
       // Pharmacy locks
-      'pharmacyInventory': ['Doctor', 'Nurse', 'Accountant', 'BillingOfficer', 'Receptionist', 'LabTechnician', 'ITSupport'],
-      'pharmacyStock': ['Doctor', 'Nurse', 'Accountant', 'BillingOfficer', 'Receptionist', 'LabTechnician', 'ITSupport'],
-      'pharmacyTransactions': ['Doctor', 'Nurse', 'Accountant', 'BillingOfficer', 'Receptionist', 'LabTechnician', 'ITSupport'],
-      'pharmacyBranches': ['Doctor', 'Nurse', 'Pharmacist', 'Accountant', 'BillingOfficer', 'Receptionist', 'LabTechnician', 'ITSupport', 'Obstetrician', 'Midwife', 'Records'],
-      'nhisManagement': ['Doctor', 'Nurse', 'LabTechnician', 'Receptionist', 'ITSupport', 'Obstetrician', 'Midwife', 'Records'],
-      'nhisAuthorizations': ['Doctor', 'Nurse', 'LabTechnician', 'Receptionist', 'ITSupport', 'Obstetrician', 'Midwife', 'Records'],
+      'pharmacyInventory': ['Doctor', 'Nurse', 'Accountant', 'BillingOfficer', 'Receptionist', 'LabTechnician', 'ITSupport', 'HR'],
+      'pharmacyStock': ['Doctor', 'Nurse', 'Accountant', 'BillingOfficer', 'Receptionist', 'LabTechnician', 'ITSupport', 'HR'],
+      'pharmacyTransactions': ['Doctor', 'Nurse', 'Accountant', 'BillingOfficer', 'Receptionist', 'LabTechnician', 'ITSupport', 'HR'],
+      'pharmacyBranches': ['Doctor', 'Nurse', 'Pharmacist', 'Accountant', 'BillingOfficer', 'Receptionist', 'LabTechnician', 'ITSupport', 'Obstetrician', 'Midwife', 'Records', 'HR'],
+      'nhisManagement': ['Doctor', 'Nurse', 'LabTechnician', 'Receptionist', 'ITSupport', 'Obstetrician', 'Midwife', 'Records', 'HR'],
+      'nhisAuthorizations': ['Doctor', 'Nurse', 'LabTechnician', 'Receptionist', 'ITSupport', 'Obstetrician', 'Midwife', 'Records', 'HR'],
+    
+      // Radiologist-specific locks
+      'archivedPatients': ['Radiologist'],       // Cannot manage
+      'patients': ['Radiologist'],               // View only
+      
+      // HR locks - Only HR, Admin, ITAdmin can manage HR
+      'hrDashboard': ['Doctor', 'Nurse', 'Pharmacist', 'LabTechnician', 'Receptionist', 'Accountant', 'BillingOfficer', 'ITSupport', 'Obstetrician', 'Midwife', 'Records', 'Radiologist'],
+      'hrEmployees': ['Doctor', 'Nurse', 'Pharmacist', 'LabTechnician', 'Receptionist', 'Accountant', 'BillingOfficer', 'ITSupport', 'Obstetrician', 'Midwife', 'Records', 'Radiologist'],
+      'hrDepartments': ['Doctor', 'Nurse', 'Pharmacist', 'LabTechnician', 'Receptionist', 'Accountant', 'BillingOfficer', 'ITSupport', 'Obstetrician', 'Midwife', 'Records', 'Radiologist'],
+      'hrLeaves': ['Doctor', 'Nurse', 'Pharmacist', 'LabTechnician', 'Receptionist', 'Accountant', 'BillingOfficer', 'ITSupport', 'Obstetrician', 'Midwife', 'Records', 'Radiologist'],
+      'hrAttendance': ['Doctor', 'Nurse', 'Pharmacist', 'LabTechnician', 'Receptionist', 'Accountant', 'BillingOfficer', 'ITSupport', 'Obstetrician', 'Midwife', 'Records', 'Radiologist'],
+      'hrPerformance': ['Doctor', 'Nurse', 'Pharmacist', 'LabTechnician', 'Receptionist', 'Accountant', 'BillingOfficer', 'ITSupport', 'Obstetrician', 'Midwife', 'Records', 'Radiologist'],
+      'hrTrainings': ['Doctor', 'Nurse', 'Pharmacist', 'LabTechnician', 'Receptionist', 'Accountant', 'BillingOfficer', 'ITSupport', 'Obstetrician', 'Midwife', 'Records', 'Radiologist'],
     };
     
     return locks[moduleKey]?.includes(role) || false;
   };
 
-  // ✅ Helper to get tooltip text for locked permissions
+  // Helper to get tooltip text for locked permissions
   const getLockTooltip = (role, moduleKey) => {
     const tooltips = {
       'pricing': 'Billing Officer can view pricing but not manage it',
@@ -143,26 +166,35 @@ const ManagePermissions = () => {
       'archivedPatientsView': 'This role can view archived patients but not manage them',
       'patientIntake': 'Only Records staff can manage patient intake',
       'admissions': 'Only Records staff can manage admissions',
-      'staff': 'Only Admin, ITAdmin, and Records can manage staff',
+      'staff': 'Only Admin, ITAdmin, and HR can manage staff',
       'clinics': 'Only Admin and ITAdmin can manage clinics',
       'wards': 'Only Admin and ITAdmin can manage wards',
       
-      // 🆕 Doctor Queue tooltips
       'doctorQueue': '🔒 Only Doctors and Obstetricians can access their patient queue',
       'queueManagement': '🔒 Only Admin, Records, and clinical staff can manage the queue',
       
-      // Pharmacy tooltips
       'pharmacyInventory': 'Only Pharmacist, Admin, and ITAdmin can manage inventory',
       'pharmacyStock': 'Only Pharmacist, Admin, and ITAdmin can manage stock',
       'pharmacyTransactions': 'Only Pharmacist, Admin, and ITAdmin can view transactions',
       'pharmacyBranches': 'Only Admin and ITAdmin can manage pharmacy branches',
       'nhisManagement': 'Only Admin, ITAdmin, and Accountant can manage NHIS pricing',
       'nhisAuthorizations': 'Only Admin, ITAdmin, and Accountant can process NHIS authorizations',
+      
+      'patients': 'Radiologists can view patients but not manage them',
+      'archivedPatients': 'Radiologists cannot manage archived patients',
+      
+      'hrDashboard': '🔒 Only HR, Admin, and ITAdmin can access HR Dashboard',
+      'hrEmployees': '🔒 Only HR, Admin, and ITAdmin can manage employees',
+      'hrDepartments': '🔒 Only HR, Admin, and ITAdmin can manage departments',
+      'hrLeaves': '🔒 Only HR, Admin, and ITAdmin can manage leaves',
+      'hrAttendance': '🔒 Only HR, Admin, and ITAdmin can manage attendance',
+      'hrPerformance': '🔒 Only HR, Admin, and ITAdmin can manage performance reviews',
+      'hrTrainings': '🔒 Only HR, Admin, and ITAdmin can manage trainings',
     };
     return tooltips[moduleKey] || 'This permission is locked for this role';
   };
 
-  // ✅ Helper to get recommended default permissions
+  // Helper to get recommended default permissions
   const getRecommendedPermissions = (role) => {
     const defaults = {
       'Admin': {
@@ -196,6 +228,13 @@ const ManagePermissions = () => {
         archivedPatientsView: true,
         doctorQueue: true,
         queueManagement: true,
+        hrDashboard: true,
+        hrEmployees: true,
+        hrDepartments: true,
+        hrLeaves: true,
+        hrAttendance: true,
+        hrPerformance: true,
+        hrTrainings: true,
       },
       'ITAdmin': {
         dashboard: true,
@@ -228,6 +267,52 @@ const ManagePermissions = () => {
         archivedPatientsView: true,
         doctorQueue: true,
         queueManagement: true,
+        hrDashboard: true,
+        hrEmployees: true,
+        hrDepartments: true,
+        hrLeaves: true,
+        hrAttendance: true,
+        hrPerformance: true,
+        hrTrainings: true,
+      },
+      'HR': {
+        dashboard: true,
+        patients: false,
+        staff: true,        // ✅ HR can manage staff
+        appointments: false,
+        prescriptions: false,
+        labOrders: false,
+        billing: false,
+        pharmacy: false,
+        pharmacyDashboard: false,
+        pharmacyInventory: false,
+        nhisManagement: false,
+        nhisAuthorizations: false,
+        pharmacyStock: false,
+        pharmacyTransactions: false,
+        pharmacyBranches: false,
+        clinics: false,
+        wards: false,
+        pricing: false,
+        billingOfficer: false,
+        patientIntake: false,
+        admissions: false,
+        patientHistory: false,
+        roiRequests: false,
+        nurseDashboard: false,
+        doctorDashboard: false,
+        antenatal: false,
+        archivedPatients: false,
+        archivedPatientsView: false,
+        doctorQueue: false,
+        queueManagement: false,
+        hrDashboard: true,
+        hrEmployees: true,
+        hrDepartments: true,
+        hrLeaves: true,
+        hrAttendance: true,
+        hrPerformance: true,
+        hrTrainings: true,
       },
       'Records': {
         dashboard: true,
@@ -260,6 +345,13 @@ const ManagePermissions = () => {
         archivedPatientsView: true,
         doctorQueue: false,
         queueManagement: true,
+        hrDashboard: false,
+        hrEmployees: false,
+        hrDepartments: false,
+        hrLeaves: false,
+        hrAttendance: false,
+        hrPerformance: false,
+        hrTrainings: false,
       },
       'Doctor': {
         dashboard: true,
@@ -292,6 +384,13 @@ const ManagePermissions = () => {
         archivedPatientsView: true,
         doctorQueue: true,
         queueManagement: false,
+        hrDashboard: false,
+        hrEmployees: false,
+        hrDepartments: false,
+        hrLeaves: false,
+        hrAttendance: false,
+        hrPerformance: false,
+        hrTrainings: false,
       },
       'Nurse': {
         dashboard: true,
@@ -324,6 +423,13 @@ const ManagePermissions = () => {
         archivedPatientsView: true,
         doctorQueue: false,
         queueManagement: true,
+        hrDashboard: false,
+        hrEmployees: false,
+        hrDepartments: false,
+        hrLeaves: false,
+        hrAttendance: false,
+        hrPerformance: false,
+        hrTrainings: false,
       },
       'Obstetrician': {
         dashboard: true,
@@ -356,6 +462,13 @@ const ManagePermissions = () => {
         archivedPatientsView: true,
         doctorQueue: true,
         queueManagement: false,
+        hrDashboard: false,
+        hrEmployees: false,
+        hrDepartments: false,
+        hrLeaves: false,
+        hrAttendance: false,
+        hrPerformance: false,
+        hrTrainings: false,
       },
       'Midwife': {
         dashboard: true,
@@ -388,6 +501,13 @@ const ManagePermissions = () => {
         archivedPatientsView: true,
         doctorQueue: false,
         queueManagement: true,
+        hrDashboard: false,
+        hrEmployees: false,
+        hrDepartments: false,
+        hrLeaves: false,
+        hrAttendance: false,
+        hrPerformance: false,
+        hrTrainings: false,
       },
       'Pharmacist': {
         dashboard: true,
@@ -420,6 +540,13 @@ const ManagePermissions = () => {
         archivedPatientsView: false,
         doctorQueue: false,
         queueManagement: false,
+        hrDashboard: false,
+        hrEmployees: false,
+        hrDepartments: false,
+        hrLeaves: false,
+        hrAttendance: false,
+        hrPerformance: false,
+        hrTrainings: false,
       },
       'Accountant': {
         dashboard: true,
@@ -452,6 +579,13 @@ const ManagePermissions = () => {
         archivedPatientsView: false,
         doctorQueue: false,
         queueManagement: false,
+        hrDashboard: false,
+        hrEmployees: false,
+        hrDepartments: false,
+        hrLeaves: false,
+        hrAttendance: false,
+        hrPerformance: false,
+        hrTrainings: false,
       },
       'BillingOfficer': {
         dashboard: true,
@@ -484,6 +618,13 @@ const ManagePermissions = () => {
         archivedPatientsView: false,
         doctorQueue: false,
         queueManagement: false,
+        hrDashboard: false,
+        hrEmployees: false,
+        hrDepartments: false,
+        hrLeaves: false,
+        hrAttendance: false,
+        hrPerformance: false,
+        hrTrainings: false,
       },
       'LabTechnician': {
         dashboard: true,
@@ -516,6 +657,13 @@ const ManagePermissions = () => {
         archivedPatientsView: false,
         doctorQueue: false,
         queueManagement: false,
+        hrDashboard: false,
+        hrEmployees: false,
+        hrDepartments: false,
+        hrLeaves: false,
+        hrAttendance: false,
+        hrPerformance: false,
+        hrTrainings: false,
       },
       'Receptionist': {
         dashboard: true,
@@ -548,6 +696,13 @@ const ManagePermissions = () => {
         archivedPatientsView: false,
         doctorQueue: false,
         queueManagement: false,
+        hrDashboard: false,
+        hrEmployees: false,
+        hrDepartments: false,
+        hrLeaves: false,
+        hrAttendance: false,
+        hrPerformance: false,
+        hrTrainings: false,
       },
       'ITSupport': {
         dashboard: true,
@@ -580,18 +735,82 @@ const ManagePermissions = () => {
         archivedPatientsView: false,
         doctorQueue: false,
         queueManagement: false,
+        hrDashboard: false,
+        hrEmployees: false,
+        hrDepartments: false,
+        hrLeaves: false,
+        hrAttendance: false,
+        hrPerformance: false,
+        hrTrainings: false,
+      },
+      'Radiologist': {
+        dashboard: true,
+        patients: true,
+        staff: false,
+        appointments: false,
+        prescriptions: false,
+        labOrders: false,
+        billing: false,
+        pharmacy: false,
+        pharmacyDashboard: false,
+        pharmacyInventory: false,
+        nhisManagement: false,
+        nhisAuthorizations: false,
+        pharmacyStock: false,
+        pharmacyTransactions: false,
+        pharmacyBranches: false,
+        clinics: false,
+        wards: false,
+        pricing: false,
+        billingOfficer: false,
+        patientIntake: false,
+        admissions: false,
+        patientHistory: false,
+        roiRequests: false,
+        nurseDashboard: false,
+        doctorDashboard: false,
+        antenatal: false,
+        archivedPatients: false,
+        archivedPatientsView: true,
+        doctorQueue: false,
+        queueManagement: false,
+        hrDashboard: false,
+        hrEmployees: false,
+        hrDepartments: false,
+        hrLeaves: false,
+        hrAttendance: false,
+        hrPerformance: false,
+        hrTrainings: false,
       },
     };
     return defaults[role] || {};
   };
 
-  // ✅ Helper to check if a permission is recommended
+  // Helper to check if a permission is recommended
   const isRecommended = (role, moduleKey) => {
     const recommended = getRecommendedPermissions(role);
     return recommended[moduleKey] === true;
   };
 
+  // Helper to check if user can manage permissions
+  const canManagePermissions = () => {
+    return ['Admin', 'ITAdmin'].includes(user?.role);
+  };
+
   if (loading) return <div className="spinner" />;
+
+  if (!canManagePermissions()) {
+    return (
+      <div className="dashboard">
+        <div className="page-header">
+          <h2>🔐 Access Denied</h2>
+          <p style={{ color: '#ef4444' }}>
+            You do not have permission to manage role permissions. Only Administrators can access this page.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="dashboard">
@@ -607,6 +826,9 @@ const ManagePermissions = () => {
           </span>
           <span style={{ fontSize: '12px', color: '#6b7280' }}>
             <span style={{ background: '#f3f4f6', padding: '2px 8px', borderRadius: '4px' }}>⚪</span> Available to toggle
+          </span>
+          <span style={{ fontSize: '12px', color: '#10b981' }}>
+            ✅ HR Module permissions added
           </span>
         </div>
       </div>
@@ -683,6 +905,11 @@ const ManagePermissions = () => {
             ))}
           </tbody>
         </table>
+      </div>
+      <div style={{ marginTop: '16px', padding: '12px 16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e8ecf1' }}>
+        <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>
+          💡 <strong>Tip:</strong> For HR to manage staff (create, edit, deactivate), ensure <strong>"Staff Mgmt"</strong> permission is checked for the HR role.
+        </p>
       </div>
     </div>
   );
