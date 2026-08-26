@@ -26,7 +26,7 @@ const Patients = () => {
     corporateCompany: '',
   });
 
-  // ✅ Use useCallback to memoize fetchPatients
+  // Use useCallback to memoize fetchPatients
   const fetchPatients = useCallback(async () => {
     setLoading(true);
     try {
@@ -39,7 +39,6 @@ const Patients = () => {
 
       const res = await axios.get(url, { 
         headers: { Authorization: `Bearer ${token}` },
-        // ✅ Prevent caching
         params: { _t: Date.now() }
       });
 
@@ -68,7 +67,6 @@ const Patients = () => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
     
-    // ✅ If category changes, show a helpful message
     if (name === 'patientCategory') {
       const categoryMessages = {
         'FPP': '💰 Patient will pay full amount for all services.',
@@ -86,9 +84,7 @@ const Patients = () => {
       let response;
       
       if (editingPatient) {
-        // ✅ Log what we're sending
         console.log('📤 Updating patient:', formData);
-        
         response = await axios.put(
           `http://localhost:3000/api/patients/${editingPatient.id}`, 
           formData, 
@@ -104,7 +100,6 @@ const Patients = () => {
         toast.success('Patient registered successfully!');
       }
       
-      // ✅ Log the response
       console.log('📥 Server response:', response.data);
       
       setShowModal(false);
@@ -118,7 +113,6 @@ const Patients = () => {
         corporateCompany: '',
       });
       
-      // ✅ Force refresh by incrementing refreshKey
       setRefreshKey(prev => prev + 1);
       
     } catch (error) { 
@@ -164,6 +158,95 @@ const Patients = () => {
     } catch (error) {
       const message = error.response?.data?.error || 'Failed to delete patient.';
       toast.error(message);
+    }
+  };
+
+  // ✅ FIXED: Handle Enable Portal Access - No toast.info
+  const handleEnablePortal = async (patient) => {
+    // Ask user which method to use
+    const method = window.confirm(
+      `🔑 Set up portal access for ${patient.firstName} ${patient.lastName}?\n\n` +
+      `Click OK to set a PIN (4-6 digits - recommended for quick access)\n` +
+      `Click Cancel to set a Password (min 6 characters)`
+    );
+
+    let credential;
+    let isPin = true;
+    
+    if (method) {
+      // Set PIN
+      credential = prompt(`Enter a 4-6 digit PIN for ${patient.firstName}:`, '1234');
+      isPin = true;
+    } else {
+      // Set Password
+      credential = prompt(`Enter a password for ${patient.firstName} (min 6 characters):`, '');
+      isPin = false;
+    }
+
+    if (credential === null) {
+      toast.error('Portal setup cancelled');
+      return;
+    }
+
+    if (!credential || credential.trim() === '') {
+      toast.error('Credential is required');
+      return;
+    }
+
+    if (isPin && !/^\d{4,6}$/.test(credential)) {
+      toast.error('PIN must be 4-6 digits (numbers only)');
+      return;
+    }
+
+    if (!isPin && credential.length < 6) {
+      toast.error('Password must be at least 6 characters');
+      return;
+    }
+
+    try {
+      const payload = { 
+        patientId: patient.id,
+      };
+      
+      if (isPin) {
+        payload.pinCode = credential;
+      } else {
+        payload.password = credential;
+      }
+
+      await axios.post('http://localhost:3000/api/patient/setup-portal', payload, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      // ✅ FIXED: Use toast.success for both messages (no toast.info)
+      toast.success(`✅ Portal access enabled for ${patient.firstName} ${patient.lastName}`);
+      toast.success(`📌 ${isPin ? 'PIN' : 'Password'} set successfully. Patient can now login with Hospital ID.`);
+      setRefreshKey(prev => prev + 1);
+    } catch (error) {
+      console.error('Enable portal error:', error);
+      toast.error(error.response?.data?.error || 'Failed to enable portal access');
+    }
+  };
+
+  // Handle Reset Portal Access
+  const handleResetPortal = async (patient) => {
+    if (!window.confirm(
+      `⚠️ Reset portal access for ${patient.firstName} ${patient.lastName}?\n\n` +
+      `This will disable their portal login. They will need to set up access again.`
+    )) return;
+
+    try {
+      await axios.post('http://localhost:3000/api/patient/reset-portal', {
+        patientId: patient.id
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      toast.success(`Portal access reset for ${patient.firstName} ${patient.lastName}`);
+      setRefreshKey(prev => prev + 1);
+    } catch (error) {
+      console.error('Reset portal error:', error);
+      toast.error(error.response?.data?.error || 'Failed to reset portal access');
     }
   };
 
@@ -373,6 +456,54 @@ const Patients = () => {
                           >
                             ✏️ Edit
                           </button>
+                          
+                          {/* Enable Portal Access Button */}
+                          {p.portalAccess ? (
+                            <button 
+                              className="btn btn-sm"
+                              style={{ 
+                                background: '#10b981', 
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                padding: '4px 10px',
+                                cursor: 'pointer',
+                                fontSize: '11px',
+                                fontWeight: '600',
+                                whiteSpace: 'nowrap',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                              }}
+                              onClick={() => handleResetPortal(p)}
+                              title="Click to reset/disable portal access"
+                            >
+                              ✅ Portal Active
+                            </button>
+                          ) : (
+                            <button 
+                              className="btn btn-sm"
+                              style={{ 
+                                background: '#f59e0b', 
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                padding: '4px 10px',
+                                cursor: 'pointer',
+                                fontSize: '11px',
+                                fontWeight: '600',
+                                whiteSpace: 'nowrap',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                              }}
+                              onClick={() => handleEnablePortal(p)}
+                              title="Enable patient portal access with PIN or Password"
+                            >
+                              🔑 Enable Portal
+                            </button>
+                          )}
+                          
                           <button 
                             className="btn btn-sm btn-delete"
                             style={{ 

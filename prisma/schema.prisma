@@ -78,6 +78,11 @@ model Patient {
   // NHIS Relations
   nhisAuthorizations NHISAuthorization[]
   nhisClaims         NHISClaim[]
+
+  // ✅ NEW: Dental, Optometry, Immunization Relations
+  dentalRecords    DentalRecord[]
+  optometryRecords OptometryRecord[]
+  immunizations    Immunization[]
 }
 
 // 2. Staff Model - COMPLETE FIXED VERSION
@@ -174,6 +179,10 @@ model Staff {
   leaveEntitlements          StaffLeaveEntitlement[]
   leaveUsages                LeaveUsage[]          @relation("LeaveUsageStaff")
   approvedLeaveUsages        LeaveUsage[]          @relation("LeaveUsageApprover")
+
+  // ✅ NEW: Dental, Optometry, Immunization Staff Relations
+  dentalRecords    DentalRecord[]    @relation("DentalStaff")
+  optometryRecords OptometryRecord[] @relation("OptometryStaff")
 
   // Timestamps
   createdAt          DateTime            @default(now())
@@ -826,18 +835,20 @@ model AppointmentReminder {
   createdAt      DateTime @default(now())
 }
 
-// 30. Patient Notifications (Portal)
+// 30. Patient Notifications (Portal) - UPDATED with proper relations
 model PatientNotification {
   id         String   @id @default(cuid())
   patientId  String
   patient    Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
   
   title      String
-  message    String
-  type       String
+  message    String   @db.Text
+  type       String   // appointment, prescription, lab, billing, vaccination, general
   isRead     Boolean  @default(false)
   link       String?
   createdAt  DateTime @default(now())
+
+  @@map("patient_notifications")
 }
 
 // 31. Patient Messages
@@ -849,7 +860,7 @@ model PatientMessage {
   staff          Staff    @relation(fields: [staffId], references: [id])
   
   subject        String
-  message        String
+  message        String   @db.Text
   isRead         Boolean  @default(false)
   isFromPatient  Boolean  @default(true)
   createdAt      DateTime @default(now())
@@ -917,9 +928,9 @@ model ImagingResult {
   imagingOrderId  String
   imagingOrder    ImagingOrder @relation(fields: [imagingOrderId], references: [id], onDelete: Cascade)
   
-  findings        String
-  impression      String
-  recommendations String?
+  findings        String   @db.Text
+  impression      String   @db.Text
+  recommendations String?  @db.Text
   severity        String?
   
   createdAt       DateTime @default(now())
@@ -946,7 +957,7 @@ model PatientTransfer {
   toWardId          String?
   toWard            Ward?    @relation("ToWardTransfer", fields: [toWardId], references: [id])
   
-  reason            String
+  reason            String   @db.Text
   priority          String   @default("Normal")
   transportType     String?
   
@@ -962,7 +973,7 @@ model PatientTransfer {
   departedAt        DateTime?
   arrivedAt         DateTime?
   
-  notes             String?
+  notes             String?  @db.Text
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }
@@ -988,7 +999,7 @@ model PaymentPlan {
   endDate          DateTime?
   nextPaymentDate  DateTime?
   
-  notes            String?
+  notes            String?  @db.Text
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
   
@@ -1004,7 +1015,7 @@ model PartialPayment {
   amount           Float
   paymentMethod    String
   reference        String?
-  notes            String?
+  notes            String?  @db.Text
   
   processedBy      String
   processedStaff   Staff    @relation("ProcessedByStaff", fields: [processedBy], references: [id])
@@ -1038,7 +1049,7 @@ model LeaveRequest {
   startDate           DateTime @map("start_date")
   endDate             DateTime @map("end_date")
   days                Int
-  reason              String?
+  reason              String?  @db.Text
   contactDuringLeave  String?  @map("contact_during_leave")
   substituteId        String?  @map("substitute_id")
   substitute          Staff?   @relation("LeaveSubstitute", fields: [substituteId], references: [id])
@@ -1046,16 +1057,16 @@ model LeaveRequest {
   approvedById        String?  @map("approved_by_id")
   approvedBy          Staff?   @relation("LeaveApprover", fields: [approvedById], references: [id])
   approvedAt          DateTime? @map("approved_at")
-  comments            String?
+  comments            String?  @db.Text
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
   // LEAVE NOTIFICATIONS
   notifications       LeaveNotification[] @relation("leaveNotifications")
   
-  // LEAVE USAGE - FIXED: removed fields/references, use @unique
-  leaveUsageId        String?     @unique @map("leave_usage_id")
-  leaveUsage          LeaveUsage? @relation(fields: [leaveUsageId], references: [id])
+  // ✅ FIXED: LEAVE USAGE - Only the field, NO @relation here (relation is defined on LeaveUsage)
+  leaveUsageId        String?  @unique @map("leave_usage_id")
+  leaveUsage          LeaveUsage?
 
   @@map("leave_requests")
 }
@@ -1068,7 +1079,7 @@ model Attendance {
   date      DateTime @default(now())
   clockIn   DateTime? @map("clock_in")
   clockOut  DateTime? @map("clock_out")
-  notes     String?
+  notes     String?  @db.Text
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -1086,11 +1097,11 @@ model PerformanceReview {
   periodStart     DateTime? @map("period_start")
   periodEnd       DateTime? @map("period_end")
   rating          Int?
-  strengths       String?
-  weaknesses      String?
-  goals           String?
-  recommendations String?
-  overallComments String?  @map("overall_comments")
+  strengths       String?  @db.Text
+  weaknesses      String?  @db.Text
+  goals           String?  @db.Text
+  recommendations String?  @db.Text
+  overallComments String?  @map("overall_comments") @db.Text
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
@@ -1101,7 +1112,7 @@ model PerformanceReview {
 model Training {
   id              String   @id @default(cuid())
   title           String
-  description     String?
+  description     String?  @db.Text
   provider        String?
   startDate       DateTime @map("start_date")
   endDate         DateTime? @map("end_date")
@@ -1191,7 +1202,7 @@ model StaffLeaveEntitlement {
   
   createdBy           String?  @map("created_by")
   updatedBy           String?  @map("updated_by")
-  notes               String?
+  notes               String?  @db.Text
   
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
@@ -1208,8 +1219,9 @@ model LeaveUsage {
   staffId             String   @map("staff_id")
   staff               Staff    @relation("LeaveUsageStaff", fields: [staffId], references: [id])
   
+  // ✅ FIXED: LEAVE REQUEST RELATION - This side defines the relation
   leaveRequestId      String?  @unique @map("leave_request_id")
-  leaveRequest        LeaveRequest? 
+  leaveRequest        LeaveRequest? @relation(fields: [leaveRequestId], references: [id])
   
   entitlementId       String?  @map("entitlement_id")
   entitlement         StaffLeaveEntitlement? @relation(fields: [entitlementId], references: [id])
@@ -1225,7 +1237,7 @@ model LeaveUsage {
   approvedById        String?  @map("approved_by_id")
   approvedBy          Staff?   @relation("LeaveUsageApprover", fields: [approvedById], references: [id])
   approvedAt          DateTime? @map("approved_at")
-  notes               String?
+  notes               String?  @db.Text
   
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
@@ -1237,7 +1249,7 @@ model LeaveUsage {
 model LeavePolicy {
   id                  String   @id @default(cuid())
   name                String   @unique
-  description         String?
+  description         String?  @db.Text
   
   defaultAnnualDays   Float    @default(21) @map("default_annual_days")
   defaultSickDays     Float    @default(10) @map("default_sick_days")
@@ -1260,4 +1272,74 @@ model LeavePolicy {
   updatedAt           DateTime @updatedAt @map("updated_at")
   
   @@map("leave_policies")
+}
+
+// ============================================================
+// ✅ NEW: DENTAL CLINIC
+// ============================================================
+model DentalRecord {
+  id               String   @id @default(cuid())
+  patientId        String
+  patient          Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  examinationDate  DateTime @default(now())
+  teethNumber      String?
+  condition        String   @db.Text
+  treatmentPlan    String?  @db.Text
+  procedure        String?
+  notes            String?  @db.Text
+  staffId          String
+  staff            Staff    @relation("DentalStaff", fields: [staffId], references: [id])
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@map("dental_records")
+}
+
+// ============================================================
+// ✅ NEW: OPTOMETRY CLINIC
+// ============================================================
+model OptometryRecord {
+  id                          String   @id @default(cuid())
+  patientId                   String
+  patient                     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  examinationDate             DateTime @default(now())
+  visualAcuityRight           String?
+  visualAcuityLeft            String?
+  intraocularPressureRight    Float?
+  intraocularPressureLeft     Float?
+  refractionRight             String?
+  refractionLeft              String?
+  diagnosis                   String?  @db.Text
+  treatment                   String?  @db.Text
+  prescription                String?
+  notes                       String?  @db.Text
+  staffId                     String
+  staff                       Staff    @relation("OptometryStaff", fields: [staffId], references: [id])
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+
+  @@map("optometry_records")
+}
+
+// ============================================================
+// ✅ NEW: IMMUNIZATION TRACKING
+// ============================================================
+model Immunization {
+  id                 String   @id @default(cuid())
+  patientId          String
+  patient            Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  vaccineName        String
+  doseNumber         Int      @default(1)
+  administrationDate DateTime
+  route              String   @default("IM")
+  site               String   @default("Deltoid")
+  batchNumber        String?
+  expiryDate         DateTime?
+  nextDueDate        DateTime?
+  administeredBy     String
+  notes              String?  @db.Text
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("immunizations")
 }

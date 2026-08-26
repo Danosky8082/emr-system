@@ -18,17 +18,16 @@ import PatientHistory from './pages/PatientHistory';
 import ROIRequests from './pages/ROIRequests';
 import ManageClinics from './pages/ManageClinics';
 import PatientIntake from './pages/PatientIntake';
-import BillingOfficer from './pages/BillingOfficer'; 
+import BillingOfficer from './pages/BillingOfficer';
 import ManagePricing from './pages/ManagePricing';
-import NurseDashboard from "./pages/NurseDashboard";
-import PatientProfile from "./pages/PatientProfile";
-import ManageWards from "./pages/ManageWards";
+import NurseDashboard from './pages/NurseDashboard';
+import PatientProfile from './pages/PatientProfile';
+import ManageWards from './pages/ManageWards';
 import DoctorDashboard from './pages/DoctorDashboard';
 import ManagePermissions from './pages/ManagePermissions';
 import AntenatalDashboard from './pages/AntenatalDashboard';
 import PregnancyProfile from './pages/PregnancyProfile';
 import ArchivedPatients from './pages/ArchivedPatients';
-// ✅ NEW IMPORTS
 import NHISDrugManagement from './pages/NHISDrugManagement';
 import PharmacyDashboard from './pages/PharmacyDashboard';
 import ArchivedPatientsView from './pages/ArchivedPatientsView';
@@ -40,8 +39,13 @@ import HRDashboard from './pages/HRDashboard';
 import HREmployees from './pages/HREmployees';
 import HRDepartments from './pages/HRDepartments';
 import HRLeaveManagement from './pages/HRLeaveManagement';
-import HREmployeeDetail from './pages/HREmployeeDetail';
-// --------------------------------------------
+import AuditLogs from './pages/AuditLogs';
+import SystemStatus from './pages/SystemStatus';
+
+// Patient Portal Imports
+import PatientLogin from './pages/PatientLogin';
+import PatientDashboard from './pages/PatientDashboard';
+
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 
@@ -78,7 +82,13 @@ function App() {
   return (
     <AuthContext.Provider value={authValue}>
       <Routes>
+        {/* ===== PUBLIC ROUTES (No authentication required) ===== */}
         <Route path="/login" element={<Login />} />
+        <Route path="/patient-login" element={<PatientLogin />} />
+        <Route path="/patient-dashboard" element={<PatientDashboard />} />
+        <Route path="/kiosk" element={<KioskMode />} />
+        
+        {/* ===== STAFF ROUTES (Authentication required) ===== */}
         <Route path="/" element={
           <ProtectedRoute>
             <Layout />
@@ -91,7 +101,7 @@ function App() {
           <Route path="lab-orders" element={<LabOrders />} />
           <Route path="billing" element={<Billing />} />
           <Route path="pharmacy" element={<Pharmacy />} />
-          <Route path="staff" element={<StaffManagement />} />  
+          <Route path="staff" element={<StaffManagement />} />
           <Route path="admissions" element={<Admissions />} />
           <Route path="patient-history" element={<PatientHistory />} />
           <Route path="roi-requests" element={<ROIRequests />} />
@@ -108,20 +118,21 @@ function App() {
           <Route path="pregnancy/new" element={<PregnancyProfile />} />
           <Route path="pregnancy/:id" element={<PregnancyProfile />} />
           <Route path="archived-patients" element={<ArchivedPatients />} />
-          {/* ✅ NEW ROUTES */}
           <Route path="nhis-drugs" element={<NHISDrugManagement />} />
           <Route path="pharmacy-dashboard" element={<PharmacyDashboard />} />
-          <Route path="/archived-patients-view" element={<ArchivedPatientsView />} />
-          <Route path="/queue" element={<QueueDashboard />} />
-          <Route path="/kiosk" element={<KioskMode />} />
-          <Route path="/doctor-queue" element={<DoctorQueue />} />
-          <Route path="/radiology-dashboard" element={<RadiologyDashboard />} />
+          <Route path="archived-patients-view" element={<ArchivedPatientsView />} />
+          <Route path="queue" element={<QueueDashboard />} />
+          <Route path="doctor-queue" element={<DoctorQueue />} />
+          <Route path="radiology-dashboard" element={<RadiologyDashboard />} />
           <Route path="hr/dashboard" element={<HRDashboard />} />
-          <Route path="hr/employees/:id" element={<HREmployeeDetail />} />
           <Route path="hr/employees" element={<HREmployees />} />
           <Route path="hr/departments" element={<HRDepartments />} />
           <Route path="hr/leaves" element={<HRLeaveManagement />} />
+          <Route path="audit-logs" element={<AuditLogs />} />
+          <Route path="system-status" element={<SystemStatus />} />
         </Route>
+        
+        {/* ===== CATCH-ALL ===== */}
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </AuthContext.Provider>

@@ -10,7 +10,6 @@ const Layout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchTerm, setSearchTerm] = useState('');
-
   const [permissions, setPermissions] = useState(null);
   const [loadingPermissions, setLoadingPermissions] = useState(true);
 
@@ -34,6 +33,8 @@ const Layout = () => {
       { path: '/clinics', label: '🏥 Manage Clinics' },
       { path: '/wards', label: '🛏️ Manage Wards' },
       { path: '/permissions', label: '🔐 Role Permissions' },
+      { path: '/audit-logs', label: '📋 Audit Logs' },
+      { path: '/system-status', label: '🖥️ System Status' },
     ],
     Records: [
       { path: '/patient-intake', label: '🔄 Patient Intake' },
@@ -68,7 +69,6 @@ const Layout = () => {
     Radiology: [
       { path: '/radiology-dashboard', label: '📷 Radiology Dashboard' },
     ],
-    // ✅ HR Group - Only HR-related modules
     HR: [
       { path: '/hr/dashboard', label: '👔 HR Dashboard' },
       { path: '/hr/employees', label: '👤 Employees' },
@@ -131,26 +131,23 @@ const Layout = () => {
   }, [user]);
 
   const canAccess = (path) => {
-    // --- Hard override for Obstetrician / Midwife ---
-    if (user?.role === 'Obstetrician' && path === '/nurse-dashboard') return false;
-    if (user?.role === 'Midwife' && path === '/doctor-dashboard') return false;
-    // ------------------------------------------------
+    // Admin can access everything
+    if (user?.role === 'Admin') return true;
+    if (user?.role === 'ITAdmin') return true;
 
-    // ✅ HR can only access HR routes
+    // HR can only access HR routes
     if (user?.role === 'HR') {
-      // HR can access their own dashboard and HR routes
       const hrPaths = ['/hr/dashboard', '/hr/employees', '/hr/departments', '/hr/leaves'];
       if (hrPaths.includes(path)) return true;
-      // HR cannot access anything else
       return false;
     }
 
-    // ✅ Radiology Dashboard - Only Radiologists, Admin, ITAdmin
+    // Radiology Dashboard - Only Radiologists, Admin, ITAdmin
     if (path === '/radiology-dashboard') {
       return ['Radiologist', 'Admin', 'ITAdmin'].includes(user?.role);
     }
 
-    // ✅ Doctor Queue: Only Doctors and Obstetricians
+    // Doctor Queue: Only Doctors and Obstetricians
     if (path === '/doctor-queue') {
       if (user?.role === 'Admin') return true;
       if (!loadingPermissions && permissions) {
@@ -160,7 +157,7 @@ const Layout = () => {
       return ['Doctor', 'Obstetrician'].includes(user?.role);
     }
 
-    // ✅ Queue Management: Admin, Records, Nurse, Midwife (NOT HR)
+    // Queue Management: Admin, Records, Nurse, Midwife
     if (path === '/queue') {
       if (user?.role === 'Admin') return true;
       if (!loadingPermissions && permissions) {
@@ -170,14 +167,14 @@ const Layout = () => {
       return ['Records', 'Nurse', 'Midwife'].includes(user?.role);
     }
 
-    // ✅ Antenatal: Only specific roles can access (NOT HR)
+    // Antenatal: Only specific roles
     if (path === '/antenatal') {
       const allowedRoles = ['Admin', 'ITAdmin', 'Records', 'Obstetrician', 'Midwife'];
       if (user?.role === 'Nurse') return false;
       return allowedRoles.includes(user?.role);
     }
 
-    // ✅ Archived Patients (Manage): Only Records/Admin/ITAdmin (NOT HR)
+    // Archived Patients (Manage): Only Records/Admin/ITAdmin
     if (path === '/archived-patients') {
       if (user?.role === 'Admin') return true;
       if (!loadingPermissions && permissions) {
@@ -187,7 +184,7 @@ const Layout = () => {
       return ['Records', 'ITAdmin'].includes(user?.role);
     }
 
-    // ✅ Archived Patients (View Only): Clinical staff, Records (NOT HR)
+    // Archived Patients (View Only): Clinical staff, Records
     if (path === '/archived-patients-view') {
       if (user?.role === 'Admin') return true;
       if (!loadingPermissions && permissions) {
@@ -201,18 +198,16 @@ const Layout = () => {
     if (path === '/') return true;
     if (loadingPermissions) return false;
     if (!permissions) return false;
-    if (user?.role === 'Admin') return true;
-    // ✅ REMOVED: if (user?.role === 'HR') return true; - HR should NOT have full access
 
     const permissionKey = pathToPermissionKey[path];
     if (!permissionKey) return false;
     return permissions[permissionKey] === true;
   };
 
-  // --- Updated redirect logic to support Obstetrician & Midwife ---
+  // Redirect logic
   useEffect(() => {
     const hasRedirected = sessionStorage.getItem('hasRedirected');
-    if (!hasRedirected) {
+    if (!hasRedirected && user) {
       if (['Nurse', 'Midwife'].includes(user?.role) && location.pathname === '/') {
         sessionStorage.setItem('hasRedirected', 'true');
         navigate('/nurse-dashboard');
@@ -227,45 +222,40 @@ const Layout = () => {
   }, [user, location.pathname, navigate]);
 
   const isGroupVisible = (groupName) => {
-    // ✅ HR can only see HR group
     if (user?.role === 'HR') {
       return groupName === 'HR';
     }
 
-    // Admin and ITAdmin see all groups
     if (['Admin', 'ITAdmin'].includes(user?.role)) return true;
 
-    // Radiology group - only for Radiologists, Admin, ITAdmin
     if (groupName === 'Radiology') {
       return ['Radiologist', 'Admin', 'ITAdmin'].includes(user?.role);
     }
 
-    // Doctor group only for Doctors and Obstetricians
     if (groupName === 'Doctor') {
       return ['Doctor', 'Obstetrician'].includes(user?.role);
     }
 
-    // Nurse group only for Nurses and Midwives
     if (groupName === 'Nurse') {
       return ['Nurse', 'Midwife'].includes(user?.role);
     }
 
-    // Records group only for Records, Admin, ITAdmin
+    if (groupName === 'Midwife') {
+      return ['Midwife'].includes(user?.role);
+    }
+
     if (groupName === 'Records') {
       return ['Records', 'Admin', 'ITAdmin'].includes(user?.role);
     }
 
-    // Admin group only for Admin, ITAdmin
     if (groupName === 'Admin') {
       return ['Admin', 'ITAdmin'].includes(user?.role);
     }
 
-    // Finance group for Accountant, BillingOfficer, Admin, ITAdmin
     if (groupName === 'Finance') {
       return ['Accountant', 'BillingOfficer', 'Admin', 'ITAdmin'].includes(user?.role);
     }
 
-    // Clinical group for most roles except some
     if (groupName === 'Clinical') {
       const allowedRoles = ['Doctor', 'Nurse', 'Obstetrician', 'Midwife', 'Pharmacist', 'Admin', 'ITAdmin', 'Records'];
       return allowedRoles.includes(user?.role);
@@ -279,7 +269,7 @@ const Layout = () => {
       return <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.9rem' }}>Loading menu...</span>;
     }
 
-    // ✅ HR gets their own simplified menu
+    // HR menu
     if (user?.role === 'HR') {
       const hrItems = allGroups.HR.filter(item => canAccess(item.path));
       return (
@@ -300,7 +290,7 @@ const Layout = () => {
       );
     }
 
-    // ✅ For Doctors and Obstetricians - show both Clinical and Doctor dropdowns
+    // Doctors and Obstetricians
     if (['Doctor', 'Obstetrician'].includes(user?.role)) {
       const doctorPaths = allGroups.Doctor.map(item => item.path);
       const clinicalItems = allGroups.Clinical.filter(item => 
@@ -348,11 +338,19 @@ const Layout = () => {
               </div>
             </div>
           )}
+          {/* Patient Portal for Doctors - View Only */}
+          <NavLink 
+            to="/patient-login" 
+            className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+            style={{ color: '#60a5fa' }}
+          >
+            🚑 Patient Portal
+          </NavLink>
         </>
       );
     }
 
-    // ✅ For Midwives - show Midwife dropdown with Antenatal
+    // Midwives
     if (user?.role === 'Midwife') {
       const midwifeItems = allGroups.Midwife.filter(item => canAccess(item.path));
       return (
@@ -383,7 +381,7 @@ const Layout = () => {
       );
     }
 
-    // ✅ For Nurses (NOT Midwives) - show Nurse dropdown WITHOUT Antenatal
+    // Nurses
     if (user?.role === 'Nurse') {
       const nurseItems = allGroups.Nurse.filter(item => canAccess(item.path));
       return (
@@ -414,7 +412,7 @@ const Layout = () => {
       );
     }
 
-    // ✅ For Records - show the Records dropdown
+    // Records
     if (user?.role === 'Records') {
       const recordsItems = allGroups.Records.filter(item => canAccess(item.path));
       return (
@@ -441,11 +439,18 @@ const Layout = () => {
               </div>
             </div>
           )}
+          <NavLink 
+            to="/patient-login" 
+            className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+            style={{ color: '#60a5fa' }}
+          >
+            🚑 Patient Portal
+          </NavLink>
         </>
       );
     }
 
-    // ✅ For Admin - show ALL dropdowns
+    // Admin and ITAdmin - Full menu with Patient Portal
     if (['Admin', 'ITAdmin'].includes(user?.role)) {
       return (
         <>
@@ -475,11 +480,29 @@ const Layout = () => {
               </div>
             );
           })}
+          {/* Patient Portal for Admin - Full Management */}
+          <div className="nav-dropdown">
+            <button className="nav-dropdown-header" style={{ color: '#60a5fa' }}>🚑 Patient Portal ▼</button>
+            <div className="dropdown-content">
+              <NavLink
+                to="/patient-login"
+                className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+              >
+                👤 Patient Login
+              </NavLink>
+              <NavLink
+                to="/kiosk"
+                className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+              >
+                📱 Kiosk Mode
+              </NavLink>
+            </div>
+          </div>
         </>
       );
     }
 
-    // ✅ For other roles (Pharmacist, Accountant, BillingOfficer, etc.)
+    // Other roles (Pharmacist, Accountant, BillingOfficer, etc.)
     return (
       <>
         <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
@@ -491,15 +514,12 @@ const Layout = () => {
           </NavLink>
         )}
         {Object.entries(allGroups).map(([groupName, items]) => {
-          // Skip Doctor, Nurse, and Midwife groups for other roles
           if (['Doctor', 'Nurse', 'Midwife'].includes(groupName)) {
             return null;
           }
-          // Skip Radiology for non-Radiologist roles
           if (groupName === 'Radiology' && !['Radiologist', 'Admin', 'ITAdmin'].includes(user?.role)) {
             return null;
           }
-          // Skip HR for non-HR roles (except Admin/ITAdmin)
           if (groupName === 'HR' && !['HR', 'Admin', 'ITAdmin'].includes(user?.role)) {
             return null;
           }
