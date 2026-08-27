@@ -1,4 +1,5 @@
-// src/components/KioskMode.jsx
+// src/components/KioskMode.jsx - COMPLETE FIXED VERSION
+
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
@@ -44,11 +45,12 @@ const KioskMode = () => {
 
     setLoading(true);
     try {
-      const token = localStorage.getItem('emr_token');
+      // ✅ USE PUBLIC ENDPOINT - No authentication required
       const res = await axios.get(
-        `http://localhost:3000/api/patient/search/quick?query=${encodeURIComponent(inputValue)}`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        `http://localhost:3000/api/public/patient/search?query=${encodeURIComponent(inputValue)}`
       );
+
+      console.log('🔍 Search results:', res.data);
 
       if (res.data.length === 0) {
         toast.error('Patient not found. Please try again.');
@@ -66,7 +68,18 @@ const KioskMode = () => {
       setPatient(foundPatient);
       setStep('confirm');
     } catch (error) {
-      toast.error('Search failed. Please try again.');
+      console.error('Search error:', error);
+      
+      // ✅ Better error handling
+      if (error.response?.status === 404) {
+        toast.error('Search service not available. Please contact staff.');
+      } else if (error.response?.status === 500) {
+        toast.error('Server error. Please try again later.');
+      } else if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        toast.error('Connection timeout. Please try again.');
+      } else {
+        toast.error('Search failed. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -75,7 +88,16 @@ const KioskMode = () => {
   const handleCheckIn = async () => {
     setLoading(true);
     try {
+      // ✅ Try to get staff token for check-in
       const token = localStorage.getItem('emr_token');
+      
+      if (!token) {
+        // ✅ If no staff token, show message
+        toast.error('Please contact staff to complete your check-in.');
+        setLoading(false);
+        return;
+      }
+
       const res = await axios.post(
         'http://localhost:3000/api/patient/checkin',
         {
@@ -87,11 +109,15 @@ const KioskMode = () => {
 
       setStep('success');
       toast.success(`✅ Welcome ${patient.firstName}! You are checked in.`);
-      
-      // Play sound (optional)
-      // playNotificationSound();
     } catch (error) {
-      toast.error(error.response?.data?.error || 'Check-in failed');
+      console.error('Check-in error:', error);
+      if (error.response?.status === 401) {
+        toast.error('Authentication failed. Please contact staff.');
+      } else if (error.response?.status === 404) {
+        toast.error('Check-in service not available.');
+      } else {
+        toast.error(error.response?.data?.error || 'Check-in failed');
+      }
     } finally {
       setLoading(false);
     }
@@ -200,6 +226,9 @@ const KioskMode = () => {
         >
           {loading ? '⏳ Checking In...' : '✅ Confirm Check-in'}
         </button>
+      </div>
+      <div className="kiosk-info">
+        <span>ℹ️ A staff member will assist you with check-in</span>
       </div>
     </div>
   );

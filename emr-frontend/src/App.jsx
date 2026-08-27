@@ -1,4 +1,5 @@
-// src/App.jsx
+// src/App.jsx - Complete with Kiosk independent
+
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -41,10 +42,13 @@ import HRDepartments from './pages/HRDepartments';
 import HRLeaveManagement from './pages/HRLeaveManagement';
 import AuditLogs from './pages/AuditLogs';
 import SystemStatus from './pages/SystemStatus';
+import WalletDashboard from './pages/WalletDashboard';
+import PatientWallet from './pages/PatientWallet';
 
-// Patient Portal Imports
+// ============ PATIENT PORTAL IMPORTS (INDEPENDENT) ============
 import PatientLogin from './pages/PatientLogin';
 import PatientDashboard from './pages/PatientDashboard';
+import PatientChangeCredentials from './pages/PatientChangeCredentials';
 
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -82,13 +86,24 @@ function App() {
   return (
     <AuthContext.Provider value={authValue}>
       <Routes>
-        {/* ===== PUBLIC ROUTES (No authentication required) ===== */}
-        <Route path="/login" element={<Login />} />
+        {/* ============================================================
+                PATIENT PORTAL ROUTES - COMPLETELY INDEPENDENT
+                No staff authentication required!
+                ============================================================ */}
         <Route path="/patient-login" element={<PatientLogin />} />
         <Route path="/patient-dashboard" element={<PatientDashboard />} />
-        <Route path="/kiosk" element={<KioskMode />} />
+        <Route path="/patient-wallet" element={<PatientWallet />} />
+        <Route path="/patient-change-credentials" element={<PatientChangeCredentials />} />
         
-        {/* ===== STAFF ROUTES (Authentication required) ===== */}
+        {/* ============================================================
+                PUBLIC ROUTES - COMPLETELY INDEPENDENT
+                ============================================================ */}
+        <Route path="/kiosk" element={<KioskMode />} />   {/* ✅ Kiosk is independent */}
+        <Route path="/login" element={<Login />} />
+        
+        {/* ============================================================
+                STAFF ROUTES - Requires Authentication
+                ============================================================ */}
         <Route path="/" element={
           <ProtectedRoute>
             <Layout />
@@ -130,9 +145,12 @@ function App() {
           <Route path="hr/leaves" element={<HRLeaveManagement />} />
           <Route path="audit-logs" element={<AuditLogs />} />
           <Route path="system-status" element={<SystemStatus />} />
+          <Route path="wallet" element={<WalletDashboard />} />
         </Route>
         
-        {/* ===== CATCH-ALL ===== */}
+        {/* ============================================================
+                CATCH-ALL
+                ============================================================ */}
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </AuthContext.Provider>

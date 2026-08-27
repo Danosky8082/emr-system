@@ -262,4 +262,21 @@
         flex-direction: column;
         text-align: center;
     }
+
+        /* src/components/KioskMode.css - Add this */
+    
+        .kiosk-info {
+            margin-top: 16px;
+            padding: 12px 16px;
+            background: #fef3c7;
+            border: 1px solid #f59e0b;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 14px;
+            color: #92400e;
+        }
+    
+        .kiosk-info span {
+            display: block;
+        }
 }

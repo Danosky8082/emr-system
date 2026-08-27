@@ -1,4 +1,5 @@
-// src/pages/PatientLogin.jsx
+// src/pages/PatientLogin.jsx - COMPLETE WORKING VERSION
+
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -27,16 +28,75 @@ const PatientLogin = () => {
         payload.password = password;
       }
 
+      console.log('🔐 Sending login payload:', payload);
+
       const res = await axios.post('http://localhost:3000/api/patient/login', payload);
 
-      localStorage.setItem('patient_token', res.data.token);
-      localStorage.setItem('patient_data', JSON.stringify(res.data.patient));
+      console.log('🔐 Login Response:', res.data);
+      console.log('🔐 Status:', res.status);
+      console.log('🔐 mustChangePassword:', res.data.mustChangePassword);
 
-      toast.success(`Welcome, ${res.data.patient.firstName}!`);
-      navigate('/patient-dashboard');
+      // ✅ Check if we got a token (success)
+      if (res.data.token) {
+        console.log('✅ Login successful! Token received.');
+        
+        // Check if must change password
+        if (res.data.mustChangePassword === true) {
+          console.log('🔑 MUST CHANGE PASSWORD - Redirecting to change credentials');
+          
+          localStorage.setItem('patient_token', res.data.token);
+          localStorage.setItem('patient_data', JSON.stringify(res.data.patient));
+          localStorage.setItem('must_change_password', 'true');
+          
+          toast.success('🔑 Please change your temporary password');
+          navigate('/patient-change-credentials');
+          return;
+        }
+
+        // Normal login
+        console.log('✅ Normal login - Going to dashboard');
+        localStorage.setItem('patient_token', res.data.token);
+        localStorage.setItem('patient_data', JSON.stringify(res.data.patient));
+        localStorage.setItem('must_change_password', 'false');
+
+        toast.success(`Welcome, ${res.data.patient.firstName}!`);
+        navigate('/patient-dashboard');
+        return;
+      }
+
+      // If no token, something went wrong
+      console.log('❌ No token in response');
+      toast.error('Login failed. Please try again.');
+
     } catch (error) {
-      const message = error.response?.data?.error || 'Login failed. Please try again.';
-      toast.error(message);
+      console.error('❌ Login error:', error);
+      
+      // ✅ Check if error response actually contains a token (success case)
+      if (error.response?.data?.token) {
+        console.log('✅ Login was successful (from error response)');
+        const data = error.response.data;
+        
+        if (data.mustChangePassword === true) {
+          localStorage.setItem('patient_token', data.token);
+          localStorage.setItem('patient_data', JSON.stringify(data.patient));
+          localStorage.setItem('must_change_password', 'true');
+          
+          toast.success('🔑 Please change your temporary password');
+          navigate('/patient-change-credentials');
+          return;
+        }
+      }
+      
+      // Show appropriate error message
+      if (error.response?.status === 401) {
+        toast.error('Invalid Hospital ID or PIN/Password');
+      } else if (error.response?.status === 403) {
+        toast.error('Portal access not enabled. Contact hospital.');
+      } else if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        toast.error('Connection timeout. Please try again.');
+      } else {
+        toast.error(error.response?.data?.error || 'Login failed. Please try again.');
+      }
     } finally {
       setLoading(false);
     }

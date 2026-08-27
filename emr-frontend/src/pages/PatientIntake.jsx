@@ -1,4 +1,4 @@
-// src/pages/PatientIntake.jsx
+// src/pages/PatientIntake.jsx - COMPLETE WITH WALLET SUPPORT
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
@@ -21,6 +21,11 @@ const PatientIntake = () => {
   const [showReturnModal, setShowReturnModal] = useState(false);
   const [returnToStage, setReturnToStage] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
+  
+  // ✅ Wallet state
+  const [walletBalances, setWalletBalances] = useState({});
+  const [showWalletInfo, setShowWalletInfo] = useState({});
+  const [loadingWallet, setLoadingWallet] = useState({});
 
   const [newJourney, setNewJourney] = useState({ 
     patientId: '', 
@@ -39,6 +44,36 @@ const PatientIntake = () => {
     return map[category] || map['FPP'];
   };
 
+  // ✅ Fetch wallet balance for a patient
+  const fetchWalletBalance = async (patientId) => {
+    if (loadingWallet[patientId]) return;
+    
+    setLoadingWallet(prev => ({ ...prev, [patientId]: true }));
+    try {
+      const res = await axios.get(`http://localhost:3000/api/patients/${patientId}/wallet`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setWalletBalances(prev => ({ ...prev, [patientId]: res.data.balance || 0 }));
+      return res.data.balance;
+    } catch (error) {
+      console.error('Failed to fetch wallet:', error);
+      return null;
+    } finally {
+      setLoadingWallet(prev => ({ ...prev, [patientId]: false }));
+    }
+  };
+
+  // ✅ Toggle wallet info display
+  const toggleWalletInfo = (patientId) => {
+    setShowWalletInfo(prev => ({ 
+      ...prev, 
+      [patientId]: !prev[patientId] 
+    }));
+    if (!walletBalances[patientId]) {
+      fetchWalletBalance(patientId);
+    }
+  };
+
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -54,7 +89,6 @@ const PatientIntake = () => {
         })
       ]);
       
-      // ✅ Add isArchived and category fields for each patient
       const journeysWithDetails = journeyRes.data.map((journey) => {
         return {
           ...journey,
@@ -158,7 +192,6 @@ const PatientIntake = () => {
     }
   };
 
-  // ✅ Reverse journey handler
   const handleReverseJourney = async () => {
     if (!selectedJourney) return;
     if (!reverseReason) {
@@ -181,7 +214,6 @@ const PatientIntake = () => {
     }
   };
 
-  // ✅ Return to stage handler
   const handleReturnToStage = async () => {
     if (!selectedJourney || !returnToStage) {
       toast.error('Please select a target stage');
@@ -206,7 +238,6 @@ const PatientIntake = () => {
     }
   };
 
-  // ✅ Archive patient handler
   const handleArchivePatient = async (patient) => {
     if (!patient || !patient.id) {
       toast.error('Patient data is incomplete. Please refresh the page and try again.');
@@ -229,7 +260,6 @@ const PatientIntake = () => {
     }
   };
 
-  // ✅ Unarchive patient handler
   const handleUnarchivePatient = async (patient) => {
     if (!patient || !patient.id) {
       toast.error('Invalid patient data. Please refresh and try again.');
@@ -250,7 +280,6 @@ const PatientIntake = () => {
     }
   };
 
-  // ✅ Reprint card handler
   const handleReprintCard = async (journey) => {
     try {
       const res = await axios.post(`http://localhost:3000/api/patient-journeys/${journey.id}/reprint-card`, 
@@ -274,7 +303,6 @@ const PatientIntake = () => {
     window.print();
   };
 
-  // ✅ Get available stages for return
   const getAvailableStages = (currentStatus) => {
     const stages = ['REGISTERED', 'PENDING_BILLING', 'BILLING_CLEARED', 'CARD_PRINTED', 'SENT_TO_DESTINATION', 'COMPLETED'];
     const currentIndex = stages.indexOf(currentStatus);
@@ -320,6 +348,7 @@ const PatientIntake = () => {
               <th>Category</th>
               <th>Destination</th>
               <th>Status</th>
+              <th>💳 Wallet</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -329,6 +358,9 @@ const PatientIntake = () => {
               const isCompleted = j.status === 'COMPLETED';
               const patient = j.patient;
               const categoryInfo = getCategoryInfo(patient?.patientCategory);
+              const walletBalance = walletBalances[patient?.id];
+              const showWallet = showWalletInfo[patient?.id];
+              const isLoadingWallet = loadingWallet[patient?.id];
               
               if (j.status === 'REGISTERED') {
                 action = { label: '💰 Send to Billing', status: 'PENDING_BILLING' };
@@ -392,6 +424,62 @@ const PatientIntake = () => {
                     >
                       {getStatusLabel(j.status)}
                     </span>
+                  </td>
+                  <td>
+                    {/* ✅ Wallet Button */}
+                    <button 
+                      className="btn btn-sm"
+                      onClick={() => toggleWalletInfo(patient?.id)}
+                      style={{
+                        background: walletBalance > 0 ? '#10b981' : '#6b7280',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        padding: '4px 10px',
+                        cursor: 'pointer',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        minWidth: '60px',
+                        justifyContent: 'center'
+                      }}
+                    >
+                      {isLoadingWallet ? '⏳' : `💳 ₦${(walletBalance || 0).toLocaleString()}`}
+                    </button>
+                    
+                    {/* Wallet info tooltip */}
+                    {showWallet && patient && walletBalance !== undefined && (
+                      <div style={{
+                        position: 'absolute',
+                        background: '#1a1a2e',
+                        color: 'white',
+                        padding: '12px 16px',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                        zIndex: 100,
+                        marginTop: '4px',
+                        maxWidth: '280px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+                      }}
+                      onMouseLeave={() => toggleWalletInfo(patient?.id)}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                          <strong>💰 Wallet Balance</strong>
+                          <span style={{ color: '#10b981', fontSize: '16px' }}>
+                            ₦{walletBalance.toLocaleString()}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '11px', opacity: 0.7, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '8px' }}>
+                          <div>🖨️ Card Fee: ₦500</div>
+                          <div>💊 Consultation: ₦{j.clinicId ? '5,000' : '3,000'}</div>
+                          <div style={{ marginTop: '4px', color: walletBalance >= 500 ? '#10b981' : '#ef4444' }}>
+                            {walletBalance >= 500 ? '✅ Sufficient for card' : '⚠️ Insufficient for card'}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </td>
                   <td style={{ minWidth: '450px', display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center' }}>
                     {/* 🖨️ Print Card Button */}
@@ -541,7 +629,7 @@ const PatientIntake = () => {
                 </tr>
               );
             })}
-            {journeys.length === 0 && <tr><td colSpan="6" className="text-center">No active patient intakes. Start a new one!</td></tr>}
+            {journeys.length === 0 && <tr><td colSpan="7" className="text-center">No active patient intakes. Start a new one!</td></tr>}
           </tbody>
         </table>
       </div>

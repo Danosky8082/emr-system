@@ -1,4 +1,4 @@
-// src/pages/PatientDashboard.jsx
+// src/pages/PatientDashboard.jsx - COMPLETE WITH WALLET
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -11,16 +11,30 @@ const PatientDashboard = () => {
   const [patient, setPatient] = useState(null);
   const [dashboardData, setDashboardData] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [walletTransactions, setWalletTransactions] = useState([]);
+  const [walletLoading, setWalletLoading] = useState(false);
 
   const token = localStorage.getItem('patient_token');
 
   useEffect(() => {
+    const mustChange = localStorage.getItem('must_change_password') === 'true';
+    console.log('🔍 Dashboard - mustChange:', mustChange);
+    
+    if (mustChange) {
+      toast.error('⚠️ Please change your credentials first');
+      navigate('/patient-change-credentials');
+      return;
+    }
+    
     if (!token) {
       navigate('/patient-login');
       return;
     }
+    
     fetchDashboard();
-  }, [token]);
+    fetchWalletData();
+  }, [token, navigate]);
 
   const fetchDashboard = async () => {
     setLoading(true);
@@ -46,6 +60,27 @@ const PatientDashboard = () => {
     }
   };
 
+  // ✅ Fetch wallet data
+  const fetchWalletData = async () => {
+    setWalletLoading(true);
+    try {
+      const [balanceRes, txRes] = await Promise.all([
+        axios.get('http://localhost:3000/api/patient/wallet', {
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        axios.get('http://localhost:3000/api/patient/wallet/transactions?limit=10', {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+      ]);
+      setWalletBalance(balanceRes.data.balance || 0);
+      setWalletTransactions(txRes.data.transactions || []);
+    } catch (error) {
+      console.error('Failed to fetch wallet:', error);
+    } finally {
+      setWalletLoading(false);
+    }
+  };
+
   const handleLogout = () => {
     localStorage.removeItem('patient_token');
     localStorage.removeItem('patient_data');
@@ -67,6 +102,10 @@ const PatientDashboard = () => {
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  const formatCurrency = (amount) => {
+    return `₦${amount?.toLocaleString() || '0'}`;
   };
 
   if (loading) {
@@ -101,7 +140,7 @@ const PatientDashboard = () => {
         </div>
       </header>
 
-      {/* Welcome Banner */}
+      {/* Welcome Banner with Wallet Balance */}
       <div className="welcome-banner">
         <div className="welcome-text">
           <h1>Welcome, {patient?.firstName}! 👋</h1>
@@ -118,7 +157,7 @@ const PatientDashboard = () => {
         </div>
       </div>
 
-      {/* Stats Cards */}
+      {/* Stats Cards - Added Wallet Balance */}
       <div className="stats-grid">
         <div className="stat-card">
           <div className="stat-card-icon" style={{ background: '#dbeafe' }}>
@@ -156,6 +195,18 @@ const PatientDashboard = () => {
             <span className="stat-label">Bills</span>
           </div>
         </div>
+        {/* ✅ Wallet Balance Card */}
+        <div className="stat-card" style={{ borderLeft: '4px solid #10b981' }}>
+          <div className="stat-card-icon" style={{ background: '#d1fae5' }}>
+            <span>💳</span>
+          </div>
+          <div className="stat-card-info">
+            <span className="stat-value" style={{ color: '#10b981' }}>
+              {walletLoading ? '...' : formatCurrency(walletBalance)}
+            </span>
+            <span className="stat-label">Wallet Balance</span>
+          </div>
+        </div>
       </div>
 
       {/* Tabs Navigation */}
@@ -190,11 +241,18 @@ const PatientDashboard = () => {
         >
           💰 Billing
         </button>
+        <button 
+          className={`tab-btn ${activeTab === 'wallet' ? 'active' : ''}`}
+          onClick={() => setActiveTab('wallet')}
+          style={{ color: activeTab === 'wallet' ? '#0f3460' : '#6b7280' }}
+        >
+          💳 Wallet
+        </button>
       </div>
 
       {/* Tab Content */}
       <div className="tab-content">
-        {/* Overview Tab */}
+        {/* Overview Tab - Same as before with Wallet quick action */}
         {activeTab === 'overview' && (
           <div className="overview-tab">
             {/* Upcoming Appointments */}
@@ -224,32 +282,6 @@ const PatientDashboard = () => {
               </div>
             )}
 
-            {/* Recent Prescriptions */}
-            {dashboardData?.prescriptions?.length > 0 && (
-              <div className="section-card">
-                <div className="section-header">
-                  <h3>💊 Recent Prescriptions</h3>
-                  <span className="section-badge">{dashboardData.prescriptions.length}</span>
-                </div>
-                <div className="prescription-list">
-                  {dashboardData.prescriptions.slice(0, 3).map(p => (
-                    <div key={p.id} className="prescription-item">
-                      <div className="prescription-medication">
-                        <span className="medication-name">{p.medication}</span>
-                        <span className="medication-dosage">{p.dosage}</span>
-                      </div>
-                      <div className="prescription-meta">
-                        <span className="prescription-frequency">{p.frequency}</span>
-                        <span className={`prescription-status status-${p.status?.toLowerCase()}`}>
-                          {p.status || 'Prescribed'}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* Quick Actions */}
             <div className="quick-actions">
               <h3>⚡ Quick Actions</h3>
@@ -266,12 +298,22 @@ const PatientDashboard = () => {
                 <button className="quick-action-btn" onClick={() => setActiveTab('billing')}>
                   <span>💰</span> Billing
                 </button>
+                <button 
+                  className="quick-action-btn" 
+                  onClick={() => window.location.href = '/patient-wallet'}
+                  style={{ 
+                    borderColor: '#10b981',
+                    background: '#f0fdf4'
+                  }}
+                >
+                  <span>💳</span> My Wallet
+                </button>
               </div>
             </div>
           </div>
         )}
 
-        {/* Appointments Tab */}
+        {/* Appointments Tab - Same as before */}
         {activeTab === 'appointments' && (
           <div className="section-card">
             <div className="section-header">
@@ -306,7 +348,7 @@ const PatientDashboard = () => {
           </div>
         )}
 
-        {/* Prescriptions Tab */}
+        {/* Prescriptions Tab - Same as before */}
         {activeTab === 'prescriptions' && (
           <div className="section-card">
             <div className="section-header">
@@ -349,7 +391,7 @@ const PatientDashboard = () => {
           </div>
         )}
 
-        {/* Lab Results Tab */}
+        {/* Lab Results Tab - Same as before */}
         {activeTab === 'lab-results' && (
           <div className="section-card">
             <div className="section-header">
@@ -391,7 +433,7 @@ const PatientDashboard = () => {
           </div>
         )}
 
-        {/* Billing Tab */}
+        {/* Billing Tab - Same as before */}
         {activeTab === 'billing' && (
           <div className="section-card">
             <div className="section-header">
@@ -410,6 +452,9 @@ const PatientDashboard = () => {
                     <div className="billing-details">
                       <span><strong>Amount:</strong> ₦{b.totalAmount?.toLocaleString() || '0'}</span>
                       <span><strong>Description:</strong> {b.description}</span>
+                      {b.isWalletPayment && (
+                        <span style={{ color: '#0f3460', fontWeight: '600' }}>✅ Wallet Payment</span>
+                      )}
                     </div>
                     <div className="billing-meta">
                       <span>Date: {formatDate(b.createdAt)}</span>
@@ -425,6 +470,137 @@ const PatientDashboard = () => {
                 <span className="empty-sub">Your bills will appear here when generated</span>
               </div>
             )}
+          </div>
+        )}
+
+        {/* ✅ WALLET TAB - New Tab for Wallet Details */}
+        {activeTab === 'wallet' && (
+          <div className="section-card">
+            <div className="section-header">
+              <h3>💳 My Wallet</h3>
+              <button className="refresh-btn" onClick={fetchWalletData}>🔄</button>
+            </div>
+            
+            {/* Balance Overview */}
+            <div style={{
+              background: 'linear-gradient(135deg, #0f3460, #1a4a7a)',
+              borderRadius: '12px',
+              padding: '24px',
+              color: 'white',
+              marginBottom: '20px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap'
+            }}>
+              <div>
+                <span style={{ opacity: 0.8, fontSize: '14px' }}>Available Balance</span>
+                <div style={{ fontSize: '32px', fontWeight: '700' }}>
+                  {walletLoading ? '...' : formatCurrency(walletBalance)}
+                </div>
+              </div>
+              <button 
+                onClick={() => window.location.href = '/patient-wallet'}
+                style={{
+                  background: 'white',
+                  color: '#0f3460',
+                  border: 'none',
+                  padding: '10px 24px',
+                  borderRadius: '8px',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                💳 Go to Wallet
+              </button>
+            </div>
+
+            {/* Quick Stats */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+              gap: '12px',
+              marginBottom: '20px'
+            }}>
+              <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', textAlign: 'center' }}>
+                <span style={{ fontSize: '20px', fontWeight: 'bold', color: '#10b981', display: 'block' }}>
+                  {walletTransactions.filter(t => t.transactionType === 'Deposit').reduce((sum, t) => sum + t.amount, 0)}
+                </span>
+                <span style={{ fontSize: '12px', color: '#6b7280' }}>Total Deposits</span>
+              </div>
+              <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', textAlign: 'center' }}>
+                <span style={{ fontSize: '20px', fontWeight: 'bold', color: '#ef4444', display: 'block' }}>
+                  {walletTransactions.filter(t => t.transactionType === 'Payment').reduce((sum, t) => sum + t.amount, 0)}
+                </span>
+                <span style={{ fontSize: '12px', color: '#6b7280' }}>Total Payments</span>
+              </div>
+              <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', textAlign: 'center' }}>
+                <span style={{ fontSize: '20px', fontWeight: 'bold', color: '#3b82f6', display: 'block' }}>
+                  {walletTransactions.length}
+                </span>
+                <span style={{ fontSize: '12px', color: '#6b7280' }}>Transactions</span>
+              </div>
+            </div>
+
+            {/* Recent Transactions */}
+            <h4 style={{ marginBottom: '12px' }}>📋 Recent Transactions</h4>
+            {walletTransactions.length > 0 ? (
+              <div className="transaction-list">
+                {walletTransactions.slice(0, 10).map(t => (
+                  <div key={t.id} className={`transaction-item ${t.transactionType.toLowerCase()}`} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '16px',
+                    padding: '12px 16px',
+                    borderRadius: '10px',
+                    background: '#f8fafc',
+                    marginBottom: '8px',
+                    borderLeft: `4px solid ${t.transactionType === 'Deposit' ? '#10b981' : '#ef4444'}`
+                  }}>
+                    <div className="tx-icon" style={{ fontSize: '24px' }}>
+                      {t.transactionType === 'Deposit' ? '📥' : '📤'}
+                    </div>
+                    <div className="tx-info" style={{ flex: 1 }}>
+                      <span className="tx-description" style={{ display: 'block', fontWeight: '600' }}>{t.description}</span>
+                      <span className="tx-date" style={{ display: 'block', fontSize: '12px', color: '#6b7280' }}>
+                        {new Date(t.createdAt).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className={`tx-amount ${t.transactionType === 'Deposit' ? 'positive' : 'negative'}`} style={{
+                      fontWeight: '700',
+                      fontSize: '16px',
+                      color: t.transactionType === 'Deposit' ? '#10b981' : '#ef4444'
+                    }}>
+                      {t.transactionType === 'Deposit' ? '+' : '-'} ₦{t.amount.toLocaleString()}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state">
+                <span className="empty-icon">📭</span>
+                <p>No transactions yet</p>
+                <span className="empty-sub">Your transactions will appear here</span>
+              </div>
+            )}
+            
+            <div style={{ textAlign: 'center', marginTop: '16px' }}>
+              <button 
+                onClick={() => window.location.href = '/patient-wallet'}
+                className="btn btn-primary"
+                style={{
+                  background: '#0f3460',
+                  color: 'white',
+                  border: 'none',
+                  padding: '10px 24px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontWeight: '600'
+                }}
+              >
+                💳 View All Transactions
+              </button>
+            </div>
           </div>
         )}
       </div>

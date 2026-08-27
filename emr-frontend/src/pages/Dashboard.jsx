@@ -72,9 +72,241 @@ const Dashboard = () => {
 
   if (loading) return <div className="spinner" />;
 
+  // ✅ Render Lab Dashboard for LabTechnician and LabScientist
+  const renderLabDashboard = () => {
+    if (!stats?.summary) return null;
+    
+    return (
+      <div className="dashboard-content">
+        {/* Stats Cards */}
+        <div className="stats-grid">
+          <div className="stat-card" style={{ borderLeft: '4px solid #3b82f6' }}>
+            <div className="stat-icon">🧪</div>
+            <div className="stat-info">
+              <div className="stat-value">{stats.summary.totalOrders || 0}</div>
+              <div className="stat-label">Total Orders</div>
+            </div>
+          </div>
+          <div className="stat-card" style={{ borderLeft: '4px solid #f59e0b' }}>
+            <div className="stat-icon">⏳</div>
+            <div className="stat-info">
+              <div className="stat-value" style={{ color: '#f59e0b' }}>{stats.summary.pendingOrders || 0}</div>
+              <div className="stat-label">Pending</div>
+            </div>
+          </div>
+          <div className="stat-card" style={{ borderLeft: '4px solid #3b82f6' }}>
+            <div className="stat-icon">🔄</div>
+            <div className="stat-info">
+              <div className="stat-value" style={{ color: '#3b82f6' }}>{stats.summary.inProgressOrders || 0}</div>
+              <div className="stat-label">In Progress</div>
+            </div>
+          </div>
+          <div className="stat-card" style={{ borderLeft: '4px solid #10b981' }}>
+            <div className="stat-icon">✅</div>
+            <div className="stat-info">
+              <div className="stat-value" style={{ color: '#10b981' }}>{stats.summary.completedOrders || 0}</div>
+              <div className="stat-label">Completed</div>
+            </div>
+          </div>
+          {stats.labScientistStats && (
+            <div className="stat-card" style={{ borderLeft: '4px solid #8b5cf6' }}>
+              <div className="stat-icon">🔬</div>
+              <div className="stat-info">
+                <div className="stat-value" style={{ color: '#8b5cf6' }}>{stats.labScientistStats.awaitingValidation || 0}</div>
+                <div className="stat-label">Awaiting Validation</div>
+              </div>
+            </div>
+          )}
+          <div className="stat-card" style={{ borderLeft: '4px solid #8b5cf6' }}>
+            <div className="stat-icon">📊</div>
+            <div className="stat-info">
+              <div className="stat-value" style={{ color: '#8b5cf6' }}>{stats.summary.validatedOrders || 0}</div>
+              <div className="stat-label">Validated</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Charts Section */}
+        <div className="charts-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px', marginTop: '20px' }}>
+          {/* Test Type Distribution */}
+          {stats.chartData?.ordersByType && stats.chartData.ordersByType.length > 0 && (
+            <div className="chart-card" style={{ background: 'white', padding: '20px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+              <h4 style={{ margin: '0 0 16px 0', color: '#1e293b' }}>📊 Orders by Test Type</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {stats.chartData.ordersByType.map((item, index) => {
+                  const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
+                  const total = stats.chartData.ordersByType.reduce((sum, i) => sum + i.value, 0);
+                  const percentage = total > 0 ? Math.round((item.value / total) * 100) : 0;
+                  return (
+                    <div key={index}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px' }}>
+                        <span>{item.name}</span>
+                        <span><strong>{item.value}</strong> ({percentage}%)</span>
+                      </div>
+                      <div style={{ height: '8px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                        <div style={{ 
+                          height: '100%', 
+                          width: `${percentage}%`, 
+                          background: colors[index % colors.length],
+                          borderRadius: '4px',
+                          transition: 'width 0.5s ease'
+                        }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Priority Distribution */}
+          {stats.chartData?.ordersByPriority && stats.chartData.ordersByPriority.length > 0 && (
+            <div className="chart-card" style={{ background: 'white', padding: '20px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+              <h4 style={{ margin: '0 0 16px 0', color: '#1e293b' }}>⚠️ Orders by Priority</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {stats.chartData.ordersByPriority.map((item, index) => {
+                  const priorityColors = {
+                    'Emergency': '#ef4444',
+                    'Urgent': '#f59e0b',
+                    'Routine': '#3b82f6'
+                  };
+                  const total = stats.chartData.ordersByPriority.reduce((sum, i) => sum + i.value, 0);
+                  const percentage = total > 0 ? Math.round((item.value / total) * 100) : 0;
+                  return (
+                    <div key={index}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px' }}>
+                        <span>{item.name}</span>
+                        <span><strong>{item.value}</strong> ({percentage}%)</span>
+                      </div>
+                      <div style={{ height: '8px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                        <div style={{ 
+                          height: '100%', 
+                          width: `${percentage}%`, 
+                          background: priorityColors[item.name] || '#6b7280',
+                          borderRadius: '4px',
+                          transition: 'width 0.5s ease'
+                        }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Daily Orders Chart */}
+          {stats.chartData?.dailyOrders && stats.chartData.dailyOrders.length > 0 && (
+            <div className="chart-card" style={{ background: 'white', padding: '20px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', gridColumn: '1 / -1' }}>
+              <h4 style={{ margin: '0 0 16px 0', color: '#1e293b' }}>📈 Daily Lab Orders (Last 7 Days)</h4>
+              <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', height: '150px', padding: '0 10px' }}>
+                {stats.chartData.dailyOrders.map((item, index) => {
+                  const maxValue = Math.max(...stats.chartData.dailyOrders.map(i => i.count), 1);
+                  const height = (item.count / maxValue) * 130;
+                  return (
+                    <div key={index} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
+                      <div style={{ 
+                        height: `${height}px`, 
+                        width: '30px', 
+                        background: '#3b82f6',
+                        borderRadius: '4px 4px 0 0',
+                        transition: 'height 0.5s ease',
+                        position: 'relative'
+                      }}>
+                        <span style={{ 
+                          position: 'absolute', 
+                          top: '-20px', 
+                          left: '50%', 
+                          transform: 'translateX(-50%)',
+                          fontSize: '11px',
+                          fontWeight: 'bold',
+                          color: '#1e293b'
+                        }}>
+                          {item.count}
+                        </span>
+                      </div>
+                      <span style={{ fontSize: '10px', color: '#6b7280', marginTop: '4px' }}>
+                        {new Date(item.date).toLocaleDateString('en-US', { weekday: 'short' })}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Recent Orders Table */}
+        {stats.recentOrders && stats.recentOrders.length > 0 && (
+          <div style={{ marginTop: '20px', background: 'white', padding: '20px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+            <h4 style={{ margin: '0 0 16px 0', color: '#1e293b' }}>📋 Recent Lab Orders</h4>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc' }}>
+                    <th style={{ padding: '10px 12px', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>Patient</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>Test</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>Type</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>Status</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stats.recentOrders.map((order, index) => (
+                    <tr key={order.id} style={{ borderBottom: index < stats.recentOrders.length - 1 ? '1px solid #e2e8f0' : 'none' }}>
+                      <td style={{ padding: '10px 12px' }}>
+                        {order.patient?.firstName} {order.patient?.lastName}
+                      </td>
+                      <td style={{ padding: '10px 12px' }}>{order.testName}</td>
+                      <td style={{ padding: '10px 12px' }}>{order.testType}</td>
+                      <td style={{ padding: '10px 12px' }}>
+                        <span style={{
+                          padding: '2px 10px',
+                          borderRadius: '12px',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          background: order.status === 'Completed' ? '#10b981' : 
+                                    order.status === 'In Progress' ? '#3b82f6' :
+                                    order.status === 'Cancelled' ? '#ef4444' : '#f59e0b',
+                          color: 'white'
+                        }}>
+                          {order.status}
+                        </span>
+                      </td>
+                      <td style={{ padding: '10px 12px', color: '#6b7280' }}>
+                        {new Date(order.createdAt).toLocaleDateString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderStatCards = () => {
     const role = user?.role;
     if (!stats) return [];
+
+    // ✅ Lab Scientist Dashboard Stats
+    if (role === 'LabScientist' || role === 'LabTechnician') {
+      if (stats.summary) {
+        const cards = [
+          { icon: '🧪', label: 'Total Orders', value: stats.summary.totalOrders || 0 },
+          { icon: '⏳', label: 'Pending', value: stats.summary.pendingOrders || 0 },
+          { icon: '🔄', label: 'In Progress', value: stats.summary.inProgressOrders || 0 },
+          { icon: '✅', label: 'Completed', value: stats.summary.completedOrders || 0 },
+          { icon: '📊', label: 'Validated', value: stats.summary.validatedOrders || 0 },
+        ];
+        if (stats.labScientistStats) {
+          cards.push({ icon: '🔬', label: 'Awaiting Validation', value: stats.labScientistStats.awaitingValidation || 0 });
+        }
+        return cards;
+      }
+      return [];
+    }
 
     // ✅ HR Dashboard Stats
     if (role === 'HR') {
@@ -100,7 +332,7 @@ const Dashboard = () => {
       ];
     }
 
-    // ✅ Clinical Dashboard (Doctor, Obstetrician)
+    // Clinical Dashboard (Doctor, Obstetrician)
     if (['Doctor', 'Obstetrician'].includes(role)) {
       return [
         { icon: '👤', label: 'My Patients', value: stats.myPatientsCount || 0 },
@@ -109,7 +341,7 @@ const Dashboard = () => {
       ];
     }
 
-    // ✅ Clinical Dashboard (Nurse, Midwife)
+    // Clinical Dashboard (Nurse, Midwife)
     if (['Nurse', 'Midwife'].includes(role)) {
       return [
         { icon: '👤', label: 'My Patients', value: stats.myPatientsCount || 0 },
@@ -136,14 +368,6 @@ const Dashboard = () => {
       ];
     }
 
-    // Lab Technician Dashboard
-    if (role === 'LabTechnician') {
-      return [
-        { icon: '🔬', label: 'Pending Tests', value: stats.pendingLabOrders || 0 },
-        { icon: '✅', label: 'Completed Tests', value: stats.completedLabOrders || 0 },
-      ];
-    }
-
     // Radiologist Dashboard
     if (role === 'Radiologist') {
       return [
@@ -165,6 +389,9 @@ const Dashboard = () => {
   const revenueChartData = stats?.revenueTrend?.map(m => ({ month: m.month, Revenue: m.revenue })) || [];
   const showRevenueChart = ['Accountant', 'BillingOfficer'].includes(user?.role);
 
+  // ✅ Check if this is a Lab role
+  const isLabRole = ['LabTechnician', 'LabScientist'].includes(user?.role);
+
   return (
     <div className="dashboard">
       <div className="page-header">
@@ -172,148 +399,156 @@ const Dashboard = () => {
         <p>Welcome back, {user?.firstName} {user?.lastName}!</p>
       </div>
 
-      {statCards.length > 0 ? (
-        <div className="stats-grid">
-          {statCards.map((stat, index) => (
-            <div key={index} className="stat-card">
-              <div className="stat-icon">{stat.icon}</div>
-              <div className="stat-info">
-                <div className="stat-value">{stat.value}</div>
-                <div className="stat-label">{stat.label}</div>
-              </div>
-            </div>
-          ))}
-        </div>
+      {/* ✅ Render Lab Dashboard for Lab roles */}
+      {isLabRole && stats?.summary ? (
+        renderLabDashboard()
       ) : (
-        <p>No stats available for this role.</p>
-      )}
-
-      {/* --- Quick Action Button for Clinical Roles --- */}
-      {['Doctor', 'Nurse', 'Obstetrician', 'Midwife'].includes(user?.role) && (
-        <div style={{ textAlign: 'center', marginTop: '20px' }}>
-          <Link 
-            to={['Doctor', 'Obstetrician'].includes(user?.role) ? '/doctor-dashboard' : '/nurse-dashboard'} 
-            className="btn btn-primary"
-          >
-            👨‍⚕️ View My Full Patient List
-          </Link>
-        </div>
-      )}
-
-      {/* --- CHARTS SECTION --- */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '20px' }}>
-
-        {/* ✅ HR Department Distribution Chart */}
-        {user?.role === 'HR' && stats?.departments > 0 && (
-          <div className="section" style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-            <h3>🏢 Department Overview</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: '#f8fafc', borderRadius: '6px' }}>
-                <span><strong>Total Departments</strong></span>
-                <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#0f3460' }}>{stats.departments || 0}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: '#f0fdf4', borderRadius: '6px' }}>
-                <span><strong>👤 Total Employees</strong></span>
-                <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#10b981' }}>{stats.totalEmployees || 0}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: '#dbeafe', borderRadius: '6px' }}>
-                <span><strong>✅ Active Staff</strong></span>
-                <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#1e40af' }}>{stats.activeEmployees || 0}</span>
-              </div>
+        <>
+          {/* Regular Stats Cards */}
+          {statCards.length > 0 ? (
+            <div className="stats-grid">
+              {statCards.map((stat, index) => (
+                <div key={index} className="stat-card">
+                  <div className="stat-icon">{stat.icon}</div>
+                  <div className="stat-info">
+                    <div className="stat-value">{stat.value}</div>
+                    <div className="stat-label">{stat.label}</div>
+                  </div>
+                </div>
+              ))}
             </div>
+          ) : (
+            <p>No stats available for this role.</p>
+          )}
+
+          {/* Quick Action Button for Clinical Roles */}
+          {['Doctor', 'Nurse', 'Obstetrician', 'Midwife'].includes(user?.role) && (
+            <div style={{ textAlign: 'center', marginTop: '20px' }}>
+              <Link 
+                to={['Doctor', 'Obstetrician'].includes(user?.role) ? '/doctor-dashboard' : '/nurse-dashboard'} 
+                className="btn btn-primary"
+              >
+                👨‍⚕️ View My Full Patient List
+              </Link>
+            </div>
+          )}
+
+          {/* Charts Section */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '20px' }}>
+
+            {/* HR Department Distribution Chart */}
+            {user?.role === 'HR' && stats?.departments > 0 && (
+              <div className="section" style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+                <h3>🏢 Department Overview</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: '#f8fafc', borderRadius: '6px' }}>
+                    <span><strong>Total Departments</strong></span>
+                    <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#0f3460' }}>{stats.departments || 0}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: '#f0fdf4', borderRadius: '6px' }}>
+                    <span><strong>👤 Total Employees</strong></span>
+                    <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#10b981' }}>{stats.totalEmployees || 0}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: '#dbeafe', borderRadius: '6px' }}>
+                    <span><strong>✅ Active Staff</strong></span>
+                    <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#1e40af' }}>{stats.activeEmployees || 0}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* HR Leave Summary Chart */}
+            {user?.role === 'HR' && (
+              <div className="section" style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+                <h3>📋 Leave Summary</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: '#fef3c7', borderRadius: '6px' }}>
+                    <span><strong>⏳ Pending Leaves</strong></span>
+                    <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#92400e' }}>{stats.pendingLeaves || 0}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: '#fce4ec', borderRadius: '6px' }}>
+                    <span><strong>🏖️ On Leave Today</strong></span>
+                    <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#c62828' }}>{stats.employeesOnLeave || 0}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: '#e8f5e9', borderRadius: '6px' }}>
+                    <span><strong>⏰ Clocked In Today</strong></span>
+                    <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#2e7d32' }}>{stats.clockedInToday || 0}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Original charts for other roles */}
+            {showPatientCharts && (
+              <>
+                <div className="section" style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+                  <h3>Patient Gender Distribution</h3>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <PieChart>
+                      <Pie data={genderChartData} cx="50%" cy="50%" outerRadius={80} fill="#8884d8" dataKey="value" label>
+                        {genderChartData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <div className="section" style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+                  <h3>Patient Registrations (Last 6 Months)</h3>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <BarChart data={monthlyChartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="month" />
+                      <YAxis />
+                      <Tooltip />
+                      <Legend />
+                      <Bar dataKey="Registrations" fill="#8884d8" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </>
+            )}
+
+            {/* Revenue Chart for Finance roles */}
+            {showRevenueChart && revenueChartData.length > 0 && (
+              <div className="section" style={{ gridColumn: '1 / -1', background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+                <h3>Revenue Trend (Last 6 Months)</h3>
+                <ResponsiveContainer width="100%" height={250}>
+                  <BarChart data={revenueChartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="month" />
+                    <YAxis />
+                    <Tooltip formatter={(value) => `₦${value.toLocaleString()}`} />
+                    <Legend />
+                    <Bar dataKey="Revenue" fill="#00d4ff" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </div>
-        )}
 
-        {/* ✅ HR Leave Summary Chart */}
-        {user?.role === 'HR' && (
-          <div className="section" style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-            <h3>📋 Leave Summary</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: '#fef3c7', borderRadius: '6px' }}>
-                <span><strong>⏳ Pending Leaves</strong></span>
-                <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#92400e' }}>{stats.pendingLeaves || 0}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: '#fce4ec', borderRadius: '6px' }}>
-                <span><strong>🏖️ On Leave Today</strong></span>
-                <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#c62828' }}>{stats.employeesOnLeave || 0}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: '#e8f5e9', borderRadius: '6px' }}>
-                <span><strong>⏰ Clocked In Today</strong></span>
-                <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#2e7d32' }}>{stats.clockedInToday || 0}</span>
-              </div>
+          {/* HR Quick Actions */}
+          {user?.role === 'HR' && (
+            <div style={{ 
+              marginTop: '24px', 
+              padding: '16px 20px', 
+              background: '#f8fafc', 
+              borderRadius: '8px',
+              border: '1px solid #e8ecf1',
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '12px',
+              justifyContent: 'center'
+            }}>
+              <Link to="/hr/employees" className="btn btn-primary">👤 Manage Employees</Link>
+              <Link to="/hr/departments" className="btn btn-secondary">🏢 Manage Departments</Link>
+              <Link to="/hr/leaves" className="btn btn-secondary">📋 Manage Leaves</Link>
             </div>
-          </div>
-        )}
-
-        {/* Original charts for other roles */}
-        {showPatientCharts && (
-          <>
-            <div className="section" style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-              <h3>Patient Gender Distribution</h3>
-              <ResponsiveContainer width="100%" height={250}>
-                <PieChart>
-                  <Pie data={genderChartData} cx="50%" cy="50%" outerRadius={80} fill="#8884d8" dataKey="value" label>
-                    {genderChartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-
-            <div className="section" style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-              <h3>Patient Registrations (Last 6 Months)</h3>
-              <ResponsiveContainer width="100%" height={250}>
-                <BarChart data={monthlyChartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="Registrations" fill="#8884d8" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </>
-        )}
-
-        {/* Revenue Chart for Finance roles */}
-        {showRevenueChart && revenueChartData.length > 0 && (
-          <div className="section" style={{ gridColumn: '1 / -1', background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-            <h3>Revenue Trend (Last 6 Months)</h3>
-            <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={revenueChartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" />
-                <YAxis />
-                <Tooltip formatter={(value) => `₦${value.toLocaleString()}`} />
-                <Legend />
-                <Bar dataKey="Revenue" fill="#00d4ff" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-      </div>
-
-      {/* HR Quick Actions */}
-      {user?.role === 'HR' && (
-        <div style={{ 
-          marginTop: '24px', 
-          padding: '16px 20px', 
-          background: '#f8fafc', 
-          borderRadius: '8px',
-          border: '1px solid #e8ecf1',
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: '12px',
-          justifyContent: 'center'
-        }}>
-          <Link to="/hr/employees" className="btn btn-primary">👤 Manage Employees</Link>
-          <Link to="/hr/departments" className="btn btn-secondary">🏢 Manage Departments</Link>
-          <Link to="/hr/leaves" className="btn btn-secondary">📋 Manage Leaves</Link>
-        </div>
+          )}
+        </>
       )}
     </div>
   );

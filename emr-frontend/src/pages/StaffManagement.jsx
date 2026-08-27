@@ -33,18 +33,20 @@ const StaffManagement = () => {
   const [assignedClinicIds, setAssignedClinicIds] = useState([]);
   const [assignedWardIds, setAssignedWardIds] = useState([]);
 
-  // Available roles
+  // ✅ Available roles - ADDED LabScientist
   const roles = [
     'Admin', 'ITAdmin', 'ITSupport', 'Doctor', 'Nurse',
-    'Pharmacist', 'Accountant', 'Records', 'LabTechnician', 'Receptionist', 'BillingOfficer','Obstetrician', 'Midwife','Radiologist'      
+    'Pharmacist', 'Accountant', 'Records', 'LabTechnician', 
+    'LabScientist',  // ✅ ADDED
+    'Receptionist', 'BillingOfficer', 'Obstetrician', 'Midwife', 'Radiologist'
   ];
 
-  // Departments
+  // ✅ Departments - ADDED LabScientist
   const departments = [
     'Administration', 'Internal Medicine', 'Surgery', 'Paediatrics',
     'Obstetrics & Gynaecology', 'Pharmacy', 'Laboratory', 'Medical Records',
     'Accounts', 'Radiology', 'Outpatient', 'Inpatient', 'ICT',
-    'Information Technology', 'Health Informatics'
+    'Information Technology', 'Health Informatics', 'LabScientist'
   ];
 
   // ✅ Roles that require clinic/ward assignment
@@ -86,19 +88,18 @@ const StaffManagement = () => {
 
   // Fetch assignments when editing a nurse or doctor
   const fetchAssignments = async (staffId) => {
-  try {
-    const res = await axios.get(`http://localhost:3000/api/staff/${staffId}/assignments`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    setAssignedClinicIds(res.data.clinicIds || []);
-    setAssignedWardIds(res.data.wardIds || []);
-  } catch (error) {
-    console.error('Error fetching assignments:', error);
-    // ✅ Don't show error toast, just set empty arrays
-    setAssignedClinicIds([]);
-    setAssignedWardIds([]);
-  }
-};
+    try {
+      const res = await axios.get(`http://localhost:3000/api/staff/${staffId}/assignments`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setAssignedClinicIds(res.data.clinicIds || []);
+      setAssignedWardIds(res.data.wardIds || []);
+    } catch (error) {
+      console.error('Error fetching assignments:', error);
+      setAssignedClinicIds([]);
+      setAssignedWardIds([]);
+    }
+  };
 
   // Filter staff by search term
   const filteredStaff = staff.filter(s => {
@@ -168,13 +169,13 @@ const StaffManagement = () => {
         const createdStaff = response.data;
         toast.success('Staff created successfully!');
 
-        // ✅ Show assignment alert for roles that need it
+        // Show assignment alert for roles that need it
         if (rolesRequiringAssignment.includes(formData.role)) {
           setNewStaffName(`${formData.firstName} ${formData.lastName}`);
           setNewStaffRole(formData.role);
           setShowAssignmentAlert(true);
           
-          // ✅ Auto-open the edit modal for the new staff
+          // Auto-open the edit modal for the new staff
           setEditingStaff(createdStaff);
           setFormData({
             employeeId: createdStaff.employeeId,
@@ -277,7 +278,7 @@ const StaffManagement = () => {
 
   return (
     <div className="staff-management">
-      {/* ✅ Assignment Alert Banner */}
+      {/* Assignment Alert Banner */}
       {showAssignmentAlert && (
         <div className="alert-banner" style={{
           background: '#fef3c7',
@@ -336,7 +337,7 @@ const StaffManagement = () => {
         </button>
       </div>
 
-      {/* ✅ Info Banner - Shows assignment requirements */}
+      {/* Info Banner */}
       <div style={{
         background: '#eff6ff',
         border: '1px solid #3b82f6',

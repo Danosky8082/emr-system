@@ -163,70 +163,85 @@ const Patients = () => {
 
   // ✅ FIXED: Handle Enable Portal Access - No toast.info
   const handleEnablePortal = async (patient) => {
-    // Ask user which method to use
-    const method = window.confirm(
-      `🔑 Set up portal access for ${patient.firstName} ${patient.lastName}?\n\n` +
-      `Click OK to set a PIN (4-6 digits - recommended for quick access)\n` +
-      `Click Cancel to set a Password (min 6 characters)`
-    );
+  // Ask user which method to use
+  const method = window.confirm(
+    `🔑 Set up portal access for ${patient.firstName} ${patient.lastName}?\n\n` +
+    `Click OK to set a PIN (4-6 digits - recommended for quick access)\n` +
+    `Click Cancel to set a Password (min 6 characters)`
+  );
 
-    let credential;
-    let isPin = true;
+  let credential;
+  let isPin = true;
+  
+  if (method) {
+    credential = prompt(`Enter a 4-6 digit PIN for ${patient.firstName}:`, '1234');
+    isPin = true;
+  } else {
+    credential = prompt(`Enter a password for ${patient.firstName} (min 6 characters):`, '');
+    isPin = false;
+  }
+
+  if (credential === null) {
+    toast.error('Portal setup cancelled');
+    return;
+  }
+
+  if (!credential || credential.trim() === '') {
+    toast.error('Credential is required');
+    return;
+  }
+
+  if (isPin && !/^\d{4,6}$/.test(credential)) {
+    toast.error('PIN must be 4-6 digits (numbers only)');
+    return;
+  }
+
+  if (!isPin && credential.length < 6) {
+    toast.error('Password must be at least 6 characters');
+    return;
+  }
+
+  const forceChange = window.confirm(
+    `🔐 Require password change on first login?\n\n` +
+    `Click OK to require patient to change credentials on first login (Recommended)\n` +
+    `Click Cancel to allow patient to keep the ${isPin ? 'PIN' : 'password'} as is`
+  );
+
+  try {
+    const payload = { 
+      patientId: patient.id,
+      forceChange: forceChange !== false,
+    };
     
-    if (method) {
-      // Set PIN
-      credential = prompt(`Enter a 4-6 digit PIN for ${patient.firstName}:`, '1234');
-      isPin = true;
+    if (isPin) {
+      payload.pinCode = credential;
     } else {
-      // Set Password
-      credential = prompt(`Enter a password for ${patient.firstName} (min 6 characters):`, '');
-      isPin = false;
+      payload.password = credential;
     }
 
-    if (credential === null) {
-      toast.error('Portal setup cancelled');
-      return;
-    }
-
-    if (!credential || credential.trim() === '') {
-      toast.error('Credential is required');
-      return;
-    }
-
-    if (isPin && !/^\d{4,6}$/.test(credential)) {
-      toast.error('PIN must be 4-6 digits (numbers only)');
-      return;
-    }
-
-    if (!isPin && credential.length < 6) {
-      toast.error('Password must be at least 6 characters');
-      return;
-    }
-
-    try {
-      const payload = { 
-        patientId: patient.id,
-      };
-      
-      if (isPin) {
-        payload.pinCode = credential;
-      } else {
-        payload.password = credential;
-      }
-
-      await axios.post('http://localhost:3000/api/patient/setup-portal', payload, {
-        headers: { Authorization: `Bearer ${token}` }
+    await axios.post('http://localhost:3000/api/patient/setup-portal', payload, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    
+    // Show success messages
+    toast.success(`✅ Portal access enabled for ${patient.firstName} ${patient.lastName}`);
+    toast.success(`🔑 ${isPin ? 'PIN' : 'Password'} set: ${credential}`);
+    
+    // Show warning if force change is enabled
+    if (forceChange !== false) {
+      // ✅ Fixed: Use toast.error with emoji for warning (no toast.warning)
+      toast.error(`⚠️ Patient MUST change credentials on first login!`, {
+        duration: 5000,
+        icon: '⚠️',
       });
-      
-      // ✅ FIXED: Use toast.success for both messages (no toast.info)
-      toast.success(`✅ Portal access enabled for ${patient.firstName} ${patient.lastName}`);
-      toast.success(`📌 ${isPin ? 'PIN' : 'Password'} set successfully. Patient can now login with Hospital ID.`);
-      setRefreshKey(prev => prev + 1);
-    } catch (error) {
-      console.error('Enable portal error:', error);
-      toast.error(error.response?.data?.error || 'Failed to enable portal access');
     }
-  };
+    
+    setRefreshKey(prev => prev + 1);
+  } catch (error) {
+    console.error('Enable portal error:', error);
+    toast.error(error.response?.data?.error || 'Failed to enable portal access');
+  }
+};
 
   // Handle Reset Portal Access
   const handleResetPortal = async (patient) => {

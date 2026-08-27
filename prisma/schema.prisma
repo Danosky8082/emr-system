@@ -1,4 +1,4 @@
-// prisma/schema.prisma
+// prisma/schema.prisma - COMPLETE WITH PATIENT WALLET SYSTEM - FIXED
 
 generator client {
   provider = "prisma-client-js"
@@ -8,7 +8,9 @@ datasource db {
   provider = "postgresql"
 }
 
-// 1. Core Patient Model
+// ============================================================
+// 1. CORE PATIENT MODEL - UPGRADED
+// ============================================================
 model Patient {
   id                    String   @id @default(cuid())
   hospitalId            String   @unique
@@ -31,12 +33,20 @@ model Patient {
   insuranceId       String?
   corporateCompany  String?
 
-  // Patient Portal Fields
-  password         String?   // Hashed password for patient portal
-  portalAccess     Boolean   @default(false)
-  lastLogin        DateTime?
-  isVerified       Boolean   @default(false)
-  pinCode          String?   // For quick access (optional)
+  // PATIENT PORTAL FIELDS
+  password            String?
+  portalAccess        Boolean   @default(false)
+  lastLogin           DateTime?
+  isVerified          Boolean   @default(false)
+  pinCode             String?
+  
+  // Security & Password Management Fields
+  mustChangePassword  Boolean   @default(false)
+  pinAttempts         Int       @default(0)
+  passwordAttempts    Int       @default(0)
+  lockedUntil         DateTime?
+  lastPinChange       DateTime?
+  lastPasswordChange  DateTime?
 
   // Archive fields
   isArchived     Boolean   @default(false)
@@ -79,13 +89,65 @@ model Patient {
   nhisAuthorizations NHISAuthorization[]
   nhisClaims         NHISClaim[]
 
-  // ✅ NEW: Dental, Optometry, Immunization Relations
+  // Dental, Optometry, Immunization Relations
   dentalRecords    DentalRecord[]
   optometryRecords OptometryRecord[]
   immunizations    Immunization[]
+
+  // PATIENT WALLET RELATIONS
+  wallet           PatientWallet?
+  walletId         String?          @unique
 }
 
-// 2. Staff Model - COMPLETE FIXED VERSION
+// ============================================================
+// 2. PATIENT WALLET MODELS
+// ============================================================
+
+model PatientWallet {
+  id                String               @id @default(cuid())
+  patientId         String               @unique
+  patient           Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  balance           Float                @default(0)
+  currency          String               @default("NGN")
+  status            String               @default("Active") // Active, Frozen, Closed
+  lastTransactionAt DateTime?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  transactions      WalletTransaction[]
+}
+
+model WalletTransaction {
+  id                    String      @id @default(cuid())
+  walletId              String
+  wallet                PatientWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  transactionType       String      // Deposit, Withdrawal, Payment, Refund, Adjustment
+  amount                Float
+  balanceBefore         Float
+  balanceAfter          Float
+  description           String
+  reference             String      @unique
+  status                String      @default("Completed") // Pending, Completed, Failed, Reversed
+  category              String?     // Consultation, Lab, Pharmacy, Imaging, etc.
+  serviceId             String?     // Reference to the service (appointmentId, prescriptionId, etc.)
+  serviceType           String?     // appointment, prescription, lab_order, imaging_order
+  
+  // For payments
+  paidToStaffId         String?
+  paidToStaff           Staff?      @relation("WalletPaidToStaff", fields: [paidToStaffId], references: [id])
+  
+  // For deposits
+  paymentMethod         String?     // Cash, Transfer, Card, Bank
+  paymentReference      String?
+  
+  notes                 String?
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+}
+
+// ============================================================
+// 3. STAFF MODEL - FIXED
+// ============================================================
 model Staff {
   id         String  @id @default(cuid())
   employeeId String  @unique
@@ -139,10 +201,14 @@ model Staff {
   antenatalVisits AntenatalVisit[] @relation("AntenatalVisits")
   deliveries      Delivery[]       @relation("Deliveries")
 
-  // NHIS Relations
+  // NHIS Relations - FIXED
   nhisAuthorizationsApproved NHISAuthorization[]   @relation("ApprovedByNHIS")
   nhisClaimsSubmitted        NHISClaim[]           @relation("SubmittedByNHIS")
   nhisClaimsApproved         NHISClaim[]           @relation("ApprovedByClaim")
+  
+  // ✅ FIXED: Add opposite relation for requestedByStaff
+  nhisRequestedBy            NHISAuthorization[]   @relation("NHISRequestedBy")
+  
   pharmacyStaff              PharmacyStaff[]
   pharmacyTransactions       PharmacyTransaction[]
 
@@ -180,17 +246,21 @@ model Staff {
   leaveUsages                LeaveUsage[]          @relation("LeaveUsageStaff")
   approvedLeaveUsages        LeaveUsage[]          @relation("LeaveUsageApprover")
 
-  // ✅ NEW: Dental, Optometry, Immunization Staff Relations
+  // Dental, Optometry, Immunization Staff Relations
   dentalRecords    DentalRecord[]    @relation("DentalStaff")
   optometryRecords OptometryRecord[] @relation("OptometryStaff")
 
   // Timestamps
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
-  nhisauthorizations NHISAuthorization[]
+
+  // WALLET RELATIONS - FIXED (NO fields or references)
+  walletTransactions   WalletTransaction[]  @relation("WalletPaidToStaff")
 }
 
-// JOIN TABLES FOR STAFF ASSIGNMENTS
+// ============================================================
+// 4. JOIN TABLES FOR STAFF ASSIGNMENTS
+// ============================================================
 model StaffClinic {
   staffId  String
   clinicId String
@@ -209,7 +279,9 @@ model StaffWard {
   @@id([staffId, wardId])
 }
 
-// 3. Appointment Model
+// ============================================================
+// 5. APPOINTMENT MODEL
+// ============================================================
 model Appointment {
   id        String   @id @default(cuid())
   patientId String
@@ -228,7 +300,9 @@ model Appointment {
   reminders        AppointmentReminder[]
 }
 
-// 4. Clinical Notes (SOAP)
+// ============================================================
+// 6. CLINICAL NOTES (SOAP)
+// ============================================================
 model ClinicalNote {
   id          String   @id @default(cuid())
   patientId   String
@@ -245,7 +319,9 @@ model ClinicalNote {
   updatedAt   DateTime @updatedAt
 }
 
-// 5. Prescriptions
+// ============================================================
+// 7. PRESCRIPTIONS
+// ============================================================
 model Prescription {
   id                 String              @id @default(cuid())
   patientId          String
@@ -272,7 +348,9 @@ model Prescription {
   nhisclaims         NHISClaim[]
 }
 
-// 6. Lab Orders
+// ============================================================
+// 8. LAB ORDERS
+// ============================================================
 model LabOrder {
   id              String    @id @default(cuid())
   patientId       String
@@ -292,32 +370,45 @@ model LabOrder {
   updatedAt       DateTime  @updatedAt
 }
 
-// 7. Billing Records
+// ============================================================
+// 9. BILLING RECORDS - UPGRADED
+// ============================================================
 model BillingRecord {
-  id                String          @id @default(cuid())
-  patientId         String
-  invoiceNumber     String          @unique
-  description       String
-  amount            Float
-  discount          Float           @default(0)
-  tax               Float           @default(0)
-  totalAmount       Float
-  status            String          @default("Pending")
-  paymentMethod     String?
-  paymentDate       DateTime?
-  insuranceProvider String?
-  insuranceClaimId  String?
-  patient           Patient         @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  journey           PatientJourney? @relation("BillingJourney")
+  id                    String          @id @default(cuid())
+  patientId             String
+  patient               Patient         @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  invoiceNumber         String          @unique
+  description           String
+  amount                Float
+  discount              Float           @default(0)
+  tax                   Float           @default(0)
+  totalAmount           Float
+  status                String          @default("Pending") // Pending, Paid, PartiallyPaid, Overdue, WrittenOff
   
-  paymentPlans      PaymentPlan[]
-  imagingOrders     ImagingOrder[]
+  paymentMethod         String?
+  paymentDate           DateTime?
+  insuranceProvider     String?
+  insuranceClaimId      String?
   
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  // WALLET PAYMENT TRACKING
+  walletPaymentId       String?         // Reference to the wallet transaction
+  walletAmountPaid      Float?          // Amount paid from wallet
+  cashAmountPaid        Float?          // Amount paid in cash
+  remainingBalance      Float?          // Remaining balance after payments
+  isWalletPayment       Boolean         @default(false)
+  
+  journey               PatientJourney? @relation("BillingJourney")
+  
+  paymentPlans          PaymentPlan[]
+  imagingOrders         ImagingOrder[]
+  
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
 }
 
-// 8. Pharmacy Inventory
+// ============================================================
+// 10. PHARMACY INVENTORY
+// ============================================================
 model Medication {
   id                   String                  @id @default(cuid())
   name                 String
@@ -339,7 +430,9 @@ model Medication {
   pharmacyTransactions PharmacyTransaction[]
 }
 
-// 9. Medication Transactions
+// ============================================================
+// 11. MEDICATION TRANSACTIONS
+// ============================================================
 model MedicationTransaction {
   id              String     @id @default(cuid())
   medicationId    String
@@ -353,7 +446,9 @@ model MedicationTransaction {
   createdAt       DateTime   @default(now())
 }
 
-// 10. Audit Logs
+// ============================================================
+// 12. AUDIT LOGS
+// ============================================================
 model AuditLog {
   id        String   @id @default(cuid())
   staffId   String
@@ -365,7 +460,9 @@ model AuditLog {
   createdAt DateTime @default(now())
 }
 
-// 11. WARD MODEL
+// ============================================================
+// 13. WARD MODEL
+// ============================================================
 model Ward {
   id               String           @id @default(cuid())
   name             String           @unique
@@ -382,7 +479,9 @@ model Ward {
   toTransfers      PatientTransfer[] @relation("ToWardTransfer")
 }
 
-// 12. ADMISSION MODEL
+// ============================================================
+// 14. ADMISSION MODEL
+// ============================================================
 model Admission {
   id              String    @id @default(uuid())
   admissionNumber String    @unique
@@ -407,7 +506,9 @@ model Admission {
   updatedAt       DateTime  @updatedAt
 }
 
-// 13. Patient History & Coding
+// ============================================================
+// 15. PATIENT HISTORY & CODING
+// ============================================================
 model PatientHistoryRecord {
   id            String   @id @default(uuid())
   patientId     String
@@ -422,7 +523,9 @@ model PatientHistoryRecord {
   updatedAt     DateTime @updatedAt
 }
 
-// 14. ROI Requests
+// ============================================================
+// 16. ROI REQUESTS
+// ============================================================
 model ROIRequest {
   id            String   @id @default(uuid())
   requestorName String
@@ -434,7 +537,9 @@ model ROIRequest {
   updatedAt     DateTime @updatedAt
 }
 
-// 15. CLINIC MODEL
+// ============================================================
+// 17. CLINIC MODEL
+// ============================================================
 model Clinic {
   id               String           @id @default(cuid())
   name             String           @unique
@@ -452,7 +557,9 @@ model Clinic {
   toTransfers      PatientTransfer[] @relation("ToClinicTransfer")
 }
 
-// 16. PATIENT JOURNEY MODEL
+// ============================================================
+// 18. PATIENT JOURNEY MODEL
+// ============================================================
 model PatientJourney {
   id                  String         @id @default(cuid())
   patientId           String
@@ -475,7 +582,9 @@ model PatientJourney {
   updatedAt           DateTime       @updatedAt
 }
 
-// 17. SERVICE PRICING CATALOG
+// ============================================================
+// 19. SERVICE PRICING CATALOG
+// ============================================================
 model ServicePrice {
   id          String   @id @default(cuid())
   name        String
@@ -488,7 +597,9 @@ model ServicePrice {
   updatedAt   DateTime @updatedAt
 }
 
-// 18. SERVICE PRICING BY CATEGORY
+// ============================================================
+// 20. SERVICE PRICING BY CATEGORY
+// ============================================================
 model ServicePricing {
   id             String   @id @default(cuid())
   name           String   @unique
@@ -502,7 +613,9 @@ model ServicePricing {
   updatedAt      DateTime @updatedAt
 }
 
-// 19. VITAL SIGNS
+// ============================================================
+// 21. VITAL SIGNS
+// ============================================================
 model VitalSign {
   id                     String   @id @default(cuid())
   patientId              String
@@ -523,7 +636,9 @@ model VitalSign {
   updatedAt              DateTime @updatedAt
 }
 
-// 20. DYNAMIC ROLE PERMISSIONS
+// ============================================================
+// 22. DYNAMIC ROLE PERMISSIONS
+// ============================================================
 model RolePermission {
   id                    String   @id @default(cuid())
   role                  String   @unique
@@ -546,6 +661,7 @@ model RolePermission {
   wards                 Boolean  @default(false)
   pricing               Boolean  @default(false)
   billingOfficer        Boolean  @default(false)
+  wallet                Boolean  @default(false)
   patientIntake         Boolean  @default(false)
   admissions            Boolean  @default(false)
   patientHistory        Boolean  @default(false)
@@ -568,7 +684,9 @@ model RolePermission {
   updatedAt             DateTime @updatedAt
 }
 
-// 21. ANTENATAL / PREGNANCY MODULE
+// ============================================================
+// 23. ANTENATAL / PREGNANCY MODULE
+// ============================================================
 model Pregnancy {
   id                  String           @id @default(cuid())
   patientId           String
@@ -622,7 +740,9 @@ model Delivery {
   updatedAt     DateTime  @updatedAt
 }
 
-// 22. NHIS Drug Pricing
+// ============================================================
+// 24. NHIS DRUG PRICING
+// ============================================================
 model NHISDrugPrice {
   id                String     @id @default(cuid())
   medicationId      String
@@ -647,7 +767,9 @@ model NHISDrugPrice {
   @@unique([medicationId, nhisCode])
 }
 
-// 22b. NHIS Drug Formulary
+// ============================================================
+// 25. NHIS DRUG FORMULARY
+// ============================================================
 model NHISDrugFormulary {
   id                    String     @id @default(cuid())
   medicationId          String
@@ -685,7 +807,9 @@ model NHISDrugFormulary {
   @@unique([medicationId, nhisCode])
 }
 
-// 23. NHIS Authorization
+// ============================================================
+// 26. NHIS AUTHORIZATION - FIXED
+// ============================================================
 model NHISAuthorization {
   id                  String        @id @default(cuid())
   authorizationNumber String        @unique
@@ -699,7 +823,7 @@ model NHISAuthorization {
   patientAmount       Float
   status              String        @default("Pending")
   requestedBy         String
-  requestedByStaff    Staff         @relation(fields: [requestedBy], references: [id])
+  requestedByStaff    Staff         @relation("NHISRequestedBy", fields: [requestedBy], references: [id])
   approvedBy          String?
   approvedByStaff     Staff?        @relation("ApprovedByNHIS", fields: [approvedBy], references: [id])
   requestDate         DateTime      @default(now())
@@ -711,7 +835,9 @@ model NHISAuthorization {
   nhisclaims          NHISClaim[]
 }
 
-// 24. NHIS Claim
+// ============================================================
+// 27. NHIS CLAIM
+// ============================================================
 model NHISClaim {
   id               String             @id @default(cuid())
   claimNumber      String             @unique
@@ -738,7 +864,9 @@ model NHISClaim {
   updatedAt        DateTime           @updatedAt
 }
 
-// 25. Pharmacy Branch
+// ============================================================
+// 28. PHARMACY BRANCH
+// ============================================================
 model PharmacyBranch {
   id           String                @id @default(cuid())
   name         String
@@ -753,7 +881,9 @@ model PharmacyBranch {
   updatedAt    DateTime              @updatedAt
 }
 
-// 26. Pharmacy Staff
+// ============================================================
+// 29. PHARMACY STAFF
+// ============================================================
 model PharmacyStaff {
   id         String         @id @default(cuid())
   pharmacyId String
@@ -768,7 +898,9 @@ model PharmacyStaff {
   @@unique([pharmacyId, staffId])
 }
 
-// 27. Pharmacy Transaction
+// ============================================================
+// 30. PHARMACY TRANSACTION
+// ============================================================
 model PharmacyTransaction {
   id                String         @id @default(cuid())
   transactionNumber String         @unique
@@ -787,7 +919,9 @@ model PharmacyTransaction {
   createdAt         DateTime       @default(now())
 }
 
-// 28. Patient Queue / Check-in
+// ============================================================
+// 31. PATIENT QUEUE / CHECK-IN
+// ============================================================
 model PatientQueue {
   id              String   @id @default(cuid())
   patientId       String
@@ -821,7 +955,9 @@ model PatientQueue {
   updatedAt       DateTime @updatedAt
 }
 
-// 29. Appointment Reminders
+// ============================================================
+// 32. APPOINTMENT REMINDERS
+// ============================================================
 model AppointmentReminder {
   id             String   @id @default(cuid())
   appointmentId  String
@@ -835,7 +971,9 @@ model AppointmentReminder {
   createdAt      DateTime @default(now())
 }
 
-// 30. Patient Notifications (Portal) - UPDATED with proper relations
+// ============================================================
+// 33. PATIENT NOTIFICATIONS (PORTAL)
+// ============================================================
 model PatientNotification {
   id         String   @id @default(cuid())
   patientId  String
@@ -851,7 +989,9 @@ model PatientNotification {
   @@map("patient_notifications")
 }
 
-// 31. Patient Messages
+// ============================================================
+// 34. PATIENT MESSAGES
+// ============================================================
 model PatientMessage {
   id             String   @id @default(cuid())
   patientId      String
@@ -866,7 +1006,9 @@ model PatientMessage {
   createdAt      DateTime @default(now())
 }
 
-// 32. Check-in Kiosk Sessions
+// ============================================================
+// 35. CHECK-IN KIOSK SESSIONS
+// ============================================================
 model KioskSession {
   id             String   @id @default(cuid())
   patientId      String
@@ -881,7 +1023,9 @@ model KioskSession {
   ipAddress      String?
 }
 
-// 33. Radiology/Imaging Orders
+// ============================================================
+// 36. RADIOLOGY/IMAGING ORDERS
+// ============================================================
 model ImagingOrder {
   id              String   @id @default(cuid())
   orderNumber     String   @unique
@@ -922,7 +1066,9 @@ model ImagingOrder {
   imagingResults  ImagingResult[]
 }
 
-// 34. Radiology Results
+// ============================================================
+// 37. RADIOLOGY RESULTS
+// ============================================================
 model ImagingResult {
   id              String   @id @default(cuid())
   imagingOrderId  String
@@ -937,7 +1083,9 @@ model ImagingResult {
   updatedAt       DateTime @updatedAt
 }
 
-// 35. Patient Transfer/Referral
+// ============================================================
+// 38. PATIENT TRANSFER/REFERRAL
+// ============================================================
 model PatientTransfer {
   id                String   @id @default(cuid())
   transferNumber    String   @unique
@@ -978,7 +1126,9 @@ model PatientTransfer {
   updatedAt         DateTime @updatedAt
 }
 
-// 36. Payment Plans
+// ============================================================
+// 39. PAYMENT PLANS
+// ============================================================
 model PaymentPlan {
   id               String   @id @default(cuid())
   patientId        String
@@ -1006,7 +1156,9 @@ model PaymentPlan {
   partialPayments  PartialPayment[]
 }
 
-// 37. Partial Payment Transactions
+// ============================================================
+// 40. PARTIAL PAYMENT TRANSACTIONS
+// ============================================================
 model PartialPayment {
   id               String   @id @default(cuid())
   paymentPlanId    String
@@ -1023,7 +1175,9 @@ model PartialPayment {
   createdAt        DateTime @default(now())
 }
 
-// 38. Department Model
+// ============================================================
+// 41. DEPARTMENT MODEL
+// ============================================================
 model Department {
   id          String   @id @default(cuid())
   name        String   @unique
@@ -1040,7 +1194,9 @@ model Department {
   @@map("departments")
 }
 
-// 39. Leave Request Model - FIXED
+// ============================================================
+// 42. LEAVE REQUEST MODEL
+// ============================================================
 model LeaveRequest {
   id                  String   @id @default(cuid())
   staffId             String   @map("staff_id")
@@ -1064,14 +1220,15 @@ model LeaveRequest {
   // LEAVE NOTIFICATIONS
   notifications       LeaveNotification[] @relation("leaveNotifications")
   
-  // ✅ FIXED: LEAVE USAGE - Only the field, NO @relation here (relation is defined on LeaveUsage)
   leaveUsageId        String?  @unique @map("leave_usage_id")
   leaveUsage          LeaveUsage?
 
   @@map("leave_requests")
 }
 
-// 40. Attendance Model
+// ============================================================
+// 43. ATTENDANCE MODEL
+// ============================================================
 model Attendance {
   id        String   @id @default(cuid())
   staffId   String   @map("staff_id")
@@ -1086,7 +1243,9 @@ model Attendance {
   @@map("attendance")
 }
 
-// 41. Performance Review Model
+// ============================================================
+// 44. PERFORMANCE REVIEW MODEL
+// ============================================================
 model PerformanceReview {
   id              String   @id @default(cuid())
   staffId         String   @map("staff_id")
@@ -1108,7 +1267,9 @@ model PerformanceReview {
   @@map("performance_reviews")
 }
 
-// 42. Training Model
+// ============================================================
+// 45. TRAINING MODEL
+// ============================================================
 model Training {
   id              String   @id @default(cuid())
   title           String
@@ -1127,7 +1288,9 @@ model Training {
   @@map("trainings")
 }
 
-// 43. Staff Training (Junction Table)
+// ============================================================
+// 46. STAFF TRAINING (JUNCTION TABLE)
+// ============================================================
 model StaffTraining {
   staffId          String   @map("staff_id")
   staff            Staff    @relation(fields: [staffId], references: [id])
@@ -1145,7 +1308,9 @@ model StaffTraining {
   @@map("staff_trainings")
 }
 
-// 44. LEAVE NOTIFICATIONS MODEL
+// ============================================================
+// 47. LEAVE NOTIFICATIONS MODEL
+// ============================================================
 model LeaveNotification {
   id              String    @id @default(cuid())
   leaveRequestId  String?   @map("leave_request_id")
@@ -1166,7 +1331,9 @@ model LeaveNotification {
   @@map("leave_notifications")
 }
 
-// 45a. Staff Leave Entitlement
+// ============================================================
+// 48. STAFF LEAVE ENTITLEMENT
+// ============================================================
 model StaffLeaveEntitlement {
   id                  String   @id @default(cuid())
   staffId             String   @map("staff_id")
@@ -1213,13 +1380,14 @@ model StaffLeaveEntitlement {
   @@map("staff_leave_entitlements")
 }
 
-// 45b. Leave Usage Tracking - FIXED
+// ============================================================
+// 49. LEAVE USAGE TRACKING
+// ============================================================
 model LeaveUsage {
   id                  String   @id @default(cuid())
   staffId             String   @map("staff_id")
   staff               Staff    @relation("LeaveUsageStaff", fields: [staffId], references: [id])
   
-  // ✅ FIXED: LEAVE REQUEST RELATION - This side defines the relation
   leaveRequestId      String?  @unique @map("leave_request_id")
   leaveRequest        LeaveRequest? @relation(fields: [leaveRequestId], references: [id])
   
@@ -1245,7 +1413,9 @@ model LeaveUsage {
   @@map("leave_usages")
 }
 
-// 45c. Leave Policy Configuration
+// ============================================================
+// 50. LEAVE POLICY CONFIGURATION
+// ============================================================
 model LeavePolicy {
   id                  String   @id @default(cuid())
   name                String   @unique
@@ -1275,7 +1445,7 @@ model LeavePolicy {
 }
 
 // ============================================================
-// ✅ NEW: DENTAL CLINIC
+// 51. DENTAL CLINIC
 // ============================================================
 model DentalRecord {
   id               String   @id @default(cuid())
@@ -1296,7 +1466,7 @@ model DentalRecord {
 }
 
 // ============================================================
-// ✅ NEW: OPTOMETRY CLINIC
+// 52. OPTOMETRY CLINIC
 // ============================================================
 model OptometryRecord {
   id                          String   @id @default(cuid())
@@ -1322,7 +1492,7 @@ model OptometryRecord {
 }
 
 // ============================================================
-// ✅ NEW: IMMUNIZATION TRACKING
+// 53. IMMUNIZATION TRACKING
 // ============================================================
 model Immunization {
   id                 String   @id @default(cuid())

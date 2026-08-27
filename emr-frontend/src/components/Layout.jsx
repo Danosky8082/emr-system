@@ -27,6 +27,7 @@ const Layout = () => {
       { path: '/billing', label: '💰 Billing' },
       { path: '/billing-officer', label: '💵 Billing Desk' },
       { path: '/pricing', label: '💲 Service Pricing' },
+      { path: '/wallet', label: '💳 Patient Wallet' },
     ],
     Admin: [
       { path: '/staff', label: '👨‍⚕️ Staff' },
@@ -84,6 +85,7 @@ const Layout = () => {
     '/pharmacy': 'pharmacy',
     '/billing': 'billing',
     '/billing-officer': 'billingOfficer',
+    '/wallet': 'wallet',
     '/staff': 'staff',
     '/clinics': 'clinics',
     '/wards': 'wards',
@@ -139,6 +141,18 @@ const Layout = () => {
     if (user?.role === 'HR') {
       const hrPaths = ['/hr/dashboard', '/hr/employees', '/hr/departments', '/hr/leaves'];
       if (hrPaths.includes(path)) return true;
+      return false;
+    }
+
+    // ✅ Wallet - Finance roles only
+    if (path === '/wallet') {
+      if (user?.role === 'Admin') return true;
+      if (user?.role === 'ITAdmin') return true;
+      if (user?.role === 'Accountant') return true;
+      if (user?.role === 'BillingOfficer') return true;
+      if (!loadingPermissions && permissions) {
+        return permissions['wallet'] === true;
+      }
       return false;
     }
 
@@ -228,6 +242,11 @@ const Layout = () => {
 
     if (['Admin', 'ITAdmin'].includes(user?.role)) return true;
 
+    // ✅ Finance group - visible to Finance roles
+    if (groupName === 'Finance') {
+      return ['Accountant', 'BillingOfficer', 'Admin', 'ITAdmin'].includes(user?.role);
+    }
+
     if (groupName === 'Radiology') {
       return ['Radiologist', 'Admin', 'ITAdmin'].includes(user?.role);
     }
@@ -250,10 +269,6 @@ const Layout = () => {
 
     if (groupName === 'Admin') {
       return ['Admin', 'ITAdmin'].includes(user?.role);
-    }
-
-    if (groupName === 'Finance') {
-      return ['Accountant', 'BillingOfficer', 'Admin', 'ITAdmin'].includes(user?.role);
     }
 
     if (groupName === 'Clinical') {

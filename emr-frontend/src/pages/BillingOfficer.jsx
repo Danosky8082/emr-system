@@ -1,4 +1,5 @@
-// src/pages/BillingOfficer.jsx
+// src/pages/BillingOfficer.jsx - ADD WALLET INTEGRATION
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
@@ -6,7 +7,7 @@ import './Dashboard.css';
 import toast from 'react-hot-toast';
 
 const BillingOfficer = () => {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [activeTab, setActiveTab] = useState('pending');
   const [pendingJourneys, setPendingJourneys] = useState([]);
   const [paymentHistory, setPaymentHistory] = useState([]);
@@ -24,6 +25,21 @@ const BillingOfficer = () => {
   const [receiptData, setReceiptData] = useState(null);
   const [viewingHistory, setViewingHistory] = useState(false);
   const receiptRef = useRef(null);
+
+  // ============================================================
+  // ✅ NEW: WALLET STATE
+  // ============================================================
+  const [showWalletModal, setShowWalletModal] = useState(false);
+  const [selectedPatient, setSelectedPatient] = useState(null);
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [walletTransactions, setWalletTransactions] = useState([]);
+  const [depositAmount, setDepositAmount] = useState('');
+  const [payAmount, setPayAmount] = useState('');
+  const [payDescription, setPayDescription] = useState('');
+  const [payCategory, setPayCategory] = useState('General');
+  const [paymentMethod, setPaymentMethod] = useState('Cash');
+  const [showPayFromWalletModal, setShowPayFromWalletModal] = useState(false);
+  const [selectedBill, setSelectedBill] = useState(null);
 
   // ✅ Get category info for display
   const getCategoryInfo = (category) => {
@@ -71,6 +87,176 @@ const BillingOfficer = () => {
     }
   };
 
+  // ============================================================
+  // ✅ NEW: WALLET FUNCTIONS
+  // ============================================================
+
+  // Fetch wallet details for a patient
+  const fetchWalletDetails = async (patientId) => {
+    try {
+      const res = await axios.get(`http://localhost:3000/api/patients/${patientId}/wallet`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setWalletBalance(res.data.balance || 0);
+      setWalletTransactions(res.data.transactions || []);
+      return res.data;
+    } catch (error) {
+      toast.error('Failed to load wallet details');
+      return null;
+    }
+  };
+
+  // Open wallet modal for a patient
+  const handleOpenWallet = async (journey) => {
+    const patient = journey.patient;
+    setSelectedPatient(patient);
+    setSelectedBill(journey.billingRecord);
+    await fetchWalletDetails(patient.id);
+    setShowWalletModal(true);
+  };
+
+  // Deposit to wallet
+  const handleDepositToWallet = async (e) => {
+    e.preventDefault();
+    if (!depositAmount || parseFloat(depositAmount) <= 0) {
+      toast.error('Please enter a valid amount');
+      return;
+    }
+
+    try {
+      const response = await axios.post(
+        `http://localhost:3000/api/patients/${selectedPatient.id}/wallet/deposit`,
+        {
+          amount: parseFloat(depositAmount),
+          paymentMethod,
+          notes: `Deposit via ${paymentMethod}`
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      toast.success(response.data.message);
+      setDepositAmount('');
+      await fetchWalletDetails(selectedPatient.id);
+      // Update the pending journeys list to reflect wallet balance
+      fetchPending();
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Deposit failed');
+    }
+  };
+
+  // Pay bill from wallet
+  const handlePayFromWallet = async (e) => {
+    e.preventDefault();
+    if (!payAmount || parseFloat(payAmount) <= 0) {
+      toast.error('Please enter a valid amount');
+      return;
+    }
+
+    if (!payDescription) {
+      toast.error('Please enter a description');
+      return;
+    }
+
+    if (parseFloat(payAmount) > walletBalance) {
+      toast.error(`Insufficient balance. Available: ₦${walletBalance.toLocaleString()}`);
+      return;
+    }
+
+    try {
+      // Pay from wallet
+      const response = await axios.post(
+        `http://localhost:3000/api/patients/${selectedPatient.id}/wallet/pay`,
+        {
+          amount: parseFloat(payAmount),
+          description: payDescription,
+          category: payCategory,
+          serviceType: payCategory.toLowerCase(),
+          serviceId: selectedBill?.id || null
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      toast.success(response.data.message);
+      setPayAmount('');
+      setPayDescription('');
+      await fetchWalletDetails(selectedPatient.id);
+      fetchPending();
+      fetchPaymentHistory();
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Payment failed');
+    }
+  };
+
+  // Pay bill fully from wallet
+  const handlePayBillFromWallet = async (journey) => {
+    const bill = journey.billingRecord;
+    if (!bill) {
+      toast.error('No bill found');
+      return;
+    }
+
+    const patient = journey.patient;
+    
+    // First, check wallet balance
+    const wallet = await fetchWalletDetails(patient.id);
+    if (!wallet) return;
+
+    const amountDue = bill.totalAmount || bill.amount || 0;
+    
+    if (walletBalance < amountDue) {
+      toast.error(`Insufficient balance. Available: ₦${walletBalance.toLocaleString()}, Required: ₦${amountDue.toLocaleString()}`);
+      return;
+    }
+
+    if (!window.confirm(
+      `💰 Pay from Wallet\n\n` +
+      `Patient: ${patient.firstName} ${patient.lastName}\n` +
+      `Amount: ₦${amountDue.toLocaleString()}\n` +
+      `Wallet Balance: ₦${walletBalance.toLocaleString()}\n\n` +
+      `✅ This will deduct the full amount from the patient's wallet.`
+    )) return;
+
+    setProcessingId(journey.id);
+    try {
+      // Pay from wallet
+      const response = await axios.post(
+        `http://localhost:3000/api/patients/${patient.id}/wallet/pay`,
+        {
+          amount: amountDue,
+          description: `Payment for ${bill.invoiceNumber} - ${bill.description}`,
+          category: 'Billing',
+          serviceType: 'billing',
+          serviceId: bill.id
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      // Mark the bill as paid
+      await axios.patch(`http://localhost:3000/api/billing/${bill.id}`, {
+        status: 'Paid',
+        paymentMethod: 'Wallet',
+        paymentDate: new Date().toISOString(),
+        walletPaymentId: response.data.transaction.id,
+        walletAmountPaid: amountDue,
+        isWalletPayment: true
+      }, {
+        headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      toast.success(`✅ Payment confirmed! ₦${amountDue.toLocaleString()} paid from wallet`);
+      fetchPending();
+      fetchPaymentHistory();
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to process payment');
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  // ============================================================
+  // END OF WALLET FUNCTIONS
+  // ============================================================
+
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
@@ -88,31 +274,6 @@ const BillingOfficer = () => {
     }
   }, [searchTerm, statusFilter, dateFrom, dateTo]);
 
-  // ✅ Auto-calculate amount based on category
-  const getCalculatedAmount = (journey) => {
-    const bill = journey.billingRecord;
-    if (!bill) return { baseAmount: 0, calculatedAmount: 0, category: 'FPP', multiplier: '100%' };
-    
-    const category = journey.patient?.patientCategory || 'FPP';
-    const baseAmount = bill.amount || 5000;
-    const categoryInfo = getCategoryInfo(category);
-    let calculatedAmount = baseAmount;
-    
-    if (category === 'NHIS') {
-      calculatedAmount = Math.round(baseAmount * 0.1);
-    } else if (category === 'CORPORATE') {
-      calculatedAmount = baseAmount * 2;
-    }
-    
-    return { 
-      baseAmount, 
-      calculatedAmount, 
-      category, 
-      multiplier: categoryInfo.multiplier,
-      categoryLabel: categoryInfo.label
-    };
-  };
-
   const handlePay = async (journey) => {
     const bill = journey.billingRecord;
     if (!bill) {
@@ -120,11 +281,9 @@ const BillingOfficer = () => {
       return;
     }
 
-    // ✅ Get automatic calculation
     const { baseAmount, calculatedAmount, category, multiplier, categoryLabel } = getCalculatedAmount(journey);
     const categoryInfo = getCategoryInfo(category);
     
-    // ✅ Show automated calculation summary
     const confirmMessage = 
       `💰 AUTOMATED PAYMENT SUMMARY\n\n` +
       `Patient: ${journey.patient?.firstName} ${journey.patient?.lastName}\n` +
@@ -138,13 +297,18 @@ const BillingOfficer = () => {
 
     if (!window.confirm(confirmMessage)) return;
 
-    // ✅ Just ask for payment method (no manual calculation)
     const paymentMethod = prompt(
       `Enter payment method:\n` +
       `Patient: ${journey.patient?.firstName} ${journey.patient?.lastName}\n` +
       `Amount: ₦${calculatedAmount.toLocaleString()}\n\n` +
-      `Options: Cash, Transfer, Card, Insurance`
+      `Options: Cash, Transfer, Card, Insurance, Wallet`
     ) || 'Cash';
+
+    // ✅ If payment method is "Wallet", use wallet payment
+    if (paymentMethod.toLowerCase() === 'wallet') {
+      handlePayBillFromWallet(journey);
+      return;
+    }
 
     setProcessingId(journey.id);
     try {
@@ -175,7 +339,6 @@ const BillingOfficer = () => {
     }
   };
 
-  // --- View past receipt ---
   const viewReceipt = async (billId) => {
     try {
       const res = await axios.get(`http://localhost:3000/api/billing/${billId}`, {
@@ -243,20 +406,27 @@ const BillingOfficer = () => {
     return classes[status] || 'status-pending';
   };
 
-  // ✅ Format amount display with category info
-  const formatAmountDisplay = (journey) => {
+  const getCalculatedAmount = (journey) => {
     const bill = journey.billingRecord;
-    if (!bill) return { display: 'N/A', tooltip: '' };
+    if (!bill) return { baseAmount: 0, calculatedAmount: 0, category: 'FPP', multiplier: '100%' };
     
     const category = journey.patient?.patientCategory || 'FPP';
     const baseAmount = bill.amount || 5000;
-    const { calculatedAmount, multiplier } = getCalculatedAmount(journey);
     const categoryInfo = getCategoryInfo(category);
+    let calculatedAmount = baseAmount;
     
-    return {
-      display: `₦${calculatedAmount.toLocaleString()}`,
-      tooltip: `${categoryInfo.multiplier} of ₦${baseAmount.toLocaleString()}`,
-      baseDisplay: `₦${baseAmount.toLocaleString()}`
+    if (category === 'NHIS') {
+      calculatedAmount = Math.round(baseAmount * 0.1);
+    } else if (category === 'CORPORATE') {
+      calculatedAmount = baseAmount * 2;
+    }
+    
+    return { 
+      baseAmount, 
+      calculatedAmount, 
+      category, 
+      multiplier: categoryInfo.multiplier,
+      categoryLabel: categoryInfo.label
     };
   };
 
@@ -282,7 +452,7 @@ const BillingOfficer = () => {
         </div>
       </div>
 
-      {/* Info Banner - Automated Billing */}
+      {/* Info Banner - Automated Billing with Wallet */}
       <div style={{
         background: '#eff6ff',
         border: '1px solid #3b82f6',
@@ -296,7 +466,7 @@ const BillingOfficer = () => {
       }}>
         <span style={{ fontSize: '20px' }}>🤖</span>
         <div>
-          <span style={{ fontWeight: '600', color: '#1e3a5f' }}>Automated Billing System</span>
+          <span style={{ fontWeight: '600', color: '#1e3a5f' }}>Automated Billing with Wallet Support</span>
           <span style={{ fontSize: '14px', color: '#1e3a5f', marginLeft: '8px' }}>
             Amounts are automatically calculated based on patient category:
           </span>
@@ -304,99 +474,14 @@ const BillingOfficer = () => {
             <span style={{ fontSize: '13px', color: '#1e40af' }}>💰 FPP: 100%</span>
             <span style={{ fontSize: '13px', color: '#065f46' }}>🏥 NHIS: 10%</span>
             <span style={{ fontSize: '13px', color: '#92400e' }}>🏢 Corporate: 200%</span>
+            <span style={{ fontSize: '13px', color: '#0f3460' }}>💳 Wallet: Pay from patient wallet</span>
           </div>
         </div>
       </div>
 
-      {/* Search and Filters - Same as before */}
-      {activeTab === 'history' && (
-        <div style={{ 
-          background: 'white', 
-          padding: '16px 20px', 
-          borderRadius: '12px', 
-          marginBottom: '20px',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: '12px',
-          alignItems: 'center'
-        }}>
-          <div style={{ flex: '1', minWidth: '200px' }}>
-            <input
-              type="text"
-              placeholder="🔍 Search by patient, hospital ID, or invoice..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '8px 14px',
-                borderRadius: '8px',
-                border: '1px solid #d1d5db',
-                fontSize: '14px'
-              }}
-            />
-          </div>
-          <div>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              style={{
-                padding: '8px 14px',
-                borderRadius: '8px',
-                border: '1px solid #d1d5db',
-                fontSize: '14px',
-                background: 'white'
-              }}
-            >
-              <option value="All">All Status</option>
-              <option value="Pending">Pending</option>
-              <option value="Paid">Paid</option>
-              <option value="InsuranceClaim">Insurance Claim</option>
-              <option value="Write-off">Write-off</option>
-              <option value="Overdue">Overdue</option>
-            </select>
-          </div>
-          <div>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              style={{
-                padding: '8px 14px',
-                borderRadius: '8px',
-                border: '1px solid #d1d5db',
-                fontSize: '14px'
-              }}
-            />
-          </div>
-          <div>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              style={{
-                padding: '8px 14px',
-                borderRadius: '8px',
-                border: '1px solid #d1d5db',
-                fontSize: '14px'
-              }}
-            />
-          </div>
-          <button 
-            className="btn btn-secondary btn-sm"
-            onClick={() => {
-              setSearchTerm('');
-              setStatusFilter('All');
-              setDateFrom('');
-              setDateTo('');
-            }}
-          >
-            Clear Filters
-          </button>
-        </div>
-      )}
-
-      {/* PENDING PAYMENTS TABLE - Automated */}
+      {/* ============================================================
+          PENDING PAYMENTS TABLE - With Wallet Actions
+          ============================================================ */}
       {activeTab === 'pending' && (
         <div className="table-container">
           <table>
@@ -408,6 +493,7 @@ const BillingOfficer = () => {
                 <th>Base Amount</th>
                 <th>Multiplier</th>
                 <th>Amount Due</th>
+                <th>💳 Wallet</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
@@ -465,11 +551,28 @@ const BillingOfficer = () => {
                       }}>
                         ₦{calculatedAmount.toLocaleString()}
                       </strong>
-                      {bill && bill.totalAmount !== calculatedAmount && (
-                        <div style={{ fontSize: '10px', color: '#ef4444' }}>
-                          ⚠️ Amount updated to match category
-                        </div>
-                      )}
+                    </td>
+                    <td>
+                      {/* ✅ Wallet Button */}
+                      <button
+                        className="btn btn-sm"
+                        onClick={() => handleOpenWallet(j)}
+                        style={{
+                          background: '#0f3460',
+                          color: 'white',
+                          border: 'none',
+                          padding: '4px 12px',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontSize: '11px',
+                          fontWeight: '600',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}
+                      >
+                        💳 Wallet
+                      </button>
                     </td>
                     <td>
                       <span className="role-badge" style={{ background: '#ffcc00', color: '#000' }}>
@@ -477,26 +580,55 @@ const BillingOfficer = () => {
                       </span>
                     </td>
                     <td>
-                      <button
-                        className="btn btn-sm btn-primary"
-                        onClick={() => handlePay(j)}
-                        disabled={processingId === j.id || !bill}
-                      >
-                        {processingId === j.id ? 'Processing...' : '✅ Pay Now'}
-                      </button>
+                      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                        <button
+                          className="btn btn-sm btn-success"
+                          onClick={() => handlePay(j)}
+                          disabled={processingId === j.id || !bill}
+                          style={{
+                            background: '#10b981',
+                            color: 'white',
+                            border: 'none',
+                            padding: '4px 12px',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '11px',
+                            fontWeight: '600'
+                          }}
+                        >
+                          {processingId === j.id ? 'Processing...' : '✅ Pay'}
+                        </button>
+                        <button
+                          className="btn btn-sm"
+                          onClick={() => handlePayBillFromWallet(j)}
+                          disabled={processingId === j.id || !bill}
+                          style={{
+                            background: '#0f3460',
+                            color: 'white',
+                            border: 'none',
+                            padding: '4px 12px',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '11px',
+                            fontWeight: '600'
+                          }}
+                        >
+                          💳 Wallet Pay
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
               })}
               {pendingJourneys.length === 0 && (
-                <tr><td colSpan="8" className="text-center">No pending payments at this time.</td></tr>
+                <tr><td colSpan="9" className="text-center">No pending payments at this time.</td></tr>
               )}
             </tbody>
           </table>
         </div>
       )}
 
-      {/* PAYMENT HISTORY TABLE - Same as before */}
+      {/* PAYMENT HISTORY TABLE */}
       {activeTab === 'history' && (
         <div className="table-container">
           <table>
@@ -508,6 +640,7 @@ const BillingOfficer = () => {
                 <th>Category</th>
                 <th>Amount (₦)</th>
                 <th>Payment Method</th>
+                <th>Wallet Payment</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
@@ -536,8 +669,15 @@ const BillingOfficer = () => {
                           {categoryInfo.label}
                         </span>
                       </td>
-                      <td>₦{bill.totalAmount.toLocaleString()}</td>
+                      <td>₦{bill.totalAmount?.toLocaleString() || '0'}</td>
                       <td>{bill.paymentMethod || '-'}</td>
+                      <td>
+                        {bill.isWalletPayment ? (
+                          <span style={{ color: '#0f3460', fontWeight: '600' }}>✅ Yes</span>
+                        ) : (
+                          <span style={{ color: '#6b7280' }}>—</span>
+                        )}
+                      </td>
                       <td>
                         <span 
                           className={`role-badge ${getStatusBadgeClass(bill.status)}`}
@@ -553,110 +693,363 @@ const BillingOfficer = () => {
                         <button 
                           className="btn btn-sm btn-secondary"
                           onClick={() => viewReceipt(bill.id)}
+                          style={{
+                            background: '#e5e7eb',
+                            color: '#1f2937',
+                            border: '1px solid #d1d5db',
+                            padding: '4px 10px',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '11px',
+                            fontWeight: '600'
+                          }}
                         >
-                          📄 View Receipt
+                          📄 View
                         </button>
                       </td>
                     </tr>
                   );
                 })
               ) : (
-                <tr><td colSpan="8" className="text-center">No payment records found.</td></tr>
+                <tr><td colSpan="9" className="text-center">No payment records found.</td></tr>
               )}
             </tbody>
           </table>
         </div>
       )}
 
-      {/* Receipt Modal */}
-{showReceipt && receiptData && (
-  <div className="modal-overlay" onClick={() => setShowReceipt(false)}>
-    <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{maxWidth: '600px', padding: '20px'}}>
-      <div ref={receiptRef}>
-        <div className="receipt-header" style={{textAlign: 'center', marginBottom: '20px'}}>
-          <h1 style={{margin: 0}}>🏥 NEXGEN EMR CLINIC</h1>
-          <p style={{margin: 0, fontSize: '14px'}}>Medical Centre, Lagos</p>
-          <p style={{fontSize: '12px', color: '#666', marginTop: '5px'}}>
-            {viewingHistory ? 'Payment Receipt (Historical)' : 'Official Payment Receipt'}
-          </p>
-          <hr style={{border: '1px dashed #ccc'}} />
-        </div>
-        
-        <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '20px'}}>
-          <div><strong>Invoice No:</strong> <br/>{receiptData.invoiceNumber}</div>
-          <div style={{textAlign: 'right'}}>
-            <strong>Date:</strong> <br/>
-            {new Date(receiptData.createdAt).toLocaleDateString()}
+      {/* ============================================================
+          WALLET MODAL
+          ============================================================ */}
+      {showWalletModal && selectedPatient && (
+        <div className="modal-overlay" onClick={() => setShowWalletModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '650px' }}>
+            <div className="modal-header">
+              <h3>💳 Patient Wallet</h3>
+              <button className="modal-close" onClick={() => setShowWalletModal(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              {/* Patient Info */}
+              <div style={{
+                background: '#f8fafc',
+                padding: '12px 16px',
+                borderRadius: '8px',
+                marginBottom: '16px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                  <span><strong>Patient:</strong> {selectedPatient.firstName} {selectedPatient.lastName}</span>
+                  <span><strong>Hospital ID:</strong> {selectedPatient.hospitalId}</span>
+                  <span><strong>Balance:</strong> 
+                    <span style={{ 
+                      color: walletBalance > 0 ? '#10b981' : '#6b7280',
+                      fontWeight: 'bold',
+                      fontSize: '18px'
+                    }}>
+                      ₦{walletBalance.toLocaleString()}
+                    </span>
+                  </span>
+                </div>
+              </div>
+
+              {/* Deposit Form */}
+              <div style={{ 
+                background: '#f0fdf4',
+                padding: '16px',
+                borderRadius: '8px',
+                marginBottom: '16px',
+                border: '1px solid #10b981'
+              }}>
+                <h4 style={{ margin: '0 0 12px 0', color: '#065f46' }}>💰 Deposit to Wallet</h4>
+                <form onSubmit={handleDepositToWallet} style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                  <input
+                    type="number"
+                    placeholder="Amount (₦)"
+                    value={depositAmount}
+                    onChange={(e) => setDepositAmount(e.target.value)}
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: '8px',
+                      border: '1px solid #d1d5db',
+                      fontSize: '14px',
+                      flex: '1',
+                      minWidth: '150px'
+                    }}
+                    required
+                    min="1"
+                    step="0.01"
+                  />
+                  <select
+                    value={paymentMethod}
+                    onChange={(e) => setPaymentMethod(e.target.value)}
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: '8px',
+                      border: '1px solid #d1d5db',
+                      fontSize: '14px',
+                      background: 'white'
+                    }}
+                  >
+                    <option value="Cash">Cash</option>
+                    <option value="Transfer">Bank Transfer</option>
+                    <option value="Card">Card</option>
+                    <option value="Bank">Bank Deposit</option>
+                  </select>
+                  <button
+                    type="submit"
+                    className="btn btn-success"
+                    style={{
+                      background: '#10b981',
+                      color: 'white',
+                      border: 'none',
+                      padding: '8px 20px',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      fontWeight: '600'
+                    }}
+                  >
+                    💳 Deposit
+                  </button>
+                </form>
+              </div>
+
+              {/* Pay from Wallet Form */}
+              <div style={{ 
+                background: '#eff6ff',
+                padding: '16px',
+                borderRadius: '8px',
+                marginBottom: '16px',
+                border: '1px solid #3b82f6'
+              }}>
+                <h4 style={{ margin: '0 0 12px 0', color: '#1e40af' }}>💸 Pay from Wallet</h4>
+                <form onSubmit={handlePayFromWallet} style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                  <input
+                    type="number"
+                    placeholder="Amount (₦)"
+                    value={payAmount}
+                    onChange={(e) => setPayAmount(e.target.value)}
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: '8px',
+                      border: '1px solid #d1d5db',
+                      fontSize: '14px',
+                      flex: '1',
+                      minWidth: '150px'
+                    }}
+                    required
+                    min="1"
+                    step="0.01"
+                    max={walletBalance}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Description"
+                    value={payDescription}
+                    onChange={(e) => setPayDescription(e.target.value)}
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: '8px',
+                      border: '1px solid #d1d5db',
+                      fontSize: '14px',
+                      flex: '1',
+                      minWidth: '150px'
+                    }}
+                    required
+                  />
+                  <select
+                    value={payCategory}
+                    onChange={(e) => setPayCategory(e.target.value)}
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: '8px',
+                      border: '1px solid #d1d5db',
+                      fontSize: '14px',
+                      background: 'white'
+                    }}
+                  >
+                    <option value="General">General</option>
+                    <option value="Consultation">Consultation</option>
+                    <option value="Lab">Lab Test</option>
+                    <option value="Pharmacy">Pharmacy</option>
+                    <option value="Imaging">Imaging/X-Ray</option>
+                    <option value="Billing">Billing</option>
+                    <option value="Others">Others</option>
+                  </select>
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={parseFloat(payAmount) > walletBalance}
+                    style={{
+                      background: '#0f3460',
+                      color: 'white',
+                      border: 'none',
+                      padding: '8px 20px',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      fontWeight: '600',
+                      opacity: parseFloat(payAmount) > walletBalance ? 0.5 : 1
+                    }}
+                  >
+                    💸 Pay
+                  </button>
+                </form>
+                {parseFloat(payAmount) > walletBalance && (
+                  <small style={{ color: '#ef4444' }}>⚠️ Insufficient balance!</small>
+                )}
+              </div>
+
+              {/* Transaction History */}
+              <h4 style={{ margin: '0 0 12px 0' }}>📋 Transaction History</h4>
+              <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                {walletTransactions.length > 0 ? (
+                  <table style={{ width: '100%', fontSize: '13px' }}>
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th>Amount</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {walletTransactions.slice(0, 20).map(t => (
+                        <tr key={t.id}>
+                          <td>{new Date(t.createdAt).toLocaleDateString()}</td>
+                          <td>
+                            <span className={`status-badge ${
+                              t.transactionType === 'Deposit' ? 'status-active' : 'status-pending'
+                            }`}>
+                              {t.transactionType}
+                            </span>
+                          </td>
+                          <td style={{ 
+                            color: t.transactionType === 'Deposit' ? '#10b981' : '#ef4444',
+                            fontWeight: '600'
+                          }}>
+                            {t.transactionType === 'Deposit' ? '+' : '-'} ₦{t.amount.toLocaleString()}
+                          </td>
+                          <td style={{ fontSize: '12px' }}>{t.description}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p style={{ textAlign: 'center', color: '#6b7280' }}>No transactions yet</p>
+                )}
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button 
+                className="btn btn-secondary" 
+                onClick={() => setShowWalletModal(false)}
+                style={{
+                  background: '#e5e7eb',
+                  color: '#1f2937',
+                  border: '1px solid #d1d5db',
+                  padding: '10px 24px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontWeight: '600'
+                }}
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
+      )}
 
-        <table style={{width: '100%', borderCollapse: 'collapse', marginBottom: '20px'}}>
-          <tbody>
-            <tr><td style={{padding: '5px 0', fontWeight: 'bold'}}>Patient ID:</td>
-              <td>{receiptData.patient?.hospitalId || 'N/A'}</td></tr>
-            <tr><td style={{padding: '5px 0', fontWeight: 'bold'}}>Patient Name:</td>
-              <td>{receiptData.patient ? `${receiptData.patient.firstName} ${receiptData.patient.lastName}` : 'N/A'}</td></tr>
-            <tr><td style={{padding: '5px 0', fontWeight: 'bold'}}>Category:</td>
-              <td>{receiptData.patient?.patientCategory || 'FPP'}</td></tr>
-            <tr><td style={{padding: '5px 0', fontWeight: 'bold'}}>Description:</td>
-              <td>{receiptData.description}</td></tr>
-            <tr><td style={{padding: '5px 0', fontWeight: 'bold'}}>Payment Method:</td>
-              <td>{receiptData.paymentMethod || 'N/A'}</td></tr>
-            <tr><td style={{padding: '5px 0', fontWeight: 'bold'}}>Status:</td>
-              <td>{receiptData.status}</td></tr>
-          </tbody>
-        </table>
+      {/* Receipt Modal - Same as before */}
+      {showReceipt && receiptData && (
+        <div className="modal-overlay" onClick={() => setShowReceipt(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{maxWidth: '600px', padding: '20px'}}>
+            <div ref={receiptRef}>
+              <div className="receipt-header" style={{textAlign: 'center', marginBottom: '20px'}}>
+                <h1 style={{margin: 0}}>🏥 NEXGEN EMR CLINIC</h1>
+                <p style={{margin: 0, fontSize: '14px'}}>Medical Centre, Lagos</p>
+                <p style={{fontSize: '12px', color: '#666', marginTop: '5px'}}>
+                  {viewingHistory ? 'Payment Receipt (Historical)' : 'Official Payment Receipt'}
+                </p>
+                <hr style={{border: '1px dashed #ccc'}} />
+              </div>
+              
+              <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '20px'}}>
+                <div><strong>Invoice No:</strong> <br/>{receiptData.invoiceNumber}</div>
+                <div style={{textAlign: 'right'}}>
+                  <strong>Date:</strong> <br/>
+                  {new Date(receiptData.createdAt).toLocaleDateString()}
+                </div>
+              </div>
 
-        <div style={{borderTop: '2px solid #000', paddingTop: '15px', textAlign: 'right', fontSize: '20px', fontWeight: 'bold'}}>
-          Total Amount: ₦{receiptData.totalAmount.toLocaleString()}
+              <table style={{width: '100%', borderCollapse: 'collapse', marginBottom: '20px'}}>
+                <tbody>
+                  <tr><td style={{padding: '5px 0', fontWeight: 'bold'}}>Patient ID:</td>
+                    <td>{receiptData.patient?.hospitalId || 'N/A'}</td></tr>
+                  <tr><td style={{padding: '5px 0', fontWeight: 'bold'}}>Patient Name:</td>
+                    <td>{receiptData.patient ? `${receiptData.patient.firstName} ${receiptData.patient.lastName}` : 'N/A'}</td></tr>
+                  <tr><td style={{padding: '5px 0', fontWeight: 'bold'}}>Category:</td>
+                    <td>{receiptData.patient?.patientCategory || 'FPP'}</td></tr>
+                  <tr><td style={{padding: '5px 0', fontWeight: 'bold'}}>Description:</td>
+                    <td>{receiptData.description}</td></tr>
+                  <tr><td style={{padding: '5px 0', fontWeight: 'bold'}}>Payment Method:</td>
+                    <td>{receiptData.paymentMethod || 'N/A'}</td></tr>
+                  {receiptData.isWalletPayment && (
+                    <tr><td style={{padding: '5px 0', fontWeight: 'bold'}}>Wallet Payment:</td>
+                      <td style={{color: '#0f3460', fontWeight: '600'}}>✅ Yes</td></tr>
+                  )}
+                  <tr><td style={{padding: '5px 0', fontWeight: 'bold'}}>Status:</td>
+                    <td>{receiptData.status}</td></tr>
+                </tbody>
+              </table>
+
+              <div style={{borderTop: '2px solid #000', paddingTop: '15px', textAlign: 'right', fontSize: '20px', fontWeight: 'bold'}}>
+                Total Amount: ₦{receiptData.totalAmount.toLocaleString()}
+              </div>
+
+              <div style={{textAlign: 'center', marginTop: '30px', fontSize: '12px', color: '#999', borderTop: '1px dashed #ccc', paddingTop: '10px'}}>
+                {viewingHistory ? 'Historical record for reference.' : 'Thank you for your visit.'}
+                <br/> This is a computer-generated receipt.
+              </div>
+            </div>
+
+            <div style={{display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px'}}>
+              <button 
+                type="button" 
+                className="btn btn-secondary" 
+                onClick={() => setShowReceipt(false)}
+                style={{
+                  background: '#e5e7eb',
+                  color: '#1f2937',
+                  border: '1px solid #d1d5db',
+                  padding: '10px 24px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  fontSize: '14px'
+                }}
+              >
+                Close
+              </button>
+              <button 
+                type="button" 
+                className="btn btn-primary" 
+                onClick={handlePrintReceipt}
+                style={{
+                  background: '#0f3460',
+                  color: 'white',
+                  border: 'none',
+                  padding: '10px 24px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  fontSize: '14px'
+                }}
+              >
+                🖨️ Print Receipt
+              </button>
+            </div>
+          </div>
         </div>
-
-        <div style={{textAlign: 'center', marginTop: '30px', fontSize: '12px', color: '#999', borderTop: '1px dashed #ccc', paddingTop: '10px'}}>
-          {viewingHistory ? 'Historical record for reference.' : 'Thank you for your visit.'}
-          <br/> This is a computer-generated receipt.
-        </div>
-      </div>
-
-      {/* ✅ FIXED: Buttons with visible backgrounds */}
-      <div style={{display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px'}}>
-        <button 
-          type="button" 
-          className="btn btn-secondary" 
-          onClick={() => setShowReceipt(false)}
-          style={{
-            background: '#e5e7eb',
-            color: '#1f2937',
-            border: '1px solid #d1d5db',
-            padding: '10px 24px',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontWeight: '600',
-            fontSize: '14px'
-          }}
-        >
-          Close
-        </button>
-        <button 
-          type="button" 
-          className="btn btn-primary" 
-          onClick={handlePrintReceipt}
-          style={{
-            background: '#0f3460',
-            color: 'white',
-            border: 'none',
-            padding: '10px 24px',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontWeight: '600',
-            fontSize: '14px'
-          }}
-        >
-          🖨️ Print Receipt
-        </button>
-      </div>
-    </div>
-  </div>
-)}
+      )}
 
       <style>{`
         .status-paid { background: #10b981; color: white; }
