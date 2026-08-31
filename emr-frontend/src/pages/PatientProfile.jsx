@@ -1,4 +1,5 @@
-// src/pages/PatientProfile.jsx
+// src/pages/PatientProfile.jsx - COMPLETE FIXED VERSION
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -22,6 +23,17 @@ const PatientProfile = () => {
   const [notes, setNotes] = useState([]);
   const [prescriptions, setPrescriptions] = useState([]);
   const [labOrders, setLabOrders] = useState([]);
+
+  // ✅ APPOINTMENT MODAL STATE
+  const [showAppointmentModal, setShowAppointmentModal] = useState(false);
+  const [availableDoctors, setAvailableDoctors] = useState([]);
+  const [appointmentForm, setAppointmentForm] = useState({
+    staffId: '',
+    dateTime: '',
+    duration: 30,
+    type: 'Consultation',
+    notes: ''
+  });
 
   // Modal states
   const [showNoteModal, setShowNoteModal] = useState(false);
@@ -64,18 +76,6 @@ const PatientProfile = () => {
     notes: ''
   });
 
-  // ✅ FIXED: Get staff name with proper fallback
-  const getStaffName = (staff) => {
-    if (!staff) return 'Unknown Staff';
-    if (staff.firstName && staff.lastName) {
-      return `${staff.firstName} ${staff.lastName}`;
-    }
-    if (staff.fullName) return staff.fullName;
-    if (staff.firstName) return staff.firstName;
-    if (staff.lastName) return staff.lastName;
-    return staff.role || 'Unknown Staff';
-  };
-
   const imagingTypes = [
     'X-Ray', 'CT Scan', 'MRI', 'Ultrasound', 'Mammogram',
     'PET Scan', 'Fluoroscopy', 'Angiography'
@@ -88,6 +88,61 @@ const PatientProfile = () => {
 
   const isDoctor = ['Doctor', 'Obstetrician'].includes(user?.role);
   const isNurse = ['Nurse', 'Midwife'].includes(user?.role);
+
+  const getStaffName = (staff) => {
+    if (!staff) return 'Unknown Staff';
+    if (staff.firstName && staff.lastName) {
+      return `${staff.firstName} ${staff.lastName}`;
+    }
+    if (staff.fullName) return staff.fullName;
+    if (staff.firstName) return staff.firstName;
+    if (staff.lastName) return staff.lastName;
+    return staff.role || 'Unknown Staff';
+  };
+
+  // ✅ FETCH AVAILABLE DOCTORS FOR APPOINTMENT
+  const fetchAvailableDoctors = async () => {
+  try {
+    // ✅ Use the new endpoint
+    const res = await axios.get('http://localhost:3000/api/doctors/available', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    setAvailableDoctors(res.data);
+  } catch (error) {
+    console.error('Error fetching doctors:', error);
+    toast.error('Failed to load doctors');
+  }
+};
+
+  // ✅ HANDLE APPOINTMENT CREATION
+  const handleCreateAppointment = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.post('http://localhost:3000/api/appointments', {
+        patientId: patient.id,
+        staffId: appointmentForm.staffId,
+        dateTime: appointmentForm.dateTime,
+        duration: appointmentForm.duration,
+        type: appointmentForm.type,
+        notes: appointmentForm.notes
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      toast.success('✅ Appointment scheduled successfully!');
+      setShowAppointmentModal(false);
+      setAppointmentForm({
+        staffId: '',
+        dateTime: '',
+        duration: 30,
+        type: 'Consultation',
+        notes: ''
+      });
+      fetchAllData();
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to schedule appointment');
+    }
+  };
 
   const fetchAllData = async () => {
     setLoading(true);
@@ -116,7 +171,6 @@ const PatientProfile = () => {
       setPrescriptions(prescriptionsData);
       setLabOrders(labData);
 
-      // Build recent activities with CORRECT staff mappings
       buildRecentActivities(patientData, vitalsData, imagingData, notesData, prescriptionsData, labData);
 
     } catch (err) {
@@ -136,11 +190,11 @@ const PatientProfile = () => {
     }
   };
 
-  // Build recent activities timeline - FIXED with correct staff
+  // Build recent activities timeline
   const buildRecentActivities = (patientData, vitalsData, imagingData, notesData, prescriptionsData, labData) => {
     const activities = [];
 
-    // ✅ Vitals - Show Nurse who recorded them
+    // Vitals
     if (vitalsData && vitalsData.length > 0) {
       vitalsData.forEach(v => {
         activities.push({
@@ -149,8 +203,8 @@ const PatientProfile = () => {
           date: v.recordedAt,
           title: 'Vital Signs Recorded',
           description: `BP: ${v.bloodPressureSystolic}/${v.bloodPressureDiastolic} | HR: ${v.heartRate} | Temp: ${v.temperature}°C`,
-          staff: v.nurse,
-          staffName: getStaffName(v.nurse),
+          staff: v.Staff,
+          staffName: getStaffName(v.Staff),
           icon: '❤️',
           color: '#ef4444',
           details: v
@@ -158,7 +212,7 @@ const PatientProfile = () => {
       });
     }
 
-    // ✅ Clinical Notes - Show author
+    // Clinical Notes
     if (notesData && notesData.length > 0) {
       notesData.forEach(n => {
         activities.push({
@@ -167,8 +221,8 @@ const PatientProfile = () => {
           date: n.createdAt,
           title: `Clinical Note (${n.type || 'SOAP'})`,
           description: n.subjective || n.assessment || n.fullContent || 'Clinical note recorded',
-          staff: n.author,
-          staffName: getStaffName(n.author),
+          staff: n.Staff,
+          staffName: getStaffName(n.Staff),
           icon: '📝',
           color: '#3b82f6',
           details: n
@@ -176,7 +230,7 @@ const PatientProfile = () => {
       });
     }
 
-    // ✅ Prescriptions - Show dispensedBy if dispensed, otherwise prescribedBy
+    // Prescriptions
     if (prescriptionsData && prescriptionsData.length > 0) {
       prescriptionsData.forEach(p => {
         const isDispensed = p.status === 'Dispensed' || p.status === 'dispensed';
@@ -186,7 +240,6 @@ const PatientProfile = () => {
           date: p.createdAt,
           title: `Prescription: ${p.medication}`,
           description: `${p.dosage} - ${p.frequency} (${p.status || 'Prescribed'})`,
-          // ✅ Show dispensedBy if dispensed, otherwise prescribedBy
           staff: isDispensed ? (p.dispensedBy || p.prescribedBy) : p.prescribedBy,
           staffName: isDispensed 
             ? getStaffName(p.dispensedBy || p.prescribedBy) 
@@ -198,10 +251,9 @@ const PatientProfile = () => {
       });
     }
 
-    // ✅ Lab Orders - Show performedBy (who did the test), fallback to orderedBy
+    // Lab Orders
     if (labData && labData.length > 0) {
       labData.forEach(l => {
-        // Show performedBy if available (Lab Technician/Scientist), otherwise orderedBy (Doctor)
         const performingStaff = l.performedBy || l.orderedBy;
         activities.push({
           id: `lab-${l.id}`,
@@ -218,7 +270,7 @@ const PatientProfile = () => {
       });
     }
 
-    // ✅ Imaging Orders - Show radiologist if completed, otherwise orderingStaff
+    // Imaging Orders
     if (imagingData && imagingData.length > 0) {
       imagingData.forEach(i => {
         const performingStaff = i.status === 'Completed' ? (i.radiologist || i.orderingStaff) : i.orderingStaff;
@@ -461,12 +513,24 @@ const PatientProfile = () => {
       {/* SIDEBAR */}
       <div className="profile-sidebar">
         <h4>Patient Record</h4>
-        <button className={`profile-tab-btn ${currentTab === 'profile' ? 'active' : ''}`} onClick={() => setCurrentTab('profile')}><span className="icon">👤</span> Profile</button>
-        <button className={`profile-tab-btn ${currentTab === 'vitals' ? 'active' : ''}`} onClick={() => setCurrentTab('vitals')}><span className="icon">❤️</span> Vitals</button>
-        <button className={`profile-tab-btn ${currentTab === 'notes' ? 'active' : ''}`} onClick={() => setCurrentTab('notes')}><span className="icon">📝</span> Clinical Notes</button>
-        <button className={`profile-tab-btn ${currentTab === 'prescriptions' ? 'active' : ''}`} onClick={() => setCurrentTab('prescriptions')}><span className="icon">💊</span> Prescriptions</button>
-        <button className={`profile-tab-btn ${currentTab === 'lab-orders' ? 'active' : ''}`} onClick={() => setCurrentTab('lab-orders')}><span className="icon">🔬</span> Lab Orders</button>
-        <button className={`profile-tab-btn ${currentTab === 'imaging' ? 'active' : ''}`} onClick={() => setCurrentTab('imaging')}><span className="icon">📷</span> Imaging/X-Ray</button>
+        <button className={`profile-tab-btn ${currentTab === 'profile' ? 'active' : ''}`} onClick={() => setCurrentTab('profile')}>
+          <span className="icon">👤</span> Profile
+        </button>
+        <button className={`profile-tab-btn ${currentTab === 'vitals' ? 'active' : ''}`} onClick={() => setCurrentTab('vitals')}>
+          <span className="icon">❤️</span> Vitals
+        </button>
+        <button className={`profile-tab-btn ${currentTab === 'notes' ? 'active' : ''}`} onClick={() => setCurrentTab('notes')}>
+          <span className="icon">📝</span> Clinical Notes
+        </button>
+        <button className={`profile-tab-btn ${currentTab === 'prescriptions' ? 'active' : ''}`} onClick={() => setCurrentTab('prescriptions')}>
+          <span className="icon">💊</span> Prescriptions
+        </button>
+        <button className={`profile-tab-btn ${currentTab === 'lab-orders' ? 'active' : ''}`} onClick={() => setCurrentTab('lab-orders')}>
+          <span className="icon">🔬</span> Lab Orders
+        </button>
+        <button className={`profile-tab-btn ${currentTab === 'imaging' ? 'active' : ''}`} onClick={() => setCurrentTab('imaging')}>
+          <span className="icon">📷</span> Imaging/X-Ray
+        </button>
 
         <div style={{ marginTop: '20px', padding: '0 20px' }}>
           <button onClick={handleBack} className="btn btn-secondary" style={{ width: '100%', display: 'block', textAlign: 'center', cursor: 'pointer' }}>
@@ -477,7 +541,30 @@ const PatientProfile = () => {
 
       {/* MAIN CONTENT */}
       <div className="profile-content">
-        <h3 style={{ marginBottom: '20px' }}>{patient.firstName} {patient.lastName}</h3>
+        {/* ✅ HEADER WITH SCHEDULE APPOINTMENT BUTTON */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <h3 style={{ margin: 0 }}>{patient.firstName} {patient.lastName}</h3>
+          {isDoctor && (
+            <button 
+              className="btn btn-primary btn-sm"
+              onClick={() => {
+                fetchAvailableDoctors();
+                setShowAppointmentModal(true);
+              }}
+              style={{
+                background: '#0f3460',
+                color: 'white',
+                border: 'none',
+                padding: '8px 16px',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontWeight: '600'
+              }}
+            >
+              📅 Schedule Appointment
+            </button>
+          )}
+        </div>
 
         {/* Patient Profile Summary */}
         <div className="profile-grid" style={{ marginBottom: '20px' }}>
@@ -625,7 +712,7 @@ const PatientProfile = () => {
                   <tbody>{vitals.map(v => (
                     <tr key={v.id}>
                       <td>{new Date(v.recordedAt).toLocaleString()}</td>
-                      <td>{getStaffName(v.nurse)}</td>
+                      <td>{getStaffName(v.Staff)}</td>
                       <td>{v.bloodPressureSystolic}/{v.bloodPressureDiastolic}</td>
                       <td>{v.heartRate}</td>
                       <td>{v.temperature}</td>
@@ -658,7 +745,7 @@ const PatientProfile = () => {
                 <div key={n.id} className={`note-card type-${n.type.replace(/ /g, '')}`}>
                   <div className="note-header">
                     <div className={`note-tag tag-${n.type.replace(/ /g, '')}`}>{n.type}</div>
-                    <span><strong>{n.type}</strong> by {getStaffName(n.author)}</span>
+                    <span><strong>{n.type}</strong> by {getStaffName(n.Staff)}</span>
                     <span className="note-date">{new Date(n.createdAt).toLocaleString()}</span>
                     {canModifyNote(n) && (
                       <div className="note-actions">
@@ -920,12 +1007,142 @@ const PatientProfile = () => {
         )}
       </div>
 
-      {/* MODALS */}
-      {/* Vital Signs Modal */}
+      {/* ============================================================
+          APPOINTMENT MODAL
+          ============================================================ */}
+      {showAppointmentModal && (
+        <div className="modal-overlay" onClick={() => setShowAppointmentModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '550px' }}>
+            <div className="modal-header">
+              <h3>📅 Schedule Appointment</h3>
+              <button className="modal-close" onClick={() => setShowAppointmentModal(false)}>×</button>
+            </div>
+            <form onSubmit={handleCreateAppointment}>
+              <div className="modal-body">
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f8fafc', borderRadius: '8px' }}>
+                  <p style={{ margin: 0 }}><strong>Patient:</strong> {patient.firstName} {patient.lastName}</p>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#6b7280' }}>ID: {patient.hospitalId}</p>
+                </div>
+
+                <div className="form-group">
+                  <label>Doctor *</label>
+                  <select
+                    value={appointmentForm.staffId}
+                    onChange={(e) => setAppointmentForm({...appointmentForm, staffId: e.target.value})}
+                    required
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      border: '1px solid #ddd',
+                      borderRadius: '8px',
+                      fontSize: '14px'
+                    }}
+                  >
+                    <option value="">Select Doctor...</option>
+                    {availableDoctors.map(d => (
+                      <option key={d.id} value={d.id}>
+                        Dr. {d.firstName} {d.lastName} ({d.role})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>Date & Time *</label>
+                  <input
+                    type="datetime-local"
+                    value={appointmentForm.dateTime}
+                    onChange={(e) => setAppointmentForm({...appointmentForm, dateTime: e.target.value})}
+                    required
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      border: '1px solid #ddd',
+                      borderRadius: '8px',
+                      fontSize: '14px'
+                    }}
+                  />
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Duration (minutes)</label>
+                    <select
+                      value={appointmentForm.duration}
+                      onChange={(e) => setAppointmentForm({...appointmentForm, duration: parseInt(e.target.value)})}
+                      style={{
+                        width: '100%',
+                        padding: '10px 14px',
+                        border: '1px solid #ddd',
+                        borderRadius: '8px',
+                        fontSize: '14px'
+                      }}
+                    >
+                      <option value="15">15 min</option>
+                      <option value="30">30 min</option>
+                      <option value="45">45 min</option>
+                      <option value="60">60 min</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Type</label>
+                    <select
+                      value={appointmentForm.type}
+                      onChange={(e) => setAppointmentForm({...appointmentForm, type: e.target.value})}
+                      style={{
+                        width: '100%',
+                        padding: '10px 14px',
+                        border: '1px solid #ddd',
+                        borderRadius: '8px',
+                        fontSize: '14px'
+                      }}
+                    >
+                      <option value="Consultation">Consultation</option>
+                      <option value="Follow-up">Follow-up</option>
+                      <option value="Emergency">Emergency</option>
+                      <option value="Procedure">Procedure</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label>Notes</label>
+                  <textarea
+                    value={appointmentForm.notes}
+                    onChange={(e) => setAppointmentForm({...appointmentForm, notes: e.target.value})}
+                    rows="2"
+                    placeholder="Any additional notes..."
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      border: '1px solid #ddd',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontFamily: 'inherit',
+                      resize: 'vertical'
+                    }}
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={() => setShowAppointmentModal(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Schedule Appointment</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================
+          VITAL SIGNS MODAL
+          ============================================================ */}
       {showVitalModal && (
         <div className="modal-overlay" onClick={() => setShowVitalModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header"><h3>Record Vitals – {patient.firstName} {patient.lastName}</h3><button className="modal-close" onClick={() => setShowVitalModal(false)}>×</button></div>
+            <div className="modal-header">
+              <h3>Record Vitals – {patient.firstName} {patient.lastName}</h3>
+              <button className="modal-close" onClick={() => setShowVitalModal(false)}>×</button>
+            </div>
             <form onSubmit={handleVitalSubmit}>
               <div className="modal-body">
                 <div className="form-row">
@@ -952,11 +1169,16 @@ const PatientProfile = () => {
         </div>
       )}
 
-      {/* Notes Modal */}
+      {/* ============================================================
+          NOTES MODAL
+          ============================================================ */}
       {showNoteModal && (
-        <div className="modal-overlay profile-modal" onClick={() => setShowNoteModal(false)}>
+        <div className="modal-overlay" onClick={() => setShowNoteModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header"><h3>{editingNote ? 'Edit Clinical Note' : 'Add Clinical Note'}</h3><button className="modal-close" onClick={() => setShowNoteModal(false)}>×</button></div>
+            <div className="modal-header">
+              <h3>{editingNote ? 'Edit Clinical Note' : 'Add Clinical Note'}</h3>
+              <button className="modal-close" onClick={() => setShowNoteModal(false)}>×</button>
+            </div>
             <form onSubmit={handleNoteSubmit}>
               <div className="modal-body">
                 <div className="form-group"><label>Note Type</label><select value={noteForm.type} onChange={e => setNoteForm({...noteForm, type: e.target.value})}><option value="SOAP">SOAP Note</option><option value="Progress Note">Progress Note</option><option value="Discharge Summary">Discharge Summary</option></select></div>
@@ -971,11 +1193,16 @@ const PatientProfile = () => {
         </div>
       )}
 
-      {/* Prescription Modal */}
+      {/* ============================================================
+          PRESCRIPTION MODAL
+          ============================================================ */}
       {showPrescriptionModal && (
         <div className="modal-overlay" onClick={() => setShowPrescriptionModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header"><h3>New Prescription</h3><button className="modal-close" onClick={() => setShowPrescriptionModal(false)}>×</button></div>
+            <div className="modal-header">
+              <h3>New Prescription</h3>
+              <button className="modal-close" onClick={() => setShowPrescriptionModal(false)}>×</button>
+            </div>
             <form onSubmit={handlePrescriptionSubmit}>
               <div className="modal-body">
                 <div className="form-group"><label>Medication *</label><input type="text" required value={prescriptionForm.medication} onChange={e => setPrescriptionForm({...prescriptionForm, medication: e.target.value})} placeholder="e.g. Amoxicillin 500mg" /></div>
@@ -988,11 +1215,16 @@ const PatientProfile = () => {
         </div>
       )}
 
-      {/* Lab Order Modal */}
+      {/* ============================================================
+          LAB ORDER MODAL
+          ============================================================ */}
       {showLabOrderModal && (
         <div className="modal-overlay" onClick={() => setShowLabOrderModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header"><h3>New Lab Order</h3><button className="modal-close" onClick={() => setShowLabOrderModal(false)}>×</button></div>
+            <div className="modal-header">
+              <h3>New Lab Order</h3>
+              <button className="modal-close" onClick={() => setShowLabOrderModal(false)}>×</button>
+            </div>
             <form onSubmit={handleLabOrderSubmit}>
               <div className="modal-body">
                 <div className="form-group"><label>Test Name *</label><input type="text" required value={labOrderForm.testName} onChange={e => setLabOrderForm({...labOrderForm, testName: e.target.value})} placeholder="e.g. Full Blood Count" /></div>
@@ -1005,11 +1237,16 @@ const PatientProfile = () => {
         </div>
       )}
 
-      {/* Imaging Order Details Modal */}
+      {/* ============================================================
+          IMAGING ORDER DETAILS MODAL
+          ============================================================ */}
       {showOrderModal && selectedOrder && (
         <div className="modal-overlay" onClick={() => setShowOrderModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px' }}>
-            <div className="modal-header"><h3>📷 Imaging Order Details</h3><button className="modal-close" onClick={() => setShowOrderModal(false)}>×</button></div>
+            <div className="modal-header">
+              <h3>📷 Imaging Order Details</h3>
+              <button className="modal-close" onClick={() => setShowOrderModal(false)}>×</button>
+            </div>
             <div className="modal-body">
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
                 <div><strong>Order #:</strong> {selectedOrder.orderNumber || selectedOrder.id.slice(0, 8)}</div>
@@ -1060,11 +1297,16 @@ const PatientProfile = () => {
         </div>
       )}
 
-      {/* Imaging/X-Ray Modal */}
+      {/* ============================================================
+          IMAGING/X-RAY MODAL
+          ============================================================ */}
       {showImagingModal && (
         <div className="modal-overlay" onClick={() => setShowImagingModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '650px' }}>
-            <div className="modal-header"><h3>📷 New Imaging/X-Ray Order</h3><button className="modal-close" onClick={() => setShowImagingModal(false)}>×</button></div>
+            <div className="modal-header">
+              <h3>📷 New Imaging/X-Ray Order</h3>
+              <button className="modal-close" onClick={() => setShowImagingModal(false)}>×</button>
+            </div>
             <form onSubmit={handleImagingSubmit}>
               <div className="modal-body">
                 <div className="form-group"><label>Imaging Type *</label><select name="imagingType" value={imagingForm.imagingType} onChange={handleImagingInputChange} required style={{ width: '100%', padding: '10px 14px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '14px' }}>{imagingTypes.map(type => (<option key={type} value={type}>{type}</option>))}</select></div>

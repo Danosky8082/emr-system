@@ -11,6 +11,7 @@ const PatientIntake = () => {
   const [journeys, setJourneys] = useState([]);
   const [clinics, setClinics] = useState([]);
   const [wards, setWards] = useState([]);
+  const [todayAppointments, setTodayAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [showCardModal, setShowCardModal] = useState(false);
@@ -22,7 +23,7 @@ const PatientIntake = () => {
   const [returnToStage, setReturnToStage] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
   
-  // ✅ Wallet state
+  // Wallet state
   const [walletBalances, setWalletBalances] = useState({});
   const [showWalletInfo, setShowWalletInfo] = useState({});
   const [loadingWallet, setLoadingWallet] = useState({});
@@ -34,7 +35,7 @@ const PatientIntake = () => {
     wardId: '' 
   });
 
-  // ✅ Get category info
+  // Get category info
   const getCategoryInfo = (category) => {
     const map = {
       'FPP': { label: '💰 FPP', className: 'category-fpp', tooltip: 'Free Paying Patient - Full Payment' },
@@ -44,7 +45,7 @@ const PatientIntake = () => {
     return map[category] || map['FPP'];
   };
 
-  // ✅ Fetch wallet balance for a patient
+  // Fetch wallet balance for a patient
   const fetchWalletBalance = async (patientId) => {
     if (loadingWallet[patientId]) return;
     
@@ -63,7 +64,7 @@ const PatientIntake = () => {
     }
   };
 
-  // ✅ Toggle wallet info display
+  // Toggle wallet info display
   const toggleWalletInfo = (patientId) => {
     setShowWalletInfo(prev => ({ 
       ...prev, 
@@ -71,6 +72,25 @@ const PatientIntake = () => {
     }));
     if (!walletBalances[patientId]) {
       fetchWalletBalance(patientId);
+    }
+  };
+
+  // ✅ FETCH TODAY'S APPOINTMENTS
+  const fetchTodayAppointments = async () => {
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      
+      const res = await axios.get(
+        `http://localhost:3000/api/appointments?dateFrom=${today.toISOString()}&dateTo=${tomorrow.toISOString()}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      setTodayAppointments(res.data.filter(a => a.status !== 'Cancelled'));
+    } catch (error) {
+      console.error('Error fetching appointments:', error);
     }
   };
 
@@ -106,6 +126,10 @@ const PatientIntake = () => {
       setJourneys(journeysWithDetails);
       setClinics(clinicRes.data);
       setWards(wardRes.data);
+      
+      // ✅ Fetch appointments
+      await fetchTodayAppointments();
+      
     } catch (error) { 
       console.error('Fetch error:', error);
       toast.error('Failed to load intake data'); 
@@ -309,6 +333,16 @@ const PatientIntake = () => {
     return stages.slice(0, currentIndex);
   };
 
+  // ✅ Check if patient has appointment today
+  const hasAppointmentToday = (patientId) => {
+    return todayAppointments.some(a => a.patientId === patientId && a.status !== 'Cancelled');
+  };
+
+  // ✅ Get appointment details for patient
+  const getAppointmentForPatient = (patientId) => {
+    return todayAppointments.find(a => a.patientId === patientId && a.status !== 'Cancelled');
+  };
+
   if (loading) return <div className="spinner" />;
 
   return (
@@ -338,6 +372,63 @@ const PatientIntake = () => {
           </button>
         </div>
       </div>
+
+      {/* ✅ TODAY'S APPOINTMENTS BANNER */}
+      {todayAppointments.length > 0 && (
+        <div style={{
+          background: 'white',
+          borderRadius: '12px',
+          padding: '16px 20px',
+          marginBottom: '16px',
+          border: '1px solid #e5e7eb',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '20px' }}>📅</span>
+            <div>
+              <strong style={{ fontSize: '15px' }}>Today's Appointments</strong>
+              <span style={{ marginLeft: '8px', fontSize: '14px', color: '#6b7280' }}>
+                {todayAppointments.length} patient(s) have appointments today
+              </span>
+            </div>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {todayAppointments.slice(0, 3).map(a => {
+                const patient = a.Patient || a.patient;
+                const staff = a.Staff || a.staff;
+                return (
+                  <span key={a.id} style={{
+                    padding: '4px 12px',
+                    borderRadius: '16px',
+                    background: '#dbeafe',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    color: '#1e40af',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}>
+                    👤 {patient?.firstName} {patient?.lastName}
+                    <span style={{ fontWeight: '400', color: '#6b7280' }}>
+                      {new Date(a.dateTime).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </span>
+                );
+              })}
+              {todayAppointments.length > 3 && (
+                <span style={{
+                  padding: '4px 12px',
+                  borderRadius: '16px',
+                  background: '#f3f4f6',
+                  fontSize: '12px',
+                  color: '#6b7280'
+                }}>
+                  +{todayAppointments.length - 3} more
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       
       <div className="table-container">
         <table>
@@ -346,6 +437,7 @@ const PatientIntake = () => {
               <th>Hospital ID</th>
               <th>Patient Name</th>
               <th>Category</th>
+              <th>📅 Appt</th>
               <th>Destination</th>
               <th>Status</th>
               <th>💳 Wallet</th>
@@ -361,6 +453,8 @@ const PatientIntake = () => {
               const walletBalance = walletBalances[patient?.id];
               const showWallet = showWalletInfo[patient?.id];
               const isLoadingWallet = loadingWallet[patient?.id];
+              const hasAppt = hasAppointmentToday(patient?.id);
+              const appt = getAppointmentForPatient(patient?.id);
               
               if (j.status === 'REGISTERED') {
                 action = { label: '💰 Send to Billing', status: 'PENDING_BILLING' };
@@ -382,9 +476,24 @@ const PatientIntake = () => {
               const showReturnButton = j.status !== 'REGISTERED';
 
               return (
-                <tr key={j.id}>
+                <tr key={j.id} style={hasAppt ? { background: '#eff6ff' } : {}}>
                   <td><strong>{patient?.hospitalId}</strong></td>
-                  <td>{patient?.firstName} {patient?.lastName}</td>
+                  <td>
+                    {patient?.firstName} {patient?.lastName}
+                    {hasAppt && (
+                      <span style={{
+                        marginLeft: '8px',
+                        padding: '2px 8px',
+                        background: '#3b82f6',
+                        color: 'white',
+                        fontSize: '10px',
+                        borderRadius: '10px',
+                        fontWeight: '600'
+                      }}>
+                        📅 Appt
+                      </span>
+                    )}
+                  </td>
                   <td>
                     <span 
                       className={`category-badge ${categoryInfo.className}`}
@@ -412,6 +521,20 @@ const PatientIntake = () => {
                     )}
                   </td>
                   <td>
+                    {hasAppt && appt ? (
+                      <div style={{ fontSize: '12px' }}>
+                        <span style={{ fontWeight: '600', color: '#0f3460' }}>
+                          🕐 {new Date(appt.dateTime).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        <div style={{ fontSize: '10px', color: '#6b7280' }}>
+                          Dr. {appt.Staff?.firstName} {appt.Staff?.lastName}
+                        </div>
+                      </div>
+                    ) : (
+                      <span style={{ color: '#6b7280', fontSize: '12px' }}>—</span>
+                    )}
+                  </td>
+                  <td>
                     {destinationName || '—'}
                     <span style={{fontSize: '0.75rem', color: '#ccc', marginLeft: '5px'}}>
                       ({j.destinationType})
@@ -426,7 +549,6 @@ const PatientIntake = () => {
                     </span>
                   </td>
                   <td>
-                    {/* ✅ Wallet Button */}
                     <button 
                       className="btn btn-sm"
                       onClick={() => toggleWalletInfo(patient?.id)}
@@ -449,7 +571,6 @@ const PatientIntake = () => {
                       {isLoadingWallet ? '⏳' : `💳 ₦${(walletBalance || 0).toLocaleString()}`}
                     </button>
                     
-                    {/* Wallet info tooltip */}
                     {showWallet && patient && walletBalance !== undefined && (
                       <div style={{
                         position: 'absolute',
@@ -482,7 +603,6 @@ const PatientIntake = () => {
                     )}
                   </td>
                   <td style={{ minWidth: '450px', display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center' }}>
-                    {/* 🖨️ Print Card Button */}
                     {showCardButton && (
                       <button 
                         className="btn btn-sm" 
@@ -504,7 +624,6 @@ const PatientIntake = () => {
                       </button>
                     )}
 
-                    {/* 🔄 Reprint Card Button */}
                     {showReprintButton && (
                       <button 
                         className="btn btn-sm" 
@@ -526,7 +645,6 @@ const PatientIntake = () => {
                       </button>
                     )}
 
-                    {/* ↩️ Reverse Button */}
                     {showReverseButton && (
                       <button 
                         className="btn btn-sm" 
@@ -551,7 +669,6 @@ const PatientIntake = () => {
                       </button>
                     )}
 
-                    {/* 🔄 Return to Stage Button */}
                     {showReturnButton && !isCompleted && (
                       <button 
                         className="btn btn-sm" 
@@ -577,7 +694,6 @@ const PatientIntake = () => {
                       </button>
                     )}
 
-                    {/* ✅ Archive Button */}
                     {isCompleted && patient && patient.id ? (
                       <button 
                         className="btn btn-sm" 
@@ -603,7 +719,6 @@ const PatientIntake = () => {
                       </span>
                     )}
 
-                    {/* Next Action Button or End of process */}
                     {action ? (
                       <button 
                         className="btn btn-sm" 
@@ -629,7 +744,7 @@ const PatientIntake = () => {
                 </tr>
               );
             })}
-            {journeys.length === 0 && <tr><td colSpan="7" className="text-center">No active patient intakes. Start a new one!</td></tr>}
+            {journeys.length === 0 && <tr><td colSpan="8" className="text-center">No active patient intakes. Start a new one!</td></tr>}
           </tbody>
         </table>
       </div>

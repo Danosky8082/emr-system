@@ -1504,22 +1504,46 @@ app.get('/api/patient/dashboard', authenticatePatient, async (req, res) => {
       });
     }
 
+    // ✅ FIX: Use the correct field name from your schema
+    // The model is "patient_notifications" with an underscore
     const [appointments, prescriptions, labOrders, billingRecords, vitals, notifications] = await Promise.all([
       prisma.appointment.findMany({
         where: { patientId },
-        include: { staff: { select: { firstName: true, lastName: true, role: true } } },
+        include: { 
+          Staff: { 
+            select: { 
+              firstName: true, 
+              lastName: true, 
+              role: true 
+            } 
+          } 
+        },
         orderBy: { dateTime: 'asc' },
         take: 5
       }),
       prisma.prescription.findMany({
         where: { patientId },
-        include: { prescribedBy: { select: { firstName: true, lastName: true } } },
+        include: { 
+          Staff_Prescription_prescribingStaffIdToStaff: { 
+            select: { 
+              firstName: true, 
+              lastName: true 
+            } 
+          } 
+        },
         orderBy: { createdAt: 'desc' },
         take: 5
       }),
       prisma.labOrder.findMany({
         where: { patientId },
-        include: { orderedBy: { select: { firstName: true, lastName: true } } },
+        include: { 
+          Staff_LabOrder_orderingStaffIdToStaff: { 
+            select: { 
+              firstName: true, 
+              lastName: true 
+            } 
+          } 
+        },
         orderBy: { createdAt: 'desc' },
         take: 5
       }),
@@ -1530,10 +1554,19 @@ app.get('/api/patient/dashboard', authenticatePatient, async (req, res) => {
       }),
       prisma.vitalSign.findMany({
         where: { patientId },
+        include: { 
+          Staff: { 
+            select: { 
+              firstName: true, 
+              lastName: true 
+            } 
+          } 
+        },
         orderBy: { recordedAt: 'desc' },
         take: 5
       }),
-      prisma.patientNotification.findMany({
+      // ✅ FIX: Use "patient_notifications" (with underscore) - the exact name from your schema
+      prisma.patient_notifications.findMany({
         where: { patientId, isRead: false },
         orderBy: { createdAt: 'desc' }
       })
@@ -1543,12 +1576,33 @@ app.get('/api/patient/dashboard', authenticatePatient, async (req, res) => {
       new Date(a.dateTime) > new Date() && a.status !== 'Cancelled'
     );
 
+    // Format for frontend
+    const formattedAppointments = appointments.map(a => ({
+      ...a,
+      staff: a.Staff
+    }));
+
+    const formattedPrescriptions = prescriptions.map(p => ({
+      ...p,
+      prescribedBy: p.Staff_Prescription_prescribingStaffIdToStaff
+    }));
+
+    const formattedLabOrders = labOrders.map(l => ({
+      ...l,
+      orderedBy: l.Staff_LabOrder_orderingStaffIdToStaff
+    }));
+
+    const formattedVitals = vitals.map(v => ({
+      ...v,
+      nurse: v.Staff
+    }));
+
     res.json({
-      appointments: upcomingAppointments,
-      prescriptions,
-      labOrders,
+      appointments: formattedAppointments,
+      prescriptions: formattedPrescriptions,
+      labOrders: formattedLabOrders,
       billingRecords,
-      vitals,
+      vitals: formattedVitals,
       notifications: notifications.length,
       stats: {
         totalAppointments: upcomingAppointments.length,
@@ -1813,12 +1867,13 @@ app.get('/api/patient/notifications', authenticatePatient, async (req, res) => {
     const where = { patientId };
     if (unreadOnly === 'true') where.isRead = false;
 
-    const notifications = await prisma.patientNotification.findMany({
+    // ✅ FIX: Use "patient_notifications" (with underscore)
+    const notifications = await prisma.patient_notifications.findMany({
       where,
       orderBy: { createdAt: 'desc' }
     });
 
-    const unreadCount = await prisma.patientNotification.count({
+    const unreadCount = await prisma.patient_notifications.count({
       where: { patientId, isRead: false }
     });
 
@@ -1835,7 +1890,8 @@ app.patch('/api/patient/notifications/:id/read', authenticatePatient, async (req
     const { id } = req.params;
     const patientId = req.patient.id;
 
-    const notification = await prisma.patientNotification.findUnique({
+    // ✅ FIX: Use "patient_notifications" (with underscore)
+    const notification = await prisma.patient_notifications.findUnique({
       where: { id }
     });
 
@@ -1847,7 +1903,7 @@ app.patch('/api/patient/notifications/:id/read', authenticatePatient, async (req
       return res.status(403).json({ error: 'Not your notification' });
     }
 
-    const updated = await prisma.patientNotification.update({
+    const updated = await prisma.patient_notifications.update({
       where: { id },
       data: { isRead: true }
     });
@@ -1864,7 +1920,8 @@ app.patch('/api/patient/notifications/read-all', authenticatePatient, async (req
   try {
     const patientId = req.patient.id;
 
-    await prisma.patientNotification.updateMany({
+    // ✅ FIX: Use "patient_notifications" (with underscore)
+    await prisma.patient_notifications.updateMany({
       where: { patientId, isRead: false },
       data: { isRead: true }
     });
@@ -3011,34 +3068,216 @@ app.post('/api/staff/:id/reset-password', authenticate, authorize('Admin', 'ITAd
 
 app.get('/api/appointments', authenticate, async (req, res) => {
   try {
+    const { patientId, staffId, status, dateFrom, dateTo } = req.query;
+    
+    let where = {};
+    if (patientId) where.patientId = patientId;
+    if (staffId) where.staffId = staffId;
+    if (status) where.status = status;
+    if (dateFrom || dateTo) {
+      where.dateTime = {};
+      if (dateFrom) where.dateTime.gte = new Date(dateFrom);
+      if (dateTo) where.dateTime.lte = new Date(dateTo);
+    }
+    
+    // ✅ FIX: Use correct field names in include
     const appointments = await prisma.appointment.findMany({
-      include: { patient: true, staff: true },
+      where,
+      include: {
+        Patient: {      // ✅ CHANGED: patient → Patient
+          select: {
+            id: true,
+            hospitalId: true,
+            firstName: true,
+            lastName: true,
+            phone: true
+          }
+        },
+        Staff: {        // ✅ CHANGED: staff → Staff
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true
+          }
+        }
+      },
       orderBy: { dateTime: 'asc' }
     });
-    res.json(appointments);
+    
+    // Format for frontend
+    const formattedAppointments = appointments.map(a => ({
+      ...a,
+      patient: a.Patient,
+      staff: a.Staff
+    }));
+    
+    res.json(formattedAppointments);
   } catch (error) {
     console.error('Get appointments error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
+// ============================================================
+// CREATE APPOINTMENT - WITH WALLET CHECK
+// ============================================================
+
 app.post('/api/appointments', authenticate, async (req, res) => {
   try {
     const { patientId, staffId, dateTime, duration, type, notes } = req.body;
+    
     if (!patientId || !staffId || !dateTime) {
       return res.status(400).json({ error: 'Missing required fields: patientId, staffId, dateTime' });
     }
-    const patient = await prisma.patient.findUnique({ where: { id: patientId } });
+    
+    const patient = await prisma.patient.findUnique({ 
+      where: { id: patientId } 
+    });
     if (!patient) return res.status(404).json({ error: 'Patient not found' });
-    const staff = await prisma.staff.findUnique({ where: { id: staffId } });
+    
+    const staff = await prisma.staff.findUnique({ 
+      where: { id: staffId } 
+    });
     if (!staff) return res.status(404).json({ error: 'Staff member not found' });
+    
+    // Check for conflicting appointments
+    const conflicting = await prisma.appointment.findFirst({
+      where: {
+        staffId,
+        dateTime: new Date(dateTime),
+        status: { not: 'Cancelled' }
+      }
+    });
+    
+    if (conflicting) {
+      return res.status(400).json({ error: 'This time slot is already booked' });
+    }
+    
+    // ✅ AUTO-DEDUCT CONSULTATION FEE FROM WALLET (Optional)
+    let walletDeduction = null;
+    let billingRecord = null;
+    let walletBalance = 0;
+    
+    try {
+      // Get consultation fee from service configuration
+      const consultConfig = await prisma.serviceConfiguration.findUnique({
+        where: { serviceType: 'CONSULTATION' }
+      });
+      
+      const consultationFee = consultConfig?.baseAmount || 5000;
+      
+      // Check wallet balance
+      const wallet = await prisma.patientWallet.findUnique({
+        where: { patientId }
+      });
+      
+      if (wallet && wallet.status === 'Active' && wallet.balance >= consultationFee) {
+        // Auto-deduct the consultation fee
+        const deductionResult = await deductFromWallet(
+          patientId,
+          consultationFee,
+          `Consultation Fee - Appointment with Dr. ${staff.firstName} ${staff.lastName}`,
+          'Consultation',
+          null,
+          'appointment',
+          req.user.id
+        );
+        
+        if (deductionResult.success) {
+          walletDeduction = deductionResult;
+          walletBalance = deductionResult.balanceAfter;
+          
+          // Create billing record for the consultation
+          billingRecord = await prisma.billingRecord.create({
+            data: {
+              patientId,
+              invoiceNumber: `INV-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+              description: `Consultation Fee - Dr. ${staff.firstName} ${staff.lastName}`,
+              totalAmount: consultationFee,
+              paidAmount: consultationFee,
+              balance: 0,
+              status: 'Paid',
+              items: [{
+                name: 'Consultation Fee',
+                category: 'Consultation',
+                amount: consultationFee,
+                status: 'Paid',
+                serviceType: 'CONSULTATION'
+              }],
+              paymentMethod: 'Wallet',
+              isWalletPayment: true,
+              walletTransactionId: deductionResult.transaction.id,
+              receiptGenerated: true,
+              receiptGeneratedAt: new Date(),
+              updatedAt: new Date()
+            }
+          });
+          
+          // Create notification
+          await prisma.patient_notifications.create({
+            data: {
+              patientId,
+              title: '💰 Consultation Fee Paid',
+              message: `₦${consultationFee.toLocaleString()} deducted from your wallet for appointment with Dr. ${staff.firstName} ${staff.lastName}. New balance: ₦${walletBalance.toLocaleString()}`,
+              type: 'wallet'
+            }
+          });
+        }
+      }
+    } catch (walletError) {
+      console.log('Wallet deduction skipped or failed:', walletError.message);
+    }
+    
+    // ✅ Create the appointment WITH updatedAt
     const appointment = await prisma.appointment.create({
       data: {
-        patientId, staffId, dateTime: new Date(dateTime),
-        duration: duration || 30, type: type || 'Consultation', notes, status: 'Scheduled'
+        patientId,
+        staffId,
+        dateTime: new Date(dateTime),
+        duration: duration || 30,
+        type: type || 'Consultation',
+        notes: notes || null,
+        status: 'Scheduled',
+        updatedAt: new Date() // ✅ ADD THIS
       },
-      include: { patient: true, staff: true }
+      include: {
+        Patient: {
+          select: {
+            id: true,
+            hospitalId: true,
+            firstName: true,
+            lastName: true,
+            phone: true
+          }
+        },
+        Staff: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true
+          }
+        }
+      }
     });
+    
+    // Format response
+    const formattedAppointment = {
+      ...appointment,
+      patient: appointment.Patient,
+      staff: appointment.Staff
+    };
+    
+    // ✅ If wallet was deducted, include that in the response
+    const response = {
+      appointment: formattedAppointment,
+      walletDeduction: walletDeduction,
+      billingRecord: billingRecord,
+      walletBalance: walletBalance,
+      feeAutoDeducted: walletDeduction !== null
+    };
+    
     await prisma.auditLog.create({
       data: {
         staffId: req.user.id,
@@ -3047,23 +3286,55 @@ app.post('/api/appointments', authenticate, async (req, res) => {
         details: `Created appointment for patient ${patient.hospitalId} with ${staff.firstName} ${staff.lastName}`
       }
     });
-    res.status(201).json(appointment);
+    
+    res.status(201).json(response);
   } catch (error) {
     console.error('Create appointment error:', error);
     res.status(400).json({ error: error.message });
   }
 });
 
+
+// ============================================================
+// UPDATE APPOINTMENT STATUS - FIXED
+// ============================================================
+
 app.patch('/api/appointments/:id/status', authenticate, async (req, res) => {
   try {
     const { status } = req.body;
     const { id } = req.params;
-    if (!status) return res.status(400).json({ error: 'Status is required' });
+    
+    if (!status) {
+      return res.status(400).json({ error: 'Status is required' });
+    }
+    
+    // ✅ FIX: Add updatedAt
     const appointment = await prisma.appointment.update({
       where: { id },
-      data: { status },
-      include: { patient: true, staff: true }
+      data: { 
+        status,
+        updatedAt: new Date() // ✅ ADD THIS
+      },
+      include: { 
+        Patient: {
+          select: {
+            id: true,
+            hospitalId: true,
+            firstName: true,
+            lastName: true
+          }
+        },
+        Staff: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true
+          }
+        }
+      }
     });
+    
     await prisma.auditLog.create({
       data: {
         staffId: req.user.id,
@@ -3072,6 +3343,7 @@ app.patch('/api/appointments/:id/status', authenticate, async (req, res) => {
         details: `Updated appointment ${id} status to ${status}`
       }
     });
+    
     res.json(appointment);
   } catch (error) {
     console.error('Update appointment error:', error);
@@ -5345,11 +5617,12 @@ app.get('/api/pharmacy/dashboard', authenticate, authorize('Admin', 'ITAdmin', '
       prisma.nHISAuthorization.count({ where: { status: 'Pending' } })
     ]);
 
+    // ✅ FIX: Use "Medication" NOT "medication"
     const recentTransactions = await prisma.medicationTransaction.findMany({
       take: 10,
       orderBy: { createdAt: 'desc' },
       include: { 
-        medication: {
+        Medication: {      // ✅ CHANGED: medication → Medication
           select: {
             id: true,
             name: true
@@ -5358,11 +5631,12 @@ app.get('/api/pharmacy/dashboard', authenticate, authorize('Admin', 'ITAdmin', '
       }
     });
 
+    // ✅ FIX: Use correct field names for NHISAuthorization include
     const pendingAuths = await prisma.nHISAuthorization.findMany({
       take: 10,
       where: { status: 'Pending' },
       include: { 
-        patient: {
+        Patient: {        // ✅ CHANGED: patient → Patient
           select: {
             id: true,
             firstName: true,
@@ -5374,6 +5648,17 @@ app.get('/api/pharmacy/dashboard', authenticate, authorize('Admin', 'ITAdmin', '
       orderBy: { createdAt: 'asc' }
     });
 
+    // Format for frontend
+    const formattedTransactions = recentTransactions.map(t => ({
+      ...t,
+      medication: t.Medication
+    }));
+
+    const formattedAuths = pendingAuths.map(a => ({
+      ...a,
+      patient: a.Patient
+    }));
+
     res.json({
       statistics: {
         totalMedications,
@@ -5381,8 +5666,8 @@ app.get('/api/pharmacy/dashboard', authenticate, authorize('Admin', 'ITAdmin', '
         totalTransactions,
         pendingAuthorizations
       },
-      recentTransactions: recentTransactions || [],
-      pendingAuths: pendingAuths || []
+      recentTransactions: formattedTransactions || [],
+      pendingAuths: formattedAuths || []
     });
   } catch (error) {
     console.error('Pharmacy dashboard error:', error);
@@ -5394,9 +5679,10 @@ app.get('/api/pharmacy/dashboard', authenticate, authorize('Admin', 'ITAdmin', '
 
 app.get('/api/pharmacy/nhis-prices', authenticate, authorize('Admin', 'ITAdmin', 'Pharmacist', 'Accountant'), async (req, res) => {
   try {
+    // ✅ FIX: Use "Medication" NOT "medication"
     const prices = await prisma.nHISDrugPrice.findMany({
       include: { 
-        medication: {
+        Medication: {      // ✅ CHANGED: medication → Medication
           select: {
             id: true,
             name: true,
@@ -5409,7 +5695,14 @@ app.get('/api/pharmacy/nhis-prices', authenticate, authorize('Admin', 'ITAdmin',
       },
       orderBy: { createdAt: 'desc' }
     });
-    res.json(prices);
+    
+    // Format for frontend
+    const formattedPrices = prices.map(p => ({
+      ...p,
+      medication: p.Medication
+    }));
+    
+    res.json(formattedPrices);
   } catch (error) {
     console.error('Get NHIS prices error:', error);
     res.status(500).json({ error: error.message });
@@ -5440,6 +5733,7 @@ app.post('/api/pharmacy/nhis-prices', authenticate, authorize('Admin', 'ITAdmin'
 
     const calculatedPatientCopay = patientCopay || (nhisPrice * 0.1);
 
+    // ✅ FIX: Add updatedAt to upsert
     const price = await prisma.nHISDrugPrice.upsert({
       where: {
         medicationId_nhisCode: {
@@ -5460,7 +5754,8 @@ app.post('/api/pharmacy/nhis-prices', authenticate, authorize('Admin', 'ITAdmin'
         requiresPriorAuth: requiresPriorAuth || false,
         effectiveDate: effectiveDate ? new Date(effectiveDate) : new Date(),
         expiryDate: expiryDate ? new Date(expiryDate) : null,
-        isActive: true
+        isActive: true,
+        updatedAt: new Date() // ✅ ADD THIS
       },
       create: {
         medicationId,
@@ -5477,7 +5772,8 @@ app.post('/api/pharmacy/nhis-prices', authenticate, authorize('Admin', 'ITAdmin'
         requiresPriorAuth: requiresPriorAuth || false,
         effectiveDate: effectiveDate ? new Date(effectiveDate) : new Date(),
         expiryDate: expiryDate ? new Date(expiryDate) : null,
-        isActive: true
+        isActive: true,
+        updatedAt: new Date() // ✅ ADD THIS
       }
     });
 
@@ -5500,19 +5796,41 @@ app.post('/api/pharmacy/nhis-prices', authenticate, authorize('Admin', 'ITAdmin'
 app.get('/api/pharmacy/nhis-prices/:id', authenticate, authorize('Admin', 'ITAdmin', 'Pharmacist', 'Accountant'), async (req, res) => {
   try {
     const { id } = req.params;
+    
+    // ✅ FIX: Use "Medication" NOT "medication"
     const price = await prisma.nHISDrugPrice.findUnique({
       where: { id },
-      include: { medication: true }
+      include: { 
+        Medication: {      // ✅ CHANGED: medication → Medication
+          select: {
+            id: true,
+            name: true,
+            genericName: true,
+            category: true,
+            unitPrice: true,
+            stockQuantity: true
+          }
+        }
+      }
     });
+    
     if (!price) {
       return res.status(404).json({ error: 'NHIS price not found' });
     }
-    res.json(price);
+    
+    // Format for frontend
+    const formattedPrice = {
+      ...price,
+      medication: price.Medication
+    };
+    
+    res.json(formattedPrice);
   } catch (error) {
     console.error('Get NHIS price error:', error);
     res.status(500).json({ error: error.message });
   }
 });
+
 
 app.delete('/api/pharmacy/nhis-prices/:id', authenticate, authorize('Admin', 'ITAdmin', 'Accountant'), async (req, res) => {
   try {
@@ -5535,8 +5853,42 @@ app.delete('/api/pharmacy/nhis-prices/:id', authenticate, authorize('Admin', 'IT
   }
 });
 
-// ============ SERVICE PRICING ENDPOINTS ============
+// ============================================================
+// GET MEDICATION TRANSACTIONS - FIXED
+// ============================================================
 
+app.get('/api/pharmacy/transactions', authenticate, authorize('Admin', 'ITAdmin', 'Pharmacist'), async (req, res) => {
+  try {
+    const transactions = await prisma.medicationTransaction.findMany({
+      include: {
+        Medication: {      // ✅ CHANGED: medication → Medication
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50
+    });
+    
+    // Format for frontend
+    const formattedTransactions = transactions.map(t => ({
+      ...t,
+      medication: t.Medication
+    }));
+    
+    res.json(formattedTransactions);
+  } catch (error) {
+    console.error('Get transactions error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+// ============ SERVICE PRICING ENDPOINTS - COMPLETE FIXES ============
+
+// 1. GET /api/pricing - No changes needed (read-only)
 app.get('/api/pricing', authenticate, authorize('Admin', 'ITAdmin', 'Accountant', 'BillingOfficer'), async (req, res) => {
   try {
     const pricing = await prisma.servicePricing.findMany({
@@ -5550,6 +5902,7 @@ app.get('/api/pricing', authenticate, authorize('Admin', 'ITAdmin', 'Accountant'
   }
 });
 
+// 2. GET /api/pricing/:id - No changes needed (read-only)
 app.get('/api/pricing/:id', authenticate, authorize('Admin', 'ITAdmin', 'Accountant', 'BillingOfficer'), async (req, res) => {
   try {
     const id = parseInt(req.params.id);
@@ -5567,6 +5920,7 @@ app.get('/api/pricing/:id', authenticate, authorize('Admin', 'ITAdmin', 'Account
   }
 });
 
+// 3. POST /api/pricing - ADD updatedAt
 app.post('/api/pricing', authenticate, authorize('Admin', 'ITAdmin', 'Accountant'), async (req, res) => {
   try {
     const { name, description, category, basePrice, nhisPrice, corporatePrice, isActive } = req.body;
@@ -5579,6 +5933,7 @@ app.post('/api/pricing', authenticate, authorize('Admin', 'ITAdmin', 'Accountant
     
     const basePriceNum = parseFloat(basePrice) || 0;
     
+    // ✅ FIX: Add updatedAt
     const pricing = await prisma.servicePricing.create({
       data: {
         name,
@@ -5587,7 +5942,8 @@ app.post('/api/pricing', authenticate, authorize('Admin', 'ITAdmin', 'Accountant
         basePrice: basePriceNum,
         nhisPrice: parseFloat(nhisPrice) || (basePriceNum * 0.1),
         corporatePrice: parseFloat(corporatePrice) || (basePriceNum * 2),
-        isActive: isActive !== undefined ? isActive : true
+        isActive: isActive !== undefined ? isActive : true,
+        updatedAt: new Date() // ✅ ADD THIS
       }
     });
     
@@ -5610,6 +5966,7 @@ app.post('/api/pricing', authenticate, authorize('Admin', 'ITAdmin', 'Accountant
   }
 });
 
+// 4. PUT /api/pricing/:id - ADD updatedAt
 app.put('/api/pricing/:id', authenticate, authorize('Admin', 'ITAdmin', 'Accountant'), async (req, res) => {
   try {
     const id = parseInt(req.params.id);
@@ -5618,6 +5975,7 @@ app.put('/api/pricing/:id', authenticate, authorize('Admin', 'ITAdmin', 'Account
     const { name, description, category, basePrice, nhisPrice, corporatePrice, isActive } = req.body;
     const basePriceNum = parseFloat(basePrice) || 0;
     
+    // ✅ FIX: Add updatedAt
     const pricing = await prisma.servicePricing.update({
       where: { id },
       data: {
@@ -5627,7 +5985,8 @@ app.put('/api/pricing/:id', authenticate, authorize('Admin', 'ITAdmin', 'Account
         basePrice: basePriceNum,
         nhisPrice: parseFloat(nhisPrice) || (basePriceNum * 0.1),
         corporatePrice: parseFloat(corporatePrice) || (basePriceNum * 2),
-        isActive: isActive !== undefined ? isActive : true
+        isActive: isActive !== undefined ? isActive : true,
+        updatedAt: new Date() // ✅ ADD THIS
       }
     });
     
@@ -5650,6 +6009,7 @@ app.put('/api/pricing/:id', authenticate, authorize('Admin', 'ITAdmin', 'Account
   }
 });
 
+// 5. DELETE /api/pricing/:id - No changes needed
 app.delete('/api/pricing/:id', authenticate, authorize('Admin', 'ITAdmin', 'Accountant'), async (req, res) => {
   try {
     const id = parseInt(req.params.id);
@@ -5678,7 +6038,7 @@ app.delete('/api/pricing/:id', authenticate, authorize('Admin', 'ITAdmin', 'Acco
 
 // ============ SERVICE PRICING MANAGEMENT - COMPLETE API ============
 
-// ✅ UPDATED: GET /api/services with LabTechnician and LabScientist
+// 6. GET /api/services - No changes needed (read-only)
 app.get('/api/services', authenticate, authorize('Admin', 'ITAdmin', 'Accountant', 'BillingOfficer', 'Doctor', 'Nurse', 'LabTechnician', 'Radiologist', 'LabScientist'), async (req, res) => {
   try {
     const { category, search, isActive } = req.query;
@@ -5708,7 +6068,7 @@ app.get('/api/services', authenticate, authorize('Admin', 'ITAdmin', 'Accountant
   }
 });
 
-// Get single service
+// 7. GET /api/services/:id - No changes needed (read-only)
 app.get('/api/services/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
@@ -5727,7 +6087,7 @@ app.get('/api/services/:id', authenticate, async (req, res) => {
   }
 });
 
-// Create service
+// 8. POST /api/services - ADD updatedAt
 app.post('/api/services', authenticate, authorize('Admin', 'ITAdmin', 'Accountant'), async (req, res) => {
   try {
     const { 
@@ -5753,6 +6113,7 @@ app.post('/api/services', authenticate, authorize('Admin', 'ITAdmin', 'Accountan
       return res.status(400).json({ error: 'Service with this name or code already exists' });
     }
 
+    // ✅ FIX: Add updatedAt
     const service = await prisma.servicePricing.create({
       data: {
         name: name.trim(),
@@ -5763,7 +6124,8 @@ app.post('/api/services', authenticate, authorize('Admin', 'ITAdmin', 'Accountan
         nhisPrice: nhisPrice !== undefined ? parseFloat(nhisPrice) : (parseFloat(basePrice) * 0.1),
         corporatePrice: corporatePrice !== undefined ? parseFloat(corporatePrice) : (parseFloat(basePrice) * 2),
         isActive: isActive !== undefined ? isActive : true,
-        requiresApproval: requiresApproval || false
+        requiresApproval: requiresApproval || false,
+        updatedAt: new Date() // ✅ ADD THIS
       }
     });
 
@@ -5783,7 +6145,7 @@ app.post('/api/services', authenticate, authorize('Admin', 'ITAdmin', 'Accountan
   }
 });
 
-// Update service
+// 9. PUT /api/services/:id - ADD updatedAt
 app.put('/api/services/:id', authenticate, authorize('Admin', 'ITAdmin', 'Accountant'), async (req, res) => {
   try {
     const { id } = req.params;
@@ -5817,6 +6179,7 @@ app.put('/api/services/:id', authenticate, authorize('Admin', 'ITAdmin', 'Accoun
       }
     }
 
+    // ✅ FIX: Add updatedAt
     const service = await prisma.servicePricing.update({
       where: { id },
       data: {
@@ -5828,7 +6191,8 @@ app.put('/api/services/:id', authenticate, authorize('Admin', 'ITAdmin', 'Accoun
         nhisPrice: nhisPrice !== undefined ? parseFloat(nhisPrice) : undefined,
         corporatePrice: corporatePrice !== undefined ? parseFloat(corporatePrice) : undefined,
         isActive: isActive !== undefined ? isActive : undefined,
-        requiresApproval: requiresApproval !== undefined ? requiresApproval : undefined
+        requiresApproval: requiresApproval !== undefined ? requiresApproval : undefined,
+        updatedAt: new Date() // ✅ ADD THIS
       }
     });
 
@@ -5848,7 +6212,7 @@ app.put('/api/services/:id', authenticate, authorize('Admin', 'ITAdmin', 'Accoun
   }
 });
 
-// Delete service
+// 10. DELETE /api/services/:id - No changes needed
 app.delete('/api/services/:id', authenticate, authorize('Admin', 'ITAdmin', 'Accountant'), async (req, res) => {
   try {
     const { id } = req.params;
@@ -5881,7 +6245,7 @@ app.delete('/api/services/:id', authenticate, authorize('Admin', 'ITAdmin', 'Acc
   }
 });
 
-// Get service categories
+// 11. GET /api/services/categories - No changes needed (read-only)
 app.get('/api/services/categories', authenticate, async (req, res) => {
   try {
     const categories = await prisma.servicePricing.groupBy({
@@ -5903,7 +6267,7 @@ app.get('/api/services/categories', authenticate, async (req, res) => {
   }
 });
 
-// Bulk import services
+// 12. POST /api/services/bulk - ADD updatedAt
 app.post('/api/services/bulk', authenticate, authorize('Admin', 'ITAdmin', 'Accountant'), async (req, res) => {
   try {
     const { services } = req.body;
@@ -5937,6 +6301,7 @@ app.post('/api/services/bulk', authenticate, authorize('Admin', 'ITAdmin', 'Acco
         });
 
         if (existing) {
+          // ✅ FIX: Add updatedAt to update
           await prisma.servicePricing.update({
             where: { id: existing.id },
             data: {
@@ -5944,11 +6309,13 @@ app.post('/api/services/bulk', authenticate, authorize('Admin', 'ITAdmin', 'Acco
               nhisPrice: parseFloat(nhisPrice) || (parseFloat(basePrice) * 0.1),
               corporatePrice: parseFloat(corporatePrice) || (parseFloat(basePrice) * 2),
               description: description || existing.description,
-              isActive: true
+              isActive: true,
+              updatedAt: new Date() // ✅ ADD THIS
             }
           });
           results.updated++;
         } else {
+          // ✅ FIX: Add updatedAt to create
           await prisma.servicePricing.create({
             data: {
               name: name.trim(),
@@ -5958,7 +6325,8 @@ app.post('/api/services/bulk', authenticate, authorize('Admin', 'ITAdmin', 'Acco
               nhisPrice: parseFloat(nhisPrice) || (parseFloat(basePrice) * 0.1),
               corporatePrice: parseFloat(corporatePrice) || (parseFloat(basePrice) * 2),
               description: description || null,
-              isActive: true
+              isActive: true,
+              updatedAt: new Date() // ✅ ADD THIS
             }
           });
           results.created++;
@@ -8722,9 +9090,13 @@ app.post('/api/patient/checkin', authenticate, async (req, res) => {
 
     let appointment = null;
     if (appointmentId) {
+      // ✅ FIX: Use "Staff" (capitalized) NOT "staff"
       appointment = await prisma.appointment.findUnique({
         where: { id: appointmentId },
-        include: { staff: true }
+        include: {
+          Staff: true,        // ✅ CHANGED: staff → Staff
+          Patient: true       // ✅ ADDED: for completeness
+        }
       });
     } else {
       const today = new Date();
@@ -8732,6 +9104,7 @@ app.post('/api/patient/checkin', authenticate, async (req, res) => {
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
 
+      // ✅ FIX: Use "Staff" (capitalized) in include
       appointment = await prisma.appointment.findFirst({
         where: {
           patientId: patient.id,
@@ -8741,7 +9114,10 @@ app.post('/api/patient/checkin', authenticate, async (req, res) => {
           },
           status: 'Scheduled'
         },
-        include: { staff: true }
+        include: {
+          Staff: true,        // ✅ CHANGED: staff → Staff
+          Patient: true       // ✅ ADDED
+        }
       });
     }
 
@@ -8750,15 +9126,23 @@ app.post('/api/patient/checkin', authenticate, async (req, res) => {
     let wardId = null;
 
     if (appointment) {
+      // ✅ FIX: Use "Staff" (capitalized)
       const staff = await prisma.staff.findUnique({
         where: { id: appointment.staffId },
-        include: { clinics: true }
+        include: {
+          StaffClinic: {      // ✅ CHANGED: clinics → StaffClinic
+            select: { clinicId: true }
+          }
+        }
       });
-      if (staff && staff.clinics.length > 0) {
-        clinicId = staff.clinics[0].clinicId;
+      
+      // ✅ Get the first clinic from StaffClinic
+      if (staff && staff.StaffClinic && staff.StaffClinic.length > 0) {
+        clinicId = staff.StaffClinic[0].clinicId;
       }
     }
 
+    // ✅ FIX: Use "Patient" (capitalized) in include
     const queueEntry = await prisma.patientQueue.create({
       data: {
         patientId: patient.id,
@@ -8770,12 +9154,24 @@ app.post('/api/patient/checkin', authenticate, async (req, res) => {
         clinicId,
         wardId,
         assignedTo: appointment?.staffId || null,
-        notes: appointment ? `Appointment at ${new Date(appointment.dateTime).toLocaleTimeString()} with Dr. ${appointment.staff?.firstName} ${appointment.staff?.lastName}` : 'Walk-in patient'
+        notes: appointment ? `Appointment at ${new Date(appointment.dateTime).toLocaleTimeString()} with Dr. ${appointment.Staff?.firstName} ${appointment.Staff?.lastName}` : 'Walk-in patient',
+        updatedAt: new Date() // ✅ ADD THIS
       },
       include: {
-        patient: true,
-        appointment: {
-          include: { staff: true }
+        Patient: {          // ✅ CHANGED: patient → Patient
+          select: {
+            id: true,
+            hospitalId: true,
+            firstName: true,
+            lastName: true,
+            phone: true,
+            patientCategory: true
+          }
+        },
+        Appointment: {      // ✅ CHANGED: appointment → Appointment
+          include: {
+            Staff: true     // ✅ CHANGED: staff → Staff
+          }
         }
       }
     });
@@ -8789,6 +9185,7 @@ app.post('/api/patient/checkin', authenticate, async (req, res) => {
       }
     });
 
+    // ✅ FIX: Use the correct field names
     const queuePosition = await prisma.patientQueue.count({
       where: {
         status: 'waiting',
@@ -8797,9 +9194,16 @@ app.post('/api/patient/checkin', authenticate, async (req, res) => {
       }
     });
 
+    // Format response
+    const formattedQueueEntry = {
+      ...queueEntry,
+      patient: queueEntry.Patient,
+      appointment: queueEntry.Appointment
+    };
+
     res.json({
       message: 'Patient checked in successfully',
-      queueEntry,
+      queueEntry: formattedQueueEntry,
       queuePosition: queuePosition + 1,
       patient: {
         id: patient.id,
@@ -8809,7 +9213,10 @@ app.post('/api/patient/checkin', authenticate, async (req, res) => {
         phone: patient.phone,
         patientCategory: patient.patientCategory
       },
-      appointment,
+      appointment: appointment ? {
+        ...appointment,
+        staff: appointment.Staff
+      } : null,
       autoFile: {
         patientId: patient.id,
         hospitalId: patient.hospitalId,
@@ -8817,7 +9224,7 @@ app.post('/api/patient/checkin', authenticate, async (req, res) => {
         profileUrl: `/patient-profile/${patient.id}`,
         hasAppointment: !!appointment,
         appointmentTime: appointment ? new Date(appointment.dateTime).toLocaleString() : null,
-        doctor: appointment?.staff ? `Dr. ${appointment.staff.firstName} ${appointment.staff.lastName}` : null
+        doctor: appointment?.Staff ? `Dr. ${appointment.Staff.firstName} ${appointment.Staff.lastName}` : null
       }
     });
   } catch (error) {
@@ -11628,6 +12035,33 @@ app.put('/api/services/config/:serviceType', authenticate, authorize('Admin', 'I
     res.json(config);
   } catch (error) {
     console.error('Update service config error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================================
+// GET AVAILABLE DOCTORS - FOR APPOINTMENT SCHEDULING
+// ============================================================
+
+app.get('/api/doctors/available', authenticate, authorize('Doctor', 'Nurse', 'Records', 'Admin'), async (req, res) => {
+  try {
+    const doctors = await prisma.staff.findMany({
+      where: {
+        role: { in: ['Doctor', 'Obstetrician'] },
+        isActive: true
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        role: true,
+        email: true
+      },
+      orderBy: { firstName: 'asc' }
+    });
+    res.json(doctors);
+  } catch (error) {
+    console.error('Error fetching doctors:', error);
     res.status(500).json({ error: error.message });
   }
 });
