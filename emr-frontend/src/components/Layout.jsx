@@ -33,6 +33,7 @@ const Layout = () => {
       { path: '/staff', label: '👨‍⚕️ Staff' },
       { path: '/clinics', label: '🏥 Manage Clinics' },
       { path: '/wards', label: '🛏️ Manage Wards' },
+      { path: '/service-config', label: '💰 Service Fees' }, 
       { path: '/permissions', label: '🔐 Role Permissions' },
       { path: '/audit-logs', label: '📋 Audit Logs' },
       { path: '/system-status', label: '🖥️ System Status' },

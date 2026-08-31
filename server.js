@@ -208,7 +208,7 @@ const authenticatePatient = async (req, res, next) => {
 
 // ============ PATIENT WALLET ENDPOINTS ============
 
-// Get Patient Wallet (Patient)
+// ✅ FIXED: Get Patient Wallet (Patient)
 app.get('/api/patient/wallet', authenticatePatient, async (req, res) => {
   try {
     const patientId = req.patient.id;
@@ -216,7 +216,7 @@ app.get('/api/patient/wallet', authenticatePatient, async (req, res) => {
     let wallet = await prisma.patientWallet.findUnique({
       where: { patientId },
       include: {
-        transactions: {
+        WalletTransaction: {
           orderBy: { createdAt: 'desc' },
           take: 50
         }
@@ -228,10 +228,11 @@ app.get('/api/patient/wallet', authenticatePatient, async (req, res) => {
         data: {
           patientId,
           balance: 0,
-          status: 'Active'
+          status: 'Active',
+          updatedAt: new Date() // ✅ ADD THIS
         },
         include: {
-          transactions: {
+          WalletTransaction: {
             orderBy: { createdAt: 'desc' },
             take: 50
           }
@@ -239,14 +240,20 @@ app.get('/api/patient/wallet', authenticatePatient, async (req, res) => {
       });
     }
 
-    res.json(wallet);
+    // Format response
+    const formattedWallet = {
+      ...wallet,
+      transactions: wallet.WalletTransaction || []
+    };
+
+    res.json(formattedWallet);
   } catch (error) {
     console.error('Get wallet error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Get Patient Wallet (Staff)
+// ✅ FIXED: Get Patient Wallet (Staff)
 app.get('/api/patients/:patientId/wallet', authenticate, authorize('Admin', 'Records', 'BillingOfficer', 'Accountant'), async (req, res) => {
   try {
     const { patientId } = req.params;
@@ -262,7 +269,7 @@ app.get('/api/patients/:patientId/wallet', authenticate, authorize('Admin', 'Rec
     let wallet = await prisma.patientWallet.findUnique({
       where: { patientId },
       include: {
-        transactions: {
+        WalletTransaction: {
           orderBy: { createdAt: 'desc' },
           take: 100
         }
@@ -274,10 +281,11 @@ app.get('/api/patients/:patientId/wallet', authenticate, authorize('Admin', 'Rec
         data: {
           patientId,
           balance: 0,
-          status: 'Active'
+          status: 'Active',
+          updatedAt: new Date() // ✅ ADD THIS
         },
         include: {
-          transactions: {
+          WalletTransaction: {
             orderBy: { createdAt: 'desc' },
             take: 100
           }
@@ -285,15 +293,18 @@ app.get('/api/patients/:patientId/wallet', authenticate, authorize('Admin', 'Rec
       });
     }
 
-    res.json({
+    const formattedWallet = {
       ...wallet,
+      transactions: wallet.WalletTransaction || [],
       patient: {
         id: patient.id,
         hospitalId: patient.hospitalId,
         firstName: patient.firstName,
         lastName: patient.lastName
       }
-    });
+    };
+
+    res.json(formattedWallet);
   } catch (error) {
     console.error('Get patient wallet error:', error);
     res.status(500).json({ error: error.message });
@@ -318,6 +329,30 @@ app.post('/api/patients/:patientId/wallet/deposit', authenticate, authorize('Adm
       return res.status(404).json({ error: 'Patient not found' });
     }
 
+    // ✅ FETCH THE STAFF MEMBER FROM DATABASE
+    const staff = await prisma.staff.findUnique({
+      where: { id: req.user.id },
+      select: {
+        firstName: true,
+        lastName: true,
+        username: true
+      }
+    });
+
+    // ✅ BUILD STAFF NAME WITH FALLBACKS
+    let staffName = 'Unknown Staff';
+    if (staff) {
+      if (staff.firstName && staff.lastName) {
+        staffName = `${staff.firstName} ${staff.lastName}`;
+      } else if (staff.firstName) {
+        staffName = staff.firstName;
+      } else if (staff.lastName) {
+        staffName = staff.lastName;
+      } else if (staff.username) {
+        staffName = staff.username;
+      }
+    }
+
     let wallet = await prisma.patientWallet.findUnique({
       where: { patientId }
     });
@@ -327,7 +362,8 @@ app.post('/api/patients/:patientId/wallet/deposit', authenticate, authorize('Adm
         data: {
           patientId,
           balance: 0,
-          status: 'Active'
+          status: 'Active',
+          updatedAt: new Date()
         }
       });
     }
@@ -344,10 +380,12 @@ app.post('/api/patients/:patientId/wallet/deposit', authenticate, authorize('Adm
         where: { id: wallet.id },
         data: {
           balance: balanceAfter,
-          lastTransactionAt: new Date()
+          lastTransactionAt: new Date(),
+          updatedAt: new Date()
         }
       });
 
+      // ✅ USE THE STAFF NAME WE FETCHED
       const transaction = await tx.walletTransaction.create({
         data: {
           walletId: wallet.id,
@@ -355,13 +393,14 @@ app.post('/api/patients/:patientId/wallet/deposit', authenticate, authorize('Adm
           amount: amount,
           balanceBefore: balanceBefore,
           balanceAfter: balanceAfter,
-          description: `Cash deposit by ${req.user.firstName} ${req.user.lastName}`,
+          description: `Cash deposit by ${staffName}`,
           reference: `DEP-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
           status: 'Completed',
           paymentMethod: paymentMethod || 'Cash',
           paymentReference: paymentReference || null,
           paidToStaffId: req.user.id,
-          notes: notes || null
+          notes: notes || null,
+          updatedAt: new Date()
         }
       });
 
@@ -370,7 +409,7 @@ app.post('/api/patients/:patientId/wallet/deposit', authenticate, authorize('Adm
           staffId: req.user.id,
           action: 'WALLET_DEPOSIT',
           module: 'Wallet',
-          details: `Deposited ₦${amount.toLocaleString()} to wallet of ${patient.hospitalId}`
+          details: `Deposited ₦${amount.toLocaleString()} to wallet of ${patient.hospitalId} by ${staffName}`
         }
       });
 
@@ -378,7 +417,7 @@ app.post('/api/patients/:patientId/wallet/deposit', authenticate, authorize('Adm
     });
 
     res.json({
-      message: `₦${amount.toLocaleString()} deposited successfully`,
+      message: `₦${amount.toLocaleString()} deposited successfully by ${staffName}`,
       wallet: result.updatedWallet,
       transaction: result.transaction
     });
@@ -388,7 +427,6 @@ app.post('/api/patients/:patientId/wallet/deposit', authenticate, authorize('Adm
   }
 });
 
-// Pay from Wallet (Staff)
 app.post('/api/patients/:patientId/wallet/pay', authenticate, authorize('Admin', 'Records', 'BillingOfficer', 'Accountant', 'Doctor', 'Nurse', 'Pharmacist', 'LabTechnician', 'Radiologist'), async (req, res) => {
   try {
     const { patientId } = req.params;
@@ -430,6 +468,30 @@ app.post('/api/patients/:patientId/wallet/pay', authenticate, authorize('Admin',
       });
     }
 
+    // ✅ FETCH THE STAFF MEMBER FROM DATABASE
+    const staff = await prisma.staff.findUnique({
+      where: { id: req.user.id },
+      select: {
+        firstName: true,
+        lastName: true,
+        username: true
+      }
+    });
+
+    // ✅ BUILD STAFF NAME WITH FALLBACKS
+    let staffName = 'Unknown Staff';
+    if (staff) {
+      if (staff.firstName && staff.lastName) {
+        staffName = `${staff.firstName} ${staff.lastName}`;
+      } else if (staff.firstName) {
+        staffName = staff.firstName;
+      } else if (staff.lastName) {
+        staffName = staff.lastName;
+      } else if (staff.username) {
+        staffName = staff.username;
+      }
+    }
+
     const balanceBefore = wallet.balance;
     const balanceAfter = balanceBefore - amount;
 
@@ -438,10 +500,12 @@ app.post('/api/patients/:patientId/wallet/pay', authenticate, authorize('Admin',
         where: { id: wallet.id },
         data: {
           balance: balanceAfter,
-          lastTransactionAt: new Date()
+          lastTransactionAt: new Date(),
+          updatedAt: new Date()
         }
       });
 
+      // ✅ USE THE STAFF NAME WE FETCHED
       const transaction = await tx.walletTransaction.create({
         data: {
           walletId: wallet.id,
@@ -456,7 +520,8 @@ app.post('/api/patients/:patientId/wallet/pay', authenticate, authorize('Admin',
           serviceId: serviceId || null,
           serviceType: serviceType || null,
           paidToStaffId: req.user.id,
-          notes: `Payment processed by ${req.user.firstName} ${req.user.lastName}`
+          notes: `Payment processed by ${staffName}`,
+          updatedAt: new Date()
         }
       });
 
@@ -465,7 +530,7 @@ app.post('/api/patients/:patientId/wallet/pay', authenticate, authorize('Admin',
           staffId: req.user.id,
           action: 'WALLET_PAYMENT',
           module: 'Wallet',
-          details: `Paid ₦${amount.toLocaleString()} from wallet of ${patient.hospitalId} - ${description}`
+          details: `Paid ₦${amount.toLocaleString()} from wallet of ${patient.hospitalId} by ${staffName} - ${description}`
         }
       });
 
@@ -473,12 +538,119 @@ app.post('/api/patients/:patientId/wallet/pay', authenticate, authorize('Admin',
     });
 
     res.json({
-      message: `₦${amount.toLocaleString()} paid successfully from wallet`,
+      message: `₦${amount.toLocaleString()} paid successfully from wallet by ${staffName}`,
       wallet: result.updatedWallet,
       transaction: result.transaction
     });
   } catch (error) {
     console.error('Wallet payment error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Pay from Wallet (Staff)
+app.post('/api/patients/:patientId/wallet/deposit', authenticate, authorize('Admin', 'Records', 'BillingOfficer', 'Accountant'), async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    const { amount, paymentMethod, paymentReference, notes } = req.body;
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: 'Valid amount is required' });
+    }
+
+    const patient = await prisma.patient.findUnique({
+      where: { id: patientId }
+    });
+
+    if (!patient) {
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+
+    // ✅ FETCH STAFF NAME FROM DATABASE
+    const staff = await prisma.staff.findUnique({
+      where: { id: req.user.id },
+      select: {
+        firstName: true,
+        lastName: true,
+        username: true
+      }
+    });
+
+    // ✅ BUILD STAFF NAME WITH FALLBACK
+    const staffName = staff 
+      ? `${staff.firstName || ''} ${staff.lastName || ''}`.trim() || staff.username || 'Unknown Staff'
+      : 'Unknown Staff';
+
+    let wallet = await prisma.patientWallet.findUnique({
+      where: { patientId }
+    });
+
+    if (!wallet) {
+      wallet = await prisma.patientWallet.create({
+        data: {
+          patientId,
+          balance: 0,
+          status: 'Active',
+          updatedAt: new Date()
+        }
+      });
+    }
+
+    if (wallet.status !== 'Active') {
+      return res.status(400).json({ error: `Wallet is ${wallet.status.toLowerCase()}` });
+    }
+
+    const balanceBefore = wallet.balance;
+    const balanceAfter = balanceBefore + amount;
+
+    const result = await prisma.$transaction(async (tx) => {
+      const updatedWallet = await tx.patientWallet.update({
+        where: { id: wallet.id },
+        data: {
+          balance: balanceAfter,
+          lastTransactionAt: new Date(),
+          updatedAt: new Date()
+        }
+      });
+
+      // ✅ USE STAFF NAME IN DESCRIPTION
+      const transaction = await tx.walletTransaction.create({
+        data: {
+          walletId: wallet.id,
+          transactionType: 'Deposit',
+          amount: amount,
+          balanceBefore: balanceBefore,
+          balanceAfter: balanceAfter,
+          description: `Cash deposit by ${staffName}`,
+          reference: `DEP-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+          status: 'Completed',
+          paymentMethod: paymentMethod || 'Cash',
+          paymentReference: paymentReference || null,
+          paidToStaffId: req.user.id,
+          notes: notes || null,
+          updatedAt: new Date()
+        }
+      });
+
+      await tx.auditLog.create({
+        data: {
+          staffId: req.user.id,
+          action: 'WALLET_DEPOSIT',
+          module: 'Wallet',
+          details: `Deposited ₦${amount.toLocaleString()} to wallet of ${patient.hospitalId} by ${staffName}`
+        }
+      });
+
+      return { updatedWallet, transaction };
+    });
+
+    res.json({
+      message: `₦${amount.toLocaleString()} deposited successfully by ${staffName}`,
+      wallet: result.updatedWallet,
+      transaction: result.transaction
+    });
+  } catch (error) {
+    console.error('Wallet deposit error:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -2109,8 +2281,6 @@ app.patch('/api/roi/:id', authenticate, authorize('Admin', 'Records', 'ITAdmin')
   }
 });
 
-// ============ PATIENT ENDPOINTS ============
-
 app.post('/api/patients', authenticate, authorize('Admin', 'Records', 'ITAdmin'), async (req, res) => {
   try {
     const { 
@@ -2119,6 +2289,7 @@ app.post('/api/patients', authenticate, authorize('Admin', 'Records', 'ITAdmin')
       patientCategory, insuranceProvider, insuranceId, corporateCompany
     } = req.body;
 
+    // Validation
     if (!firstName || !lastName || !dateOfBirth || !gender) {
       return res.status(400).json({ error: 'Missing required fields: firstName, lastName, dateOfBirth, gender' });
     }
@@ -2126,7 +2297,11 @@ app.post('/api/patients', authenticate, authorize('Admin', 'Records', 'ITAdmin')
       return res.status(400).json({ error: 'Next of Kin phone number is required' });
     }
 
-    const allPatients = await prisma.patient.findMany({ select: { hospitalId: true } });
+    // Generate Hospital ID
+    const allPatients = await prisma.patient.findMany({ 
+      select: { hospitalId: true } 
+    });
+    
     let maxNumericId = 0;
     for (const p of allPatients) {
       const num = parseInt(p.hospitalId, 10);
@@ -2139,37 +2314,190 @@ app.post('/api/patients', authenticate, authorize('Admin', 'Records', 'ITAdmin')
     while (attempts < 5) {
       try {
         const hospitalId = ((nextIdNumber * 9301 + 12345) % 1000000).toString().padStart(6, '0');
+        
+        // ✅ FIXED: Include updatedAt since your schema requires it
         patient = await prisma.patient.create({
           data: {
-            hospitalId, firstName, lastName, dateOfBirth: new Date(dateOfBirth), gender,
-            phone, email, address, emergencyContact, allergies,
-            nextOfKinName, nextOfKinPhone, nextOfKinRelationship,
+            hospitalId: hospitalId,
+            firstName: firstName,
+            lastName: lastName,
+            dateOfBirth: new Date(dateOfBirth),
+            gender: gender,
+            phone: phone || null,
+            email: email || null,
+            address: address || null,
+            emergencyContact: emergencyContact || null,
+            allergies: allergies || null,
+            nextOfKinName: nextOfKinName || null,
+            nextOfKinPhone: nextOfKinPhone || null,
+            nextOfKinRelationship: nextOfKinRelationship || null,
             patientCategory: patientCategory || 'FPP',
             insuranceProvider: insuranceProvider || null,
             insuranceId: insuranceId || null,
-            corporateCompany: corporateCompany || null
+            corporateCompany: corporateCompany || null,
+            updatedAt: new Date() // ✅ Add this - required by your schema
           }
         });
         break;
       } catch (err) {
-        if (err.code === 'P2002') { attempts++; nextIdNumber++; } else throw err;
+        if (err.code === 'P2002') { 
+          attempts++; 
+          nextIdNumber++; 
+        } else {
+          throw err;
+        }
       }
     }
-    if (!patient) throw new Error('Failed to generate a unique Hospital ID after multiple attempts.');
+    
+    if (!patient) {
+      throw new Error('Failed to generate a unique Hospital ID after multiple attempts.');
+    }
 
+    // ============================================================
+    // ✅ AUTO-GENERATE BILLS FOR REGISTRATION, CARD, CONSULTATION
+    // ============================================================
+    
+    const category = patient.patientCategory || 'FPP';
+    let multiplier = 1;
+    let categoryLabel = 'FPP';
+    
+    if (category === 'NHIS') {
+      multiplier = 0.1;
+      categoryLabel = 'NHIS (10%)';
+    } else if (category === 'CORPORATE') {
+      multiplier = 2;
+      categoryLabel = 'Corporate (200%)';
+    }
+    
+    // Get fee configurations (with fallback defaults)
+    let regConfig, cardConfig, consultConfig;
+    try {
+      [regConfig, cardConfig, consultConfig] = await Promise.all([
+        prisma.serviceConfiguration.findUnique({ where: { serviceType: 'REGISTRATION' } }),
+        prisma.serviceConfiguration.findUnique({ where: { serviceType: 'CARD' } }),
+        prisma.serviceConfiguration.findUnique({ where: { serviceType: 'CONSULTATION' } })
+      ]);
+    } catch (error) {
+      console.log('ℹ️ ServiceConfiguration table not found, using defaults');
+    }
+    
+    const regFee = regConfig?.baseAmount || 2000;
+    const cardFee = cardConfig?.baseAmount || 1000;
+    const consultFee = consultConfig?.baseAmount || 5000;
+    
+    const registrationAmount = Math.round(regFee * multiplier);
+    const cardAmount = Math.round(cardFee * multiplier);
+    const consultationAmount = Math.round(consultFee * multiplier);
+    const totalAmount = registrationAmount + cardAmount + consultationAmount;
+    
+    const timestamp = Date.now().toString().slice(-6);
+    const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+    const invoiceNumber = `INV-${new Date().getFullYear()}-${timestamp}-${random}`;
+    
+    // Create itemized billing record
+    const billingItems = [
+      {
+        name: 'Registration Fee',
+        category: 'Registration',
+        amount: registrationAmount,
+        status: 'Pending',
+        serviceType: 'REGISTRATION'
+      },
+      {
+        name: 'Hospital ID Card',
+        category: 'Administrative',
+        amount: cardAmount,
+        status: 'Pending',
+        serviceType: 'CARD'
+      },
+      {
+        name: 'Consultation Fee',
+        category: 'Consultation',
+        amount: consultationAmount,
+        status: 'Pending',
+        serviceType: 'CONSULTATION'
+      }
+    ];
+    
+    // ✅ Create billing record (include updatedAt)
+    const billingRecord = await prisma.billingRecord.create({
+      data: {
+        patientId: patient.id,
+        invoiceNumber: invoiceNumber,
+        items: billingItems,
+        totalAmount: totalAmount,
+        paidAmount: 0,
+        balance: totalAmount,
+        status: 'Pending',
+        description: `Registration, Card & Consultation (${categoryLabel}) - Total: ₦${totalAmount.toLocaleString()}`,
+        updatedAt: new Date() // ✅ Add this
+      }
+    });
+    
+    // ✅ Create patient journey (include updatedAt)
+    const journey = await prisma.patientJourney.create({
+      data: {
+        patientId: patient.id,
+        destinationType: 'CLINIC',
+        registeredById: req.user.id,
+        status: 'REGISTERED',
+        billingRecordId: billingRecord.id,
+        registrationFeeBilled: true,
+        cardFeeBilled: true,
+        consultationFeeBilled: true,
+        updatedAt: new Date() // ✅ Add this
+      }
+    });
+
+    // ✅ Update billing record with journey reference
+    await prisma.billingRecord.update({
+      where: { id: billingRecord.id },
+      data: { 
+        description: `${billingRecord.description} | Journey: ${journey.id}`,
+        updatedAt: new Date() // ✅ Add this
+      }
+    });
+
+    // ✅ Create audit log
     await prisma.auditLog.create({
       data: {
         staffId: req.user.id,
         action: 'CREATE_PATIENT',
         module: 'Patient',
-        details: `Created patient ${firstName} ${lastName} (${patient.hospitalId})`
+        details: `Created patient ${firstName} ${lastName} (${patient.hospitalId}) with auto-billing`
       }
     });
 
-    res.status(201).json(patient);
+    // Return patient with billing info
+    res.status(201).json({
+      ...patient,
+      billingRecord,
+      journey,
+      billingSummary: {
+        items: billingItems,
+        totalAmount: totalAmount,
+        category: categoryLabel,
+        registrationAmount: registrationAmount,
+        cardAmount: cardAmount,
+        consultationAmount: consultationAmount
+      }
+    });
+    
   } catch (error) {
     console.error('Create patient error:', error);
-    res.status(400).json({ error: error.message });
+    console.error('Error details:', error.meta);
+    console.error('Error code:', error.code);
+    
+    if (error.code === 'P2002') {
+      return res.status(400).json({ 
+        error: `Duplicate value for ${error.meta?.target?.[0] || 'field'}. Please use a unique value.` 
+      });
+    }
+    
+    res.status(400).json({ 
+      error: error.message,
+      details: error.meta || 'Unknown error'
+    });
   }
 });
 
@@ -2191,48 +2519,136 @@ app.get('/api/patients/:id', authenticate, async (req, res) => {
     const patientId = req.params.id;
     const patient = await prisma.patient.findUnique({
       where: { id: patientId },
-      include: { 
-        appointments: {
-          include: { staff: { select: { id: true, firstName: true, lastName: true, role: true } } }
-        }, 
-        clinicalNotes: {
-          include: { author: { select: { id: true, firstName: true, lastName: true, role: true } } }
-        }, 
-        prescriptions: {
-          include: { 
-            prescribedBy: { select: { id: true, firstName: true, lastName: true, role: true } },
-            dispensedBy: { select: { id: true, firstName: true, lastName: true, role: true } }
+      include: {
+        // ✅ SINGULAR - NOT plural
+        Appointment: {
+          include: {
+            Staff: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                role: true
+              }
+            }
           }
-        }, 
-        labOrders: {
-          include: { 
-            orderedBy: { select: { id: true, firstName: true, lastName: true, role: true } },
-            performedBy: { select: { id: true, firstName: true, lastName: true, role: true } }
+        },
+        // ✅ SINGULAR: ClinicalNote (NOT ClinicalNotes)
+        ClinicalNote: {
+          include: {
+            Staff: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                role: true
+              }
+            }
           }
-        }, 
-        billingRecords: true 
+        },
+        // ✅ SINGULAR: Prescription (NOT Prescriptions)
+        Prescription: {
+          include: {
+            Staff_Prescription_prescribingStaffIdToStaff: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                role: true
+              }
+            },
+            Staff_Prescription_dispensingStaffIdToStaff: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                role: true
+              }
+            }
+          }
+        },
+        // ✅ SINGULAR: LabOrder (NOT LabOrders)
+        LabOrder: {
+          include: {
+            Staff_LabOrder_orderingStaffIdToStaff: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                role: true
+              }
+            },
+            Staff_LabOrder_labStaffIdToStaff: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                role: true
+              }
+            }
+          }
+        },
+        // ✅ SINGULAR: BillingRecord (NOT BillingRecords)
+        BillingRecord: true,
+        Admission: true,
+        PatientJourney: true,
+        PatientWallet: true,
+        PaymentPlan: true,
+        Pregnancy: true,
+        VitalSign: true,
+        dental_records: true,
+        immunizations: true,
+        optometry_records: true,
+        patient_notifications: true,
+        PatientHistoryRecord: true,
+        PatientMessage: true,
+        PatientQueue: true,
+        PatientTransfer: true,
+        NHISAuthorization: true,
+        NHISClaim: true,
+        KioskSession: true,
+        ImagingOrder: true
       }
     });
-    if (!patient) return res.status(404).json({ error: 'Patient not found' });
 
+    if (!patient) {
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+
+    // Check permissions for Nurse/Doctor
     if (['Nurse', 'Doctor'].includes(req.user.role)) {
       const activeJourney = await prisma.patientJourney.findFirst({
-        where: { patientId: patientId, status: { in: ['SENT_TO_DESTINATION', 'COMPLETED'] } },
+        where: {
+          patientId: patientId,
+          status: { in: ['SENT_TO_DESTINATION', 'COMPLETED'] }
+        },
         select: { clinicId: true, wardId: true }
       });
+
       if (!activeJourney) {
-        return res.status(403).json({ error: 'This patient has not yet arrived at a clinic or ward.' });
+        return res.status(403).json({
+          error: 'This patient has not yet arrived at a clinic or ward.'
+        });
       }
+
       const staff = await prisma.staff.findUnique({
         where: { id: req.user.id },
-        include: { clinics: { select: { clinicId: true } }, wards: { select: { wardId: true } } }
+        include: {
+          StaffClinic: { select: { clinicId: true } },
+          StaffWard: { select: { wardId: true } }
+        }
       });
-      const allowedClinicIds = staff.clinics.map(c => c.clinicId);
-      const allowedWardIds = staff.wards.map(w => w.wardId);
+
+      const allowedClinicIds = staff?.StaffClinic?.map(c => c.clinicId) || [];
+      const allowedWardIds = staff?.StaffWard?.map(w => w.wardId) || [];
+
       const isAuthorized = (activeJourney.clinicId && allowedClinicIds.includes(activeJourney.clinicId)) ||
                           (activeJourney.wardId && allowedWardIds.includes(activeJourney.wardId));
+
       if (!isAuthorized) {
-        return res.status(403).json({ error: 'You are not assigned to the clinic or ward where this patient is located.' });
+        return res.status(403).json({
+          error: 'You are not assigned to the clinic or ward where this patient is located.'
+        });
       }
     }
 
@@ -2246,6 +2662,7 @@ app.get('/api/patients/:id', authenticate, async (req, res) => {
     });
 
     res.json(patient);
+
   } catch (error) {
     console.error('Get patient error:', error);
     res.status(500).json({ error: error.message });
@@ -2345,6 +2762,7 @@ app.get('/api/staff/:id', authenticate, authorize('Admin', 'ITAdmin', 'HR'), asy
   }
 });
 
+// ✅ FIXED: Create Staff
 app.post('/api/staff', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
   try {
     const { employeeId, firstName, lastName, username, email, role, departmentId, password } = req.body;
@@ -2355,6 +2773,7 @@ app.post('/api/staff', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async 
       });
     }
 
+    // Check for duplicates
     const existingEmployeeId = await prisma.staff.findUnique({
       where: { employeeId }
     });
@@ -2378,6 +2797,7 @@ app.post('/api/staff', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async 
 
     const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
 
+    // ✅ FIXED: Remove departmentId - field doesn't exist in schema
     const staff = await prisma.staff.create({
       data: {
         employeeId,
@@ -2386,9 +2806,10 @@ app.post('/api/staff', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async 
         username: username.toLowerCase().trim(),
         email,
         role,
-        departmentId: departmentId || null,
         password: hashedPassword,
-        isActive: true
+        isActive: true,
+        updatedAt: new Date()
+        // ❌ departmentId: departmentId || null, // REMOVE THIS
       }
     });
 
@@ -2415,6 +2836,7 @@ app.post('/api/staff', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async 
   }
 });
 
+// ✅ FIXED: Update Staff
 app.put('/api/staff/:id', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
   try {
     const { id } = req.params;
@@ -2453,8 +2875,8 @@ app.put('/api/staff/:id', authenticate, authorize('Admin', 'ITAdmin', 'HR'), asy
         username: username ? username.toLowerCase().trim() : undefined,
         email,
         role,
-        departmentId: departmentId || null,
-        isActive
+        isActive,
+        updatedAt: new Date() // ✅ ADD THIS
       }
     });
 
@@ -2472,12 +2894,19 @@ app.put('/api/staff/:id', authenticate, authorize('Admin', 'ITAdmin', 'HR'), asy
   }
 });
 
+// ✅ FIXED: Deactivate Staff
 app.delete('/api/staff/:id', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
   try {
     const { id } = req.params;
     const existingStaff = await prisma.staff.findUnique({ where: { id } });
     if (!existingStaff) return res.status(404).json({ error: 'Staff not found' });
-    const staff = await prisma.staff.update({ where: { id }, data: { isActive: false } });
+    const staff = await prisma.staff.update({ 
+      where: { id }, 
+      data: { 
+        isActive: false,
+        updatedAt: new Date() // ✅ ADD THIS
+      } 
+    });
     await prisma.auditLog.create({
       data: {
         staffId: req.user.id,
@@ -2490,6 +2919,35 @@ app.delete('/api/staff/:id', authenticate, authorize('Admin', 'ITAdmin', 'HR'), 
     res.json(staffWithoutPassword);
   } catch (error) {
     console.error('Deactivate staff error:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// ✅ FIXED: Reactivate Staff
+app.patch('/api/staff/:id/reactivate', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const existingStaff = await prisma.staff.findUnique({ where: { id } });
+    if (!existingStaff) return res.status(404).json({ error: 'Staff not found' });
+    const staff = await prisma.staff.update({ 
+      where: { id }, 
+      data: { 
+        isActive: true,
+        updatedAt: new Date() // ✅ ADD THIS
+      } 
+    });
+    await prisma.auditLog.create({
+      data: {
+        staffId: req.user.id,
+        action: 'REACTIVATE_STAFF',
+        module: 'Staff',
+        details: `Reactivated staff ${staff.email}`
+      }
+    });
+    const { password, ...staffWithoutPassword } = staff;
+    res.json(staffWithoutPassword);
+  } catch (error) {
+    console.error('Reactivate staff error:', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -2516,6 +2974,7 @@ app.patch('/api/staff/:id/reactivate', authenticate, authorize('Admin', 'ITAdmin
   }
 });
 
+// ✅ FIXED: Reset Password (no updatedAt needed if you're not updating the whole record)
 app.post('/api/staff/:id/reset-password', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
   try {
     const { id } = req.params;
@@ -2526,7 +2985,13 @@ app.post('/api/staff/:id/reset-password', authenticate, authorize('Admin', 'ITAd
     const existingStaff = await prisma.staff.findUnique({ where: { id } });
     if (!existingStaff) return res.status(404).json({ error: 'Staff not found' });
     const hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
-    const staff = await prisma.staff.update({ where: { id }, data: { password: hashedPassword } });
+    const staff = await prisma.staff.update({ 
+      where: { id }, 
+      data: { 
+        password: hashedPassword,
+        updatedAt: new Date() // ✅ ADD THIS
+      } 
+    });
     await prisma.auditLog.create({
       data: {
         staffId: req.user.id,
@@ -2616,7 +3081,6 @@ app.patch('/api/appointments/:id/status', authenticate, async (req, res) => {
 
 // ============ CLINICAL NOTES (SOAP) ENDPOINTS ============
 
-// ✅ UPDATED: GET /api/patients/:patientId/notes with staff name fallback
 app.get('/api/patients/:patientId/notes', authenticate, async (req, res) => {
   try {
     const { patientId } = req.params;
@@ -2628,27 +3092,27 @@ app.get('/api/patients/:patientId/notes', authenticate, async (req, res) => {
     
     const notes = await prisma.clinicalNote.findMany({
       where: { patientId },
-      include: { 
-        author: {
+      include: {
+        Staff: {        // ✅ CHANGED: author → Staff
           select: {
             id: true,
             firstName: true,
             lastName: true,
             role: true
           }
-        } 
+        }
       },
       orderBy: { createdAt: 'desc' }
     });
     
-    // ✅ Add fallback for unknown staff
+    // Format for frontend
     const formattedNotes = notes.map(note => ({
       ...note,
-      author: note.author ? {
-        ...note.author,
-        fullName: note.author.firstName && note.author.lastName 
-          ? `${note.author.firstName} ${note.author.lastName}`
-          : `${note.author.role || 'Unknown'} (ID: ${note.authorId?.slice(0, 8) || 'Unknown'})`
+      author: note.Staff ? {
+        ...note.Staff,
+        fullName: note.Staff.firstName && note.Staff.lastName 
+          ? `${note.Staff.firstName} ${note.Staff.lastName}`
+          : `${note.Staff.role || 'Unknown'} (ID: ${note.authorId?.slice(0, 8) || 'Unknown'})`
       } : {
         fullName: 'Unknown Staff (Deleted)',
         role: 'Unknown'
@@ -2661,6 +3125,11 @@ app.get('/api/patients/:patientId/notes', authenticate, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+
+// ============================================================
+// CREATE CLINICAL NOTE - FIXED
+// ============================================================
 
 app.post('/api/clinical-notes', authenticate, authorize('Doctor', 'Nurse', 'Admin', 'Records', 'Obstetrician', 'Midwife', 'Pharmacist', 'LabTechnician', 'Radiologist'), async (req, res) => {
   try {
@@ -2678,6 +3147,7 @@ app.post('/api/clinical-notes', authenticate, authorize('Doctor', 'Nurse', 'Admi
       return res.status(404).json({ error: 'Patient not found' });
     }
 
+    // ✅ FIX: Add updatedAt and use correct field names in include
     const note = await prisma.clinicalNote.create({
       data: {
         patientId,
@@ -2687,10 +3157,11 @@ app.post('/api/clinical-notes', authenticate, authorize('Doctor', 'Nurse', 'Admi
         objective: objective || '',
         assessment: assessment || '',
         plan: plan || '',
-        fullContent: fullContent || ''
+        fullContent: fullContent || '',
+        updatedAt: new Date() // ✅ ADD THIS
       },
-      include: { 
-        patient: {
+      include: {
+        Patient: {      // ✅ CHANGED: patient → Patient
           select: {
             id: true,
             hospitalId: true,
@@ -2698,7 +3169,7 @@ app.post('/api/clinical-notes', authenticate, authorize('Doctor', 'Nurse', 'Admi
             lastName: true
           }
         },
-        author: {
+        Staff: {        // ✅ CHANGED: author → Staff
           select: {
             id: true,
             firstName: true,
@@ -2709,21 +3180,32 @@ app.post('/api/clinical-notes', authenticate, authorize('Doctor', 'Nurse', 'Admi
       }
     });
 
+    // Format for frontend
+    const formattedNote = {
+      ...note,
+      patient: note.Patient,
+      author: note.Staff
+    };
+
     await prisma.auditLog.create({
       data: {
         staffId: req.user.id,
         action: 'CREATE_NOTE',
         module: 'Clinical',
-        details: `Created ${type || 'SOAP'} note for patient ${note.patient.hospitalId}`
+        details: `Created ${type || 'SOAP'} note for patient ${formattedNote.patient?.hospitalId}`
       }
     });
 
-    res.status(201).json(note);
+    res.status(201).json(formattedNote);
   } catch (error) {
     console.error('Create note error:', error);
     res.status(400).json({ error: error.message });
   }
 });
+
+// ============================================================
+// UPDATE CLINICAL NOTE - FIXED
+// ============================================================
 
 app.put('/api/clinical-notes/:id', authenticate, async (req, res) => {
   try {
@@ -2732,7 +3214,9 @@ app.put('/api/clinical-notes/:id', authenticate, async (req, res) => {
     
     const existing = await prisma.clinicalNote.findUnique({ 
       where: { id },
-      include: { author: true }
+      include: { 
+        Staff: true    // ✅ CHANGED: author → Staff
+      }
     });
     
     if (!existing) {
@@ -2743,6 +3227,7 @@ app.put('/api/clinical-notes/:id', authenticate, async (req, res) => {
       return res.status(403).json({ error: 'You can only edit your own notes' });
     }
     
+    // ✅ FIX: Add updatedAt
     const note = await prisma.clinicalNote.update({
       where: { id },
       data: { 
@@ -2751,10 +3236,11 @@ app.put('/api/clinical-notes/:id', authenticate, async (req, res) => {
         objective, 
         assessment, 
         plan, 
-        fullContent 
+        fullContent,
+        updatedAt: new Date() // ✅ ADD THIS
       },
       include: {
-        author: {
+        Staff: {        // ✅ CHANGED: author → Staff
           select: {
             id: true,
             firstName: true,
@@ -2765,12 +3251,22 @@ app.put('/api/clinical-notes/:id', authenticate, async (req, res) => {
       }
     });
     
-    res.json(note);
+    // Format for frontend
+    const formattedNote = {
+      ...note,
+      author: note.Staff
+    };
+    
+    res.json(formattedNote);
   } catch (error) { 
     console.error('Update note error:', error);
     res.status(400).json({ error: error.message }); 
   }
 });
+
+// ============================================================
+// DELETE CLINICAL NOTE - FIXED
+// ============================================================
 
 app.delete('/api/clinical-notes/:id', authenticate, async (req, res) => {
   try {
@@ -2778,7 +3274,9 @@ app.delete('/api/clinical-notes/:id', authenticate, async (req, res) => {
     
     const existing = await prisma.clinicalNote.findUnique({ 
       where: { id },
-      include: { author: true }
+      include: { 
+        Staff: true    // ✅ CHANGED: author → Staff
+      }
     });
     
     if (!existing) {
@@ -2807,35 +3305,48 @@ app.delete('/api/clinical-notes/:id', authenticate, async (req, res) => {
   }
 });
 
-// ============ PRESCRIPTION ENDPOINTS ============
+// ============================================================
+// GET PRESCRIPTIONS - FIXED
+// ============================================================
 
-// ✅ UPDATED: GET /api/prescriptions with staff name fallback
 app.get('/api/prescriptions', authenticate, async (req, res) => {
   try {
     const prescriptions = await prisma.prescription.findMany({
       include: {
-        patient: { select: { id: true, hospitalId: true, firstName: true, lastName: true } },
-        prescribedBy: { select: { id: true, firstName: true, lastName: true, role: true } },
-        dispensedBy: { select: { id: true, firstName: true, lastName: true, role: true } }
+        Patient: {      // ✅ CHANGED: patient → Patient
+          select: {
+            id: true,
+            hospitalId: true,
+            firstName: true,
+            lastName: true
+          }
+        },
+        Staff_Prescription_prescribingStaffIdToStaff: {  // ✅ CORRECT field name
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true
+          }
+        },
+        Staff_Prescription_dispensingStaffIdToStaff: {   // ✅ CORRECT field name
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true
+          }
+        }
       },
       orderBy: { createdAt: 'desc' }
     });
     
-    // ✅ Add fallback for unknown staff
+    // Format for frontend
     const formattedPrescriptions = prescriptions.map(p => ({
       ...p,
-      prescribedBy: p.prescribedBy ? {
-        ...p.prescribedBy,
-        fullName: p.prescribedBy.firstName && p.prescribedBy.lastName 
-          ? `${p.prescribedBy.firstName} ${p.prescribedBy.lastName}`
-          : `${p.prescribedBy.role || 'Unknown'} (ID: ${p.prescribingStaffId?.slice(0, 8) || 'Unknown'})`
-      } : null,
-      dispensedBy: p.dispensedBy ? {
-        ...p.dispensedBy,
-        fullName: p.dispensedBy.firstName && p.dispensedBy.lastName 
-          ? `${p.dispensedBy.firstName} ${p.dispensedBy.lastName}`
-          : `${p.dispensedBy.role || 'Unknown'} (ID: ${p.dispensingStaffId?.slice(0, 8) || 'Unknown'})`
-      } : null
+      patient: p.Patient,
+      prescribedBy: p.Staff_Prescription_prescribingStaffIdToStaff,
+      dispensedBy: p.Staff_Prescription_dispensingStaffIdToStaff
     }));
     
     res.json(formattedPrescriptions);
@@ -2845,12 +3356,19 @@ app.get('/api/prescriptions', authenticate, async (req, res) => {
   }
 });
 
+// ============================================================
+// CREATE PRESCRIPTION - FIXED
+// ============================================================
+
 app.post('/api/prescriptions', authenticate, authorize('Doctor', 'Nurse', 'Obstetrician', 'Midwife', 'Admin'), async (req, res) => {
   try {
     const { patientId, medication, dosage, frequency, duration, instructions } = req.body;
+    
     if (!patientId || !medication || !dosage || !frequency) {
       return res.status(400).json({ error: 'Missing required fields: patientId, medication, dosage, frequency' });
     }
+    
+    // ✅ FIX: Add updatedAt and use correct field names in include
     const prescription = await prisma.prescription.create({
       data: {
         patientId,
@@ -2858,35 +3376,107 @@ app.post('/api/prescriptions', authenticate, authorize('Doctor', 'Nurse', 'Obste
         medication,
         dosage,
         frequency,
-        duration,
-        instructions,
-        status: 'Prescribed'
+        duration: duration || '',
+        instructions: instructions || '',
+        status: 'Prescribed',
+        updatedAt: new Date() // ✅ ADD THIS
       },
-      include: { patient: true, prescribedBy: true }
+      include: {
+        Patient: {      // ✅ CHANGED: patient → Patient
+          select: {
+            id: true,
+            hospitalId: true,
+            firstName: true,
+            lastName: true
+          }
+        },
+        Staff_Prescription_prescribingStaffIdToStaff: {  // ✅ CHANGED: prescribedBy → Staff_Prescription_prescribingStaffIdToStaff
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true
+          }
+        }
+      }
     });
+    
+    // Format for frontend
+    const formattedPrescription = {
+      ...prescription,
+      patient: prescription.Patient,
+      prescribedBy: prescription.Staff_Prescription_prescribingStaffIdToStaff
+    };
+    
     await prisma.auditLog.create({
       data: {
         staffId: req.user.id,
         action: 'CREATE_PRESCRIPTION',
         module: 'Pharmacy',
-        details: `Created prescription for ${medication} for patient ${prescription.patient.hospitalId}`
+        details: `Created prescription for ${medication} for patient ${formattedPrescription.patient?.hospitalId}`
       }
     });
-    res.status(201).json(prescription);
+    
+    res.status(201).json(formattedPrescription);
   } catch (error) {
     console.error('Create prescription error:', error);
     res.status(400).json({ error: error.message });
   }
 });
 
+// ============================================================
+// DISPENSE PRESCRIPTION - FIXED
+// ============================================================
+
 app.patch('/api/prescriptions/:id/dispense', authenticate, authorize('Pharmacist'), async (req, res) => {
   try {
     const { id } = req.params;
+    
+    // ✅ FIX: Add updatedAt and use correct field names in include
     const prescription = await prisma.prescription.update({
       where: { id },
-      data: { dispensingStaffId: req.user.id, status: 'Dispensed' },
-      include: { patient: true, prescribedBy: true, dispensedBy: true }
+      data: { 
+        dispensingStaffId: req.user.id, 
+        status: 'Dispensed',
+        dispensedAt: new Date(),
+        updatedAt: new Date() // ✅ ADD THIS
+      },
+      include: {
+        Patient: {      // ✅ CHANGED: patient → Patient
+          select: {
+            id: true,
+            hospitalId: true,
+            firstName: true,
+            lastName: true
+          }
+        },
+        Staff_Prescription_prescribingStaffIdToStaff: {  // ✅ CHANGED: prescribedBy → Staff_Prescription_prescribingStaffIdToStaff
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true
+          }
+        },
+        Staff_Prescription_dispensingStaffIdToStaff: {   // ✅ CHANGED: dispensedBy → Staff_Prescription_dispensingStaffIdToStaff
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true
+          }
+        }
+      }
     });
+    
+    // Format for frontend
+    const formattedPrescription = {
+      ...prescription,
+      patient: prescription.Patient,
+      prescribedBy: prescription.Staff_Prescription_prescribingStaffIdToStaff,
+      dispensedBy: prescription.Staff_Prescription_dispensingStaffIdToStaff
+    };
+    
     await prisma.auditLog.create({
       data: {
         staffId: req.user.id,
@@ -2895,7 +3485,8 @@ app.patch('/api/prescriptions/:id/dispense', authenticate, authorize('Pharmacist
         details: `Dispensed prescription ${id} for ${prescription.medication}`
       }
     });
-    res.json(prescription);
+    
+    res.json(formattedPrescription);
   } catch (error) {
     console.error('Dispense prescription error:', error);
     res.status(400).json({ error: error.message });
@@ -2904,33 +3495,44 @@ app.patch('/api/prescriptions/:id/dispense', authenticate, authorize('Pharmacist
 
 // ============ LAB ORDER ENDPOINTS ============
 
-// ✅ UPDATED: GET /api/lab-orders with staff name fallback
 app.get('/api/lab-orders', authenticate, authorize('Doctor', 'Nurse', 'Obstetrician', 'Midwife', 'Admin', 'LabTechnician', 'LabScientist'), async (req, res) => {
   try {
     const labOrders = await prisma.labOrder.findMany({
       include: {
-        patient: { select: { id: true, hospitalId: true, firstName: true, lastName: true } },
-        orderedBy: { select: { id: true, firstName: true, lastName: true, role: true } },
-        performedBy: { select: { id: true, firstName: true, lastName: true, role: true } }
+        Patient: {      // ✅ CHANGED: patient → Patient
+          select: {
+            id: true,
+            hospitalId: true,
+            firstName: true,
+            lastName: true
+          }
+        },
+        Staff_LabOrder_orderingStaffIdToStaff: {  // ✅ CORRECT field name
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true
+          }
+        },
+        Staff_LabOrder_labStaffIdToStaff: {       // ✅ CORRECT field name
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true
+          }
+        }
       },
       orderBy: { createdAt: 'desc' }
     });
     
-    // ✅ Add fallback for unknown staff
+    // Format for frontend
     const formattedOrders = labOrders.map(order => ({
       ...order,
-      orderedBy: order.orderedBy ? {
-        ...order.orderedBy,
-        fullName: order.orderedBy.firstName && order.orderedBy.lastName 
-          ? `${order.orderedBy.firstName} ${order.orderedBy.lastName}`
-          : `${order.orderedBy.role || 'Unknown'} (ID: ${order.orderingStaffId?.slice(0, 8) || 'Unknown'})`
-      } : null,
-      performedBy: order.performedBy ? {
-        ...order.performedBy,
-        fullName: order.performedBy.firstName && order.performedBy.lastName 
-          ? `${order.performedBy.firstName} ${order.performedBy.lastName}`
-          : `${order.performedBy.role || 'Unknown'} (ID: ${order.labStaffId?.slice(0, 8) || 'Unknown'})`
-      } : null
+      patient: order.Patient,
+      orderedBy: order.Staff_LabOrder_orderingStaffIdToStaff,
+      performedBy: order.Staff_LabOrder_labStaffIdToStaff
     }));
     
     res.json(formattedOrders);
@@ -2940,12 +3542,19 @@ app.get('/api/lab-orders', authenticate, authorize('Doctor', 'Nurse', 'Obstetric
   }
 });
 
+// ============================================================
+// CREATE LAB ORDER - FIXED
+// ============================================================
+
 app.post('/api/lab-orders', authenticate, authorize('Doctor', 'Nurse', 'Obstetrician', 'Midwife', 'Admin'), async (req, res) => {
   try {
     const { patientId, testName, testType, priority, notes } = req.body;
+    
     if (!patientId || !testName || !testType) {
       return res.status(400).json({ error: 'Missing required fields: patientId, testName, testType' });
     }
+    
+    // ✅ FIX: Add updatedAt and use correct field names in include
     const labOrder = await prisma.labOrder.create({
       data: {
         patientId,
@@ -2954,57 +3563,131 @@ app.post('/api/lab-orders', authenticate, authorize('Doctor', 'Nurse', 'Obstetri
         testType,
         priority: priority || 'Routine',
         status: 'Ordered',
-        notes
+        notes: notes || null,
+        updatedAt: new Date() // ✅ ADD THIS
       },
-      include: { patient: true, orderedBy: true }
+      include: {
+        Patient: {      // ✅ CHANGED: patient → Patient
+          select: {
+            id: true,
+            hospitalId: true,
+            firstName: true,
+            lastName: true
+          }
+        },
+        Staff_LabOrder_orderingStaffIdToStaff: {  // ✅ CHANGED: orderedBy → Staff_LabOrder_orderingStaffIdToStaff
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true
+          }
+        }
+      }
     });
+    
+    // Format for frontend
+    const formattedLabOrder = {
+      ...labOrder,
+      patient: labOrder.Patient,
+      orderedBy: labOrder.Staff_LabOrder_orderingStaffIdToStaff
+    };
+    
     await prisma.auditLog.create({
       data: {
         staffId: req.user.id,
         action: 'CREATE_LAB_ORDER',
         module: 'Lab',
-        details: `Created lab order for ${testName} for patient ${labOrder.patient.hospitalId}`
+        details: `Created lab order for ${testName} for patient ${formattedLabOrder.patient?.hospitalId}`
       }
     });
-    res.status(201).json(labOrder);
+    
+    res.status(201).json(formattedLabOrder);
   } catch (error) {
     console.error('Create lab order error:', error);
     res.status(400).json({ error: error.message });
   }
 });
 
-// ✅ UPDATED: PATCH /api/lab-orders/:id/results with LabTechnician and LabScientist
+// ============================================================
+// UPDATE LAB RESULTS - FIXED
+// ============================================================
+
 app.patch('/api/lab-orders/:id/results', authenticate, authorize('Doctor', 'Nurse', 'LabTechnician', 'LabScientist', 'Admin'), async (req, res) => {
   try {
     const { id } = req.params;
     const { result, status } = req.body;
-    if (!result) return res.status(400).json({ error: 'Result is required' });
+    
+    if (!result) {
+      return res.status(400).json({ error: 'Result is required' });
+    }
+    
+    // ✅ FIX: Add updatedAt and use correct field names in include
     const labOrder = await prisma.labOrder.update({
       where: { id },
       data: { 
         result, 
         status: status || 'Completed', 
         resultDate: new Date(), 
-        labStaffId: req.user.id 
+        labStaffId: req.user.id,
+        updatedAt: new Date() // ✅ ADD THIS
       },
-      include: { patient: true, orderedBy: true, performedBy: true }
+      include: {
+        Patient: {      // ✅ CHANGED: patient → Patient
+          select: {
+            id: true,
+            hospitalId: true,
+            firstName: true,
+            lastName: true
+          }
+        },
+        Staff_LabOrder_orderingStaffIdToStaff: {  // ✅ CHANGED: orderedBy → Staff_LabOrder_orderingStaffIdToStaff
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true
+          }
+        },
+        Staff_LabOrder_labStaffIdToStaff: {       // ✅ CHANGED: performedBy → Staff_LabOrder_labStaffIdToStaff
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true
+          }
+        }
+      }
     });
+    
+    // Format for frontend
+    const formattedLabOrder = {
+      ...labOrder,
+      patient: labOrder.Patient,
+      orderedBy: labOrder.Staff_LabOrder_orderingStaffIdToStaff,
+      performedBy: labOrder.Staff_LabOrder_labStaffIdToStaff
+    };
+    
     await prisma.auditLog.create({
       data: {
         staffId: req.user.id,
         action: 'UPDATE_LAB_RESULT',
         module: 'Lab',
-        details: `Updated lab result for ${labOrder.testName} for patient ${labOrder.patient.hospitalId}`
+        details: `Updated lab result for ${labOrder.testName} for patient ${formattedLabOrder.patient?.hospitalId}`
       }
     });
-    res.json(labOrder);
+    
+    res.json(formattedLabOrder);
   } catch (error) {
     console.error('Update lab result error:', error);
     res.status(400).json({ error: error.message });
   }
 });
 
-// ✅ NEW: PATCH /api/lab-orders/:id/status for Lab Staff
+// ============================================================
+// UPDATE LAB STATUS - FIXED
+// ============================================================
+
 app.patch('/api/lab-orders/:id/status', authenticate, authorize('Doctor', 'Nurse', 'LabTechnician', 'LabScientist', 'Admin'), async (req, res) => {
   try {
     const { id } = req.params;
@@ -3019,15 +3702,50 @@ app.patch('/api/lab-orders/:id/status', authenticate, authorize('Doctor', 'Nurse
       return res.status(400).json({ error: 'Invalid status' });
     }
     
+    // ✅ FIX: Add updatedAt and use correct field names in include
     const labOrder = await prisma.labOrder.update({
       where: { id },
       data: { 
         status,
         ...(status === 'In Progress' && { labStaffId: req.user.id }),
-        ...(status === 'Completed' && { resultDate: new Date(), labStaffId: req.user.id })
+        ...(status === 'Completed' && { resultDate: new Date(), labStaffId: req.user.id }),
+        updatedAt: new Date() // ✅ ADD THIS
       },
-      include: { patient: true, orderedBy: true, performedBy: true }
+      include: {
+        Patient: {      // ✅ CHANGED: patient → Patient
+          select: {
+            id: true,
+            hospitalId: true,
+            firstName: true,
+            lastName: true
+          }
+        },
+        Staff_LabOrder_orderingStaffIdToStaff: {  // ✅ CHANGED: orderedBy → Staff_LabOrder_orderingStaffIdToStaff
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true
+          }
+        },
+        Staff_LabOrder_labStaffIdToStaff: {       // ✅ CHANGED: performedBy → Staff_LabOrder_labStaffIdToStaff
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true
+          }
+        }
+      }
     });
+    
+    // Format for frontend
+    const formattedLabOrder = {
+      ...labOrder,
+      patient: labOrder.Patient,
+      orderedBy: labOrder.Staff_LabOrder_orderingStaffIdToStaff,
+      performedBy: labOrder.Staff_LabOrder_labStaffIdToStaff
+    };
     
     await prisma.auditLog.create({
       data: {
@@ -3038,19 +3756,21 @@ app.patch('/api/lab-orders/:id/status', authenticate, authorize('Doctor', 'Nurse
       }
     });
     
-    res.json(labOrder);
+    res.json(formattedLabOrder);
   } catch (error) {
     console.error('Update lab status error:', error);
     res.status(400).json({ error: error.message });
   }
 });
 
-// ✅ NEW: Validate lab result endpoint (Lab Scientist only) - WITH ERROR HANDLING
+// ============================================================
+// VALIDATE LAB RESULT - FIXED
+// ============================================================
+
 app.patch('/api/lab-orders/:id/validate', authenticate, authorize('LabScientist', 'Admin'), async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Check if lab order exists
     const labOrder = await prisma.labOrder.findUnique({
       where: { id }
     });
@@ -3063,77 +3783,17 @@ app.patch('/api/lab-orders/:id/validate', authenticate, authorize('LabScientist'
       return res.status(400).json({ error: 'Cannot validate an order without results' });
     }
     
-    // Try to update with validation fields
-    try {
-      // First check if the validated field exists
-      const testQuery = await prisma.labOrder.findFirst({
-        select: { validated: true }
-      }).catch(() => null);
-      
-      // If the field exists, update with validation
-      const updated = await prisma.labOrder.update({
-        where: { id },
-        data: { 
-          validated: true,
-          validatedBy: req.user.id,
-          validatedAt: new Date()
-        },
-        include: { 
-          patient: { select: { id: true, hospitalId: true, firstName: true, lastName: true } }, 
-          orderedBy: { select: { id: true, firstName: true, lastName: true, role: true } }, 
-          performedBy: { select: { id: true, firstName: true, lastName: true, role: true } }
-        }
-      });
-      
-      await prisma.auditLog.create({
-        data: {
-          staffId: req.user.id,
-          action: 'VALIDATE_LAB_RESULT',
-          module: 'Lab',
-          details: `Validated lab result for ${labOrder.testName} for patient ${labOrder.patientId}`
-        }
-      });
-      
-      res.json({ 
-        message: '✅ Lab result validated successfully!', 
-        order: updated 
-      });
-      
-    } catch (updateError) {
-      // If validation fields don't exist, just log and return success
-      console.log('ℹ️ Validation fields not available, logging validation only');
-      
-      await prisma.auditLog.create({
-        data: {
-          staffId: req.user.id,
-          action: 'VALIDATE_LAB_RESULT',
-          module: 'Lab',
-          details: `Validated lab result for ${labOrder.testName} for patient ${labOrder.patientId} (fields not yet available)`
-        }
-      });
-      
-      res.json({ 
-        message: '✅ Result validated successfully (audit logged)',
-        labOrder: labOrder,
-        note: 'Validation fields not yet available in database. Please run the SQL migration to add them.'
-      });
-    }
-  } catch (error) {
-    console.error('Validate lab result error:', error);
-    res.status(400).json({ error: error.message });
-  }
-});
-
-// ============ IMAGING / X-RAY ORDER ENDPOINTS ============
-
-app.get('/api/patients/:patientId/imaging-orders', authenticate, async (req, res) => {
-  try {
-    const { patientId } = req.params;
-    
-    const imagingOrders = await prisma.imagingOrder.findMany({
-      where: { patientId },
+    // ✅ FIX: Add updatedAt and use correct field names in include
+    const updated = await prisma.labOrder.update({
+      where: { id },
+      data: { 
+        validated: true,
+        validatedBy: req.user.id,
+        validatedAt: new Date(),
+        updatedAt: new Date() // ✅ ADD THIS
+      },
       include: {
-        patient: {
+        Patient: {      // ✅ CHANGED: patient → Patient
           select: {
             id: true,
             hospitalId: true,
@@ -3141,7 +3801,7 @@ app.get('/api/patients/:patientId/imaging-orders', authenticate, async (req, res
             lastName: true
           }
         },
-        orderingStaff: {
+        Staff_LabOrder_orderingStaffIdToStaff: {  // ✅ CHANGED: orderedBy → Staff_LabOrder_orderingStaffIdToStaff
           select: {
             id: true,
             firstName: true,
@@ -3149,7 +3809,65 @@ app.get('/api/patients/:patientId/imaging-orders', authenticate, async (req, res
             role: true
           }
         },
-        radiologist: {
+        Staff_LabOrder_labStaffIdToStaff: {       // ✅ CHANGED: performedBy → Staff_LabOrder_labStaffIdToStaff
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true
+          }
+        }
+      }
+    });
+    
+    // Format for frontend
+    const formattedLabOrder = {
+      ...updated,
+      patient: updated.Patient,
+      orderedBy: updated.Staff_LabOrder_orderingStaffIdToStaff,
+      performedBy: updated.Staff_LabOrder_labStaffIdToStaff
+    };
+    
+    await prisma.auditLog.create({
+      data: {
+        staffId: req.user.id,
+        action: 'VALIDATE_LAB_RESULT',
+        module: 'Lab',
+        details: `Validated lab result for ${labOrder.testName} for patient ${labOrder.patientId}`
+      }
+    });
+    
+    res.json({ 
+      message: '✅ Lab result validated successfully!', 
+      order: formattedLabOrder 
+    });
+  } catch (error) {
+    console.error('Validate lab result error:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+/// ============================================================
+// IMAGING / X-RAY ORDER ENDPOINTS - COMPLETE FIXES
+// ============================================================
+
+// 1. GET Patient Imaging Orders - FIXED
+app.get('/api/patients/:patientId/imaging-orders', authenticate, async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    
+    const imagingOrders = await prisma.imagingOrder.findMany({
+      where: { patientId },
+      include: {
+        Patient: {      // ✅ CHANGED: patient → Patient
+          select: {
+            id: true,
+            hospitalId: true,
+            firstName: true,
+            lastName: true
+          }
+        },
+        Staff_ImagingOrder_orderingStaffIdToStaff: {  // ✅ CORRECT field name
           select: {
             id: true,
             firstName: true,
@@ -3157,13 +3875,25 @@ app.get('/api/patients/:patientId/imaging-orders', authenticate, async (req, res
             role: true
           }
         },
-        imagingResults: true
+        Staff_ImagingOrder_radiologistIdToStaff: {    // ✅ CORRECT field name
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true
+          }
+        },
+        ImagingResult: true   // ✅ CORRECT field name
       },
       orderBy: { createdAt: 'desc' }
     });
     
     const formattedOrders = imagingOrders.map(order => ({
       ...order,
+      patient: order.Patient,
+      orderingStaff: order.Staff_ImagingOrder_orderingStaffIdToStaff,
+      radiologist: order.Staff_ImagingOrder_radiologistIdToStaff,
+      imagingResults: order.ImagingResult,
       images: order.images || '',
       imageCount: order.images ? order.images.split(',').length : 0,
       hasImages: order.images ? order.images.split(',').length > 0 : false
@@ -3176,6 +3906,7 @@ app.get('/api/patients/:patientId/imaging-orders', authenticate, async (req, res
   }
 });
 
+// 2. GET All Imaging Orders - FIXED
 app.get('/api/imaging-orders', authenticate, async (req, res) => {
   try {
     console.log('📡 GET /api/imaging-orders called');
@@ -3206,10 +3937,11 @@ app.get('/api/imaging-orders', authenticate, async (req, res) => {
 
     console.log('🔍 Where clause:', JSON.stringify(where, null, 2));
 
+    // ✅ FIX: Use correct field names
     const imagingOrders = await prisma.imagingOrder.findMany({
       where,
       include: {
-        patient: {
+        Patient: {      // ✅ CHANGED: patient → Patient
           select: {
             id: true,
             hospitalId: true,
@@ -3218,7 +3950,7 @@ app.get('/api/imaging-orders', authenticate, async (req, res) => {
             phone: true
           }
         },
-        orderingStaff: {
+        Staff_ImagingOrder_orderingStaffIdToStaff: {  // ✅ CHANGED: orderingStaff → Staff_ImagingOrder_orderingStaffIdToStaff
           select: {
             id: true,
             firstName: true,
@@ -3226,7 +3958,7 @@ app.get('/api/imaging-orders', authenticate, async (req, res) => {
             role: true
           }
         },
-        radiologist: {
+        Staff_ImagingOrder_radiologistIdToStaff: {    // ✅ CHANGED: radiologist → Staff_ImagingOrder_radiologistIdToStaff
           select: {
             id: true,
             firstName: true,
@@ -3234,7 +3966,7 @@ app.get('/api/imaging-orders', authenticate, async (req, res) => {
             role: true
           }
         },
-        imagingResults: true
+        ImagingResult: true   // ✅ CHANGED: imagingResults → ImagingResult
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -3243,6 +3975,10 @@ app.get('/api/imaging-orders', authenticate, async (req, res) => {
 
     const formattedOrders = imagingOrders.map(order => ({
       ...order,
+      patient: order.Patient,
+      orderingStaff: order.Staff_ImagingOrder_orderingStaffIdToStaff,
+      radiologist: order.Staff_ImagingOrder_radiologistIdToStaff,
+      imagingResults: order.ImagingResult,
       images: order.images || '',
       imageCount: order.images ? order.images.split(',').length : 0,
       hasImages: order.images ? order.images.split(',').length > 0 : false,
@@ -3256,6 +3992,7 @@ app.get('/api/imaging-orders', authenticate, async (req, res) => {
   }
 });
 
+// 3. CREATE Imaging Order - FIXED
 app.post('/api/imaging-orders', authenticate, authorize('Doctor', 'Obstetrician'), async (req, res) => {
   try {
     const { 
@@ -3275,6 +4012,7 @@ app.post('/api/imaging-orders', authenticate, authorize('Doctor', 'Obstetrician'
     const count = await prisma.imagingOrder.count();
     const orderNumber = `IMG-${new Date().getFullYear()}-${String(count + 1).padStart(6, '0')}`;
 
+    // ✅ FIX: Add updatedAt and use correct field names in include
     const order = await prisma.imagingOrder.create({
       data: {
         orderNumber,
@@ -3282,14 +4020,15 @@ app.post('/api/imaging-orders', authenticate, authorize('Doctor', 'Obstetrician'
         imagingType,
         bodyPart,
         priority: priority || 'Routine',
-        clinicalHistory,
-        clinicalQuestion,
+        clinicalHistory: clinicalHistory || null,
+        clinicalQuestion: clinicalQuestion || null,
         orderingStaffId: req.user.id,
         status: 'Ordered',
-        notes
+        notes: notes || null,
+        updatedAt: new Date() // ✅ ADD THIS
       },
       include: {
-        patient: {
+        Patient: {      // ✅ CHANGED: patient → Patient
           select: {
             id: true,
             hospitalId: true,
@@ -3298,7 +4037,7 @@ app.post('/api/imaging-orders', authenticate, authorize('Doctor', 'Obstetrician'
             phone: true
           }
         },
-        orderingStaff: {
+        Staff_ImagingOrder_orderingStaffIdToStaff: {  // ✅ CHANGED: orderingStaff → Staff_ImagingOrder_orderingStaffIdToStaff
           select: {
             id: true,
             firstName: true,
@@ -3309,22 +4048,30 @@ app.post('/api/imaging-orders', authenticate, authorize('Doctor', 'Obstetrician'
       }
     });
 
+    // Format for frontend
+    const formattedOrder = {
+      ...order,
+      patient: order.Patient,
+      orderingStaff: order.Staff_ImagingOrder_orderingStaffIdToStaff
+    };
+
     await prisma.auditLog.create({
       data: {
         staffId: req.user.id,
         action: 'CREATE_IMAGING_ORDER',
         module: 'Radiology',
-        details: `Created ${imagingType} order for patient ${order.patient.hospitalId} - ${order.orderNumber}`
+        details: `Created ${imagingType} order for patient ${formattedOrder.patient?.hospitalId} - ${order.orderNumber}`
       }
     });
 
-    res.status(201).json(order);
+    res.status(201).json(formattedOrder);
   } catch (error) {
     console.error('Create imaging order error:', error);
     res.status(400).json({ error: error.message });
   }
 });
 
+// 4. UPDATE Imaging Status - FIXED
 app.patch('/api/imaging-orders/:id/status', authenticate, authorize('Admin', 'Radiologist'), async (req, res) => {
   try {
     const { id } = req.params;
@@ -3341,20 +4088,51 @@ app.patch('/api/imaging-orders/:id/status', authenticate, authorize('Admin', 'Ra
       });
     }
 
+    // ✅ FIX: Add updatedAt and use correct field names in include
     const order = await prisma.imagingOrder.update({
       where: { id },
       data: {
         status,
         notes: notes || undefined,
         ...(status === 'Completed' && { resultDate: new Date() }),
-        ...(status === 'Scheduled' && { radiologistId: req.user.id })
+        ...(status === 'Scheduled' && { radiologistId: req.user.id }),
+        updatedAt: new Date() // ✅ ADD THIS
       },
       include: {
-        patient: true,
-        orderingStaff: true,
-        radiologist: true
+        Patient: {      // ✅ CHANGED: patient → Patient
+          select: {
+            id: true,
+            hospitalId: true,
+            firstName: true,
+            lastName: true
+          }
+        },
+        Staff_ImagingOrder_orderingStaffIdToStaff: {  // ✅ CHANGED: orderingStaff → Staff_ImagingOrder_orderingStaffIdToStaff
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true
+          }
+        },
+        Staff_ImagingOrder_radiologistIdToStaff: {    // ✅ CHANGED: radiologist → Staff_ImagingOrder_radiologistIdToStaff
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true
+          }
+        }
       }
     });
+
+    // Format for frontend
+    const formattedOrder = {
+      ...order,
+      patient: order.Patient,
+      orderingStaff: order.Staff_ImagingOrder_orderingStaffIdToStaff,
+      radiologist: order.Staff_ImagingOrder_radiologistIdToStaff
+    };
 
     await prisma.auditLog.create({
       data: {
@@ -3365,13 +4143,14 @@ app.patch('/api/imaging-orders/:id/status', authenticate, authorize('Admin', 'Ra
       }
     });
 
-    res.json(order);
+    res.json(formattedOrder);
   } catch (error) {
     console.error('Update imaging status error:', error);
     res.status(400).json({ error: error.message });
   }
 });
 
+// 5. SUBMIT Imaging Results - FIXED
 app.post('/api/imaging-orders/:id/results', authenticate, authorize('Radiologist'), async (req, res) => {
   try {
     const { id } = req.params;
@@ -3381,6 +4160,7 @@ app.post('/api/imaging-orders/:id/results', authenticate, authorize('Radiologist
       return res.status(400).json({ error: 'Findings and Impression are required' });
     }
 
+    // ✅ FIX: Add updatedAt and use correct field names in include
     const order = await prisma.imagingOrder.update({
       where: { id },
       data: {
@@ -3389,23 +4169,56 @@ app.post('/api/imaging-orders/:id/results', authenticate, authorize('Radiologist
         imagesUrl: imagesUrl || null,
         status: 'Completed',
         resultDate: new Date(),
-        radiologistId: req.user.id
+        radiologistId: req.user.id,
+        updatedAt: new Date() // ✅ ADD THIS
       },
       include: {
-        patient: true,
-        orderingStaff: true
+        Patient: {      // ✅ CHANGED: patient → Patient
+          select: {
+            id: true,
+            hospitalId: true,
+            firstName: true,
+            lastName: true
+          }
+        },
+        Staff_ImagingOrder_orderingStaffIdToStaff: {  // ✅ CHANGED: orderingStaff → Staff_ImagingOrder_orderingStaffIdToStaff
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true
+          }
+        },
+        Staff_ImagingOrder_radiologistIdToStaff: {    // ✅ CHANGED: radiologist → Staff_ImagingOrder_radiologistIdToStaff
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true
+          }
+        }
       }
     });
 
+    // ✅ FIX: Add updatedAt to ImagingResult create
     await prisma.imagingResult.create({
       data: {
         imagingOrderId: id,
         findings,
         impression,
         recommendations: recommendations || null,
-        severity: severity || 'Normal'
+        severity: severity || 'Normal',
+        updatedAt: new Date() // ✅ ADD THIS
       }
     });
+
+    // Format for frontend
+    const formattedOrder = {
+      ...order,
+      patient: order.Patient,
+      orderingStaff: order.Staff_ImagingOrder_orderingStaffIdToStaff,
+      radiologist: order.Staff_ImagingOrder_radiologistIdToStaff
+    };
 
     await prisma.auditLog.create({
       data: {
@@ -3418,7 +4231,7 @@ app.post('/api/imaging-orders/:id/results', authenticate, authorize('Radiologist
 
     res.json({ 
       message: 'Results submitted successfully', 
-      order,
+      order: formattedOrder,
       result: {
         findings,
         impression,
@@ -3433,6 +4246,7 @@ app.post('/api/imaging-orders/:id/results', authenticate, authorize('Radiologist
   }
 });
 
+// 6. GET Single Imaging Order - FIXED
 app.get('/api/imaging-orders/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
@@ -3440,7 +4254,7 @@ app.get('/api/imaging-orders/:id', authenticate, async (req, res) => {
     const order = await prisma.imagingOrder.findUnique({
       where: { id },
       include: {
-        patient: {
+        Patient: {      // ✅ CHANGED: patient → Patient
           select: {
             id: true,
             hospitalId: true,
@@ -3450,7 +4264,7 @@ app.get('/api/imaging-orders/:id', authenticate, async (req, res) => {
             email: true
           }
         },
-        orderingStaff: {
+        Staff_ImagingOrder_orderingStaffIdToStaff: {  // ✅ CHANGED: orderingStaff → Staff_ImagingOrder_orderingStaffIdToStaff
           select: {
             id: true,
             firstName: true,
@@ -3458,7 +4272,7 @@ app.get('/api/imaging-orders/:id', authenticate, async (req, res) => {
             role: true
           }
         },
-        radiologist: {
+        Staff_ImagingOrder_radiologistIdToStaff: {    // ✅ CHANGED: radiologist → Staff_ImagingOrder_radiologistIdToStaff
           select: {
             id: true,
             firstName: true,
@@ -3466,7 +4280,7 @@ app.get('/api/imaging-orders/:id', authenticate, async (req, res) => {
             role: true
           }
         },
-        imagingResults: true
+        ImagingResult: true   // ✅ CHANGED: imagingResults → ImagingResult
       }
     });
 
@@ -3474,20 +4288,35 @@ app.get('/api/imaging-orders/:id', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Imaging order not found' });
     }
 
-    res.json(order);
+    // Format for frontend
+    const formattedOrder = {
+      ...order,
+      patient: order.Patient,
+      orderingStaff: order.Staff_ImagingOrder_orderingStaffIdToStaff,
+      radiologist: order.Staff_ImagingOrder_radiologistIdToStaff,
+      imagingResults: order.ImagingResult
+    };
+
+    res.json(formattedOrder);
   } catch (error) {
     console.error('Get imaging order error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
+// 7. CANCEL Imaging Order - FIXED
 app.patch('/api/imaging-orders/:id/cancel', authenticate, authorize('Doctor', 'Obstetrician', 'Admin'), async (req, res) => {
   try {
     const { id } = req.params;
     const { reason } = req.body;
 
     const order = await prisma.imagingOrder.findUnique({
-      where: { id }
+      where: { id },
+      include: {
+        Patient: true,
+        Staff_ImagingOrder_orderingStaffIdToStaff: true,
+        Staff_ImagingOrder_radiologistIdToStaff: true
+      }
     });
 
     if (!order) {
@@ -3498,17 +4327,40 @@ app.patch('/api/imaging-orders/:id/cancel', authenticate, authorize('Doctor', 'O
       return res.status(400).json({ error: 'Cannot cancel a completed imaging order' });
     }
 
+    // ✅ FIX: Add updatedAt
     const updatedOrder = await prisma.imagingOrder.update({
       where: { id },
       data: {
         status: 'Cancelled',
-        notes: reason ? `Cancelled: ${reason}` : order.notes
+        notes: reason ? `Cancelled: ${reason}` : order.notes,
+        updatedAt: new Date() // ✅ ADD THIS
       },
       include: {
-        patient: true,
-        orderingStaff: true
+        Patient: {      // ✅ CHANGED: patient → Patient
+          select: {
+            id: true,
+            hospitalId: true,
+            firstName: true,
+            lastName: true
+          }
+        },
+        Staff_ImagingOrder_orderingStaffIdToStaff: {  // ✅ CHANGED: orderingStaff → Staff_ImagingOrder_orderingStaffIdToStaff
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true
+          }
+        }
       }
     });
+
+    // Format for frontend
+    const formattedOrder = {
+      ...updatedOrder,
+      patient: updatedOrder.Patient,
+      orderingStaff: updatedOrder.Staff_ImagingOrder_orderingStaffIdToStaff
+    };
 
     await prisma.auditLog.create({
       data: {
@@ -3521,7 +4373,7 @@ app.patch('/api/imaging-orders/:id/cancel', authenticate, authorize('Doctor', 'O
 
     res.json({ 
       message: 'Imaging order cancelled successfully', 
-      order: updatedOrder 
+      order: formattedOrder 
     });
   } catch (error) {
     console.error('Cancel imaging order error:', error);
@@ -3529,7 +4381,9 @@ app.patch('/api/imaging-orders/:id/cancel', authenticate, authorize('Doctor', 'O
   }
 });
 
-// ============ IMAGING IMAGE UPLOAD ENDPOINT ============
+// ============================================================
+// IMAGING IMAGE UPLOAD - FIXED (already has updatedAt)
+// ============================================================
 
 const storage2 = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -3609,6 +4463,7 @@ app.post('/api/imaging-orders/:id/upload-images',
       console.log(`📸 Total images: ${allImages.length}`);
       console.log(`📸 Images string: ${imagesString}`);
 
+      // ✅ FIX: Add updatedAt (already has it)
       const updatedOrder = await prisma.imagingOrder.update({
         where: { id },
         data: {
@@ -3623,10 +4478,11 @@ app.post('/api/imaging-orders/:id/upload-images',
       console.log(`✅ New imageCount: ${updatedOrder.imageCount}`);
       console.log(`✅ New hasImages: ${updatedOrder.hasImages}`);
 
+      // ✅ FIX: Use correct field names in include
       const completeOrder = await prisma.imagingOrder.findUnique({
         where: { id },
         include: {
-          patient: {
+          Patient: {      // ✅ CHANGED: patient → Patient
             select: {
               id: true,
               hospitalId: true,
@@ -3634,7 +4490,7 @@ app.post('/api/imaging-orders/:id/upload-images',
               lastName: true
             }
           },
-          orderingStaff: {
+          Staff_ImagingOrder_orderingStaffIdToStaff: {  // ✅ CHANGED: orderingStaff → Staff_ImagingOrder_orderingStaffIdToStaff
             select: {
               id: true,
               firstName: true,
@@ -3642,7 +4498,7 @@ app.post('/api/imaging-orders/:id/upload-images',
               role: true
             }
           },
-          radiologist: {
+          Staff_ImagingOrder_radiologistIdToStaff: {    // ✅ CHANGED: radiologist → Staff_ImagingOrder_radiologistIdToStaff
             select: {
               id: true,
               firstName: true,
@@ -3650,7 +4506,7 @@ app.post('/api/imaging-orders/:id/upload-images',
               role: true
             }
           },
-          imagingResults: true
+          ImagingResult: true   // ✅ CHANGED: imagingResults → ImagingResult
         }
       });
 
@@ -3665,14 +4521,21 @@ app.post('/api/imaging-orders/:id/upload-images',
 
       console.log('📸 ====== UPLOAD SUCCESS ======');
 
+      // Format for frontend
+      const formattedOrder = {
+        ...completeOrder,
+        patient: completeOrder.Patient,
+        orderingStaff: completeOrder.Staff_ImagingOrder_orderingStaffIdToStaff,
+        radiologist: completeOrder.Staff_ImagingOrder_radiologistIdToStaff,
+        imagingResults: completeOrder.ImagingResult,
+        images: imagesString,
+        imageCount: allImages.length,
+        hasImages: true
+      };
+
       res.json({
         message: `${req.files.length} image(s) uploaded successfully`,
-        order: {
-          ...completeOrder,
-          images: imagesString,
-          imageCount: allImages.length,
-          hasImages: true
-        },
+        order: formattedOrder,
         uploadedFiles: req.files.map(f => f.filename)
       });
     } catch (error) {
@@ -3702,6 +4565,8 @@ function getCategoryInfo(category) {
   return map[category] || map['FPP'];
 }
 
+// ✅ FIXED: GET /api/billing
+// ✅ FIXED: GET /api/billing
 app.get('/api/billing', authenticate, authorize('Admin', 'ITAdmin', 'Accountant', 'BillingOfficer'), async (req, res) => {
   try {
     const { search, status, dateFrom, dateTo, limit = 100, offset = 0 } = req.query;
@@ -3712,6 +4577,7 @@ app.get('/api/billing', authenticate, authorize('Admin', 'ITAdmin', 'Accountant'
       if (dateFrom) where.createdAt.gte = new Date(dateFrom);
       if (dateTo) where.createdAt.lte = new Date(dateTo + 'T23:59:59');
     }
+    
     let patientFilter = {};
     if (search) {
       patientFilter = {
@@ -3722,39 +4588,15 @@ app.get('/api/billing', authenticate, authorize('Admin', 'ITAdmin', 'Accountant'
         ]
       };
     }
-    const bills = await prisma.billingRecord.findMany({
-      where: { ...where, patient: patientFilter },
-      include: {
-        patient: {
-          select: {
-            id: true, hospitalId: true, firstName: true, lastName: true,
-            phone: true, patientCategory: true, insuranceProvider: true, corporateCompany: true
-          }
-        },
-        journey: true
-      },
-      orderBy: { createdAt: 'desc' },
-      take: parseInt(limit),
-      skip: parseInt(offset)
-    });
-    const total = await prisma.billingRecord.count({
-      where: { ...where, patient: patientFilter }
-    });
-    res.json({ data: bills, total, limit: parseInt(limit), offset: parseInt(offset) });
-  } catch (error) {
-    console.error('Get billing records error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.get('/api/billing/:id', authenticate, authorize('Admin', 'ITAdmin', 'Accountant', 'BillingOfficer'), async (req, res) => {
-  try {
-    const { id } = req.params;
     
-    const bill = await prisma.billingRecord.findUnique({
-      where: { id },
+    // ✅ USE CAPITALIZED FIELD NAMES
+    const bills = await prisma.billingRecord.findMany({
+      where: { 
+        ...where, 
+        Patient: patientFilter  // ✅ CHANGED
+      },
       include: {
-        patient: {
+        Patient: {        // ✅ CHANGED: patient → Patient
           select: {
             id: true,
             hospitalId: true,
@@ -3766,12 +4608,66 @@ app.get('/api/billing/:id', authenticate, authorize('Admin', 'ITAdmin', 'Account
             corporateCompany: true
           }
         },
-        journey: true,
-        paymentPlans: {
-          include: {
-            partialPayments: true
+        PatientJourney: true,  // ✅ CHANGED: journey → PatientJourney
+        Staff: true           // ✅ CHANGED: staff → Staff
+      },
+      orderBy: { createdAt: 'desc' },
+      take: parseInt(limit),
+      skip: parseInt(offset)
+    });
+    
+    const total = await prisma.billingRecord.count({
+      where: { 
+        ...where, 
+        Patient: patientFilter 
+      }
+    });
+    
+    // Format response
+    const formattedBills = bills.map(bill => ({
+      ...bill,
+      patient: bill.Patient,
+      journey: bill.PatientJourney,
+      staff: bill.Staff
+    }));
+    
+    res.json({ data: formattedBills, total, limit: parseInt(limit), offset: parseInt(offset) });
+  } catch (error) {
+    console.error('Get billing records error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ✅ FIXED: GET /api/billing/:id
+app.get('/api/billing/:id', authenticate, authorize('Admin', 'ITAdmin', 'Accountant', 'BillingOfficer'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // ✅ USE CAPITALIZED FIELD NAMES
+    const bill = await prisma.billingRecord.findUnique({
+      where: { id },
+      include: {
+        Patient: {        // ✅ CHANGED: patient → Patient
+          select: {
+            id: true,
+            hospitalId: true,
+            firstName: true,
+            lastName: true,
+            phone: true,
+            patientCategory: true,
+            insuranceProvider: true,
+            corporateCompany: true
           }
-        }
+        },
+        PatientJourney: true,  // ✅ CHANGED: journey → PatientJourney
+        PaymentPlan: {         // ✅ CHANGED: paymentPlans → PaymentPlan
+          include: {
+            PartialPayment: true  // ✅ CHANGED: partialPayments → PartialPayment
+          }
+        },
+        Staff: true,           // ✅ ADDED
+        WalletTransaction: true, // ✅ ADDED
+        ImagingOrder: true     // ✅ ADDED
       }
     });
     
@@ -3779,13 +4675,23 @@ app.get('/api/billing/:id', authenticate, authorize('Admin', 'ITAdmin', 'Account
       return res.status(404).json({ error: 'Billing record not found' });
     }
     
-    res.json(bill);
+    // Format response for frontend (maps capitalized to lowercase for frontend)
+    const formattedBill = {
+      ...bill,
+      patient: bill.Patient,
+      journey: bill.PatientJourney,
+      paymentPlans: bill.PaymentPlan,
+      staff: bill.Staff
+    };
+    
+    res.json(formattedBill);
   } catch (error) {
     console.error('Get billing detail error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
+// ✅ FIXED: PATCH /api/billing/:id
 app.patch('/api/billing/:id', authenticate, authorize('Admin', 'ITAdmin', 'Accountant', 'BillingOfficer'), async (req, res) => {
   try {
     const { id } = req.params;
@@ -3797,9 +4703,10 @@ app.patch('/api/billing/:id', authenticate, authorize('Admin', 'ITAdmin', 'Accou
         status: status || undefined,
         paymentMethod: paymentMethod || undefined,
         paymentDate: paymentDate ? new Date(paymentDate) : undefined,
+        updatedAt: new Date() // ✅ Add this
       },
       include: {
-        patient: {
+        Patient: {        // ✅ Capitalized
           select: {
             id: true,
             hospitalId: true,
@@ -3811,6 +4718,12 @@ app.patch('/api/billing/:id', authenticate, authorize('Admin', 'ITAdmin', 'Accou
       }
     });
     
+    // Format response
+    const formattedBill = {
+      ...bill,
+      patient: bill.Patient
+    };
+    
     await prisma.auditLog.create({
       data: {
         staffId: req.user.id,
@@ -3820,12 +4733,450 @@ app.patch('/api/billing/:id', authenticate, authorize('Admin', 'ITAdmin', 'Accou
       }
     });
     
-    res.json(bill);
+    res.json(formattedBill);
   } catch (error) {
     console.error('Update billing error:', error);
     res.status(400).json({ error: error.message });
   }
 });
+
+// ============================================================
+// GET PENDING BILLS WITH ITEMIZED VIEW
+// ============================================================
+
+app.get('/api/billing/pending', authenticate, authorize('Admin', 'BillingOfficer', 'Accountant'), async (req, res) => {
+  try {
+    const pendingBills = await prisma.billingRecord.findMany({
+      where: {
+        status: { in: ['Pending', 'Partial'] }
+      },
+      include: {
+        Patient: {        // ✅ Capitalized
+          select: {
+            id: true,
+            hospitalId: true,
+            firstName: true,
+            lastName: true,
+            phone: true,
+            patientCategory: true,
+            insuranceProvider: true,
+            corporateCompany: true
+          }
+        },
+        PatientJourney: true,  // ✅ Capitalized
+        Staff: true           // ✅ Capitalized
+      },
+      orderBy: { createdAt: 'asc' }
+    });
+
+    // Get wallet balances for all patients
+    const patientIds = pendingBills.map(b => b.Patient?.id).filter(Boolean);
+    const wallets = await prisma.patientWallet.findMany({
+      where: { patientId: { in: patientIds } }
+    });
+    const walletMap = {};
+    wallets.forEach(w => { walletMap[w.patientId] = w.balance; });
+
+    // Format response with itemized breakdown
+    const formattedBills = pendingBills.map(bill => {
+      const items = bill.items || [];
+      const totalPending = items
+        .filter(i => i.status === 'Pending')
+        .reduce((sum, i) => sum + i.amount, 0);
+      
+      return {
+        ...bill,
+        patient: bill.Patient,
+        journey: bill.PatientJourney,
+        staff: bill.Staff,
+        walletBalance: walletMap[bill.Patient?.id] || 0,
+        itemizedSummary: {
+          items: items.map(i => ({
+            ...i,
+            isPaid: i.status === 'Paid'
+          })),
+          totalPending,
+          totalAmount: bill.totalAmount,
+          paidAmount: bill.paidAmount,
+          balance: bill.balance
+        }
+      };
+    });
+
+    res.json(formattedBills);
+  } catch (error) {
+    console.error('Get pending bills error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================================
+// ENHANCED PAYMENT PROCESSING WITH AUTO-CLEAR
+// ============================================================
+
+app.post('/api/billing/process-payment', authenticate, authorize('Admin', 'BillingOfficer', 'Accountant'), async (req, res) => {
+  try {
+    const { 
+      billingRecordId, 
+      paymentMethod, 
+      amount, 
+      paymentReference,
+      notes 
+    } = req.body;
+
+    console.log('💰 Processing payment:', { billingRecordId, paymentMethod, amount });
+
+    if (!billingRecordId) {
+      return res.status(400).json({ error: 'Billing record ID is required' });
+    }
+
+    // Get the bill with patient
+    const bill = await prisma.billingRecord.findUnique({
+      where: { id: billingRecordId },
+      include: {
+        Patient: true,
+        PatientJourney: true
+      }
+    });
+
+    if (!bill) {
+      return res.status(404).json({ error: 'Billing record not found' });
+    }
+
+    console.log(`💰 Bill found: ${bill.invoiceNumber}, Patient: ${bill.Patient?.firstName} ${bill.Patient?.lastName}`);
+
+    if (bill.status === 'Paid') {
+      return res.status(400).json({ error: 'This bill is already fully paid' });
+    }
+
+    const paymentAmount = amount || bill.balance;
+    
+    if (paymentAmount > bill.balance) {
+      return res.status(400).json({ 
+        error: `Amount exceeds balance. Balance: ₦${bill.balance.toLocaleString()}` 
+      });
+    }
+
+    // Fetch staff name
+    const staff = await prisma.staff.findUnique({
+      where: { id: req.user.id },
+      select: { firstName: true, lastName: true, username: true, role: true }
+    });
+    
+    let staffName = 'Unknown Staff';
+    if (staff) {
+      staffName = `${staff.firstName || ''} ${staff.lastName || ''}`.trim() || staff.username || staff.role || 'Unknown Staff';
+    }
+
+    console.log(`👤 Staff: ${staffName}`);
+
+    // Process payment based on method
+    let walletTransaction = null;
+    let cashAmountPaid = 0;
+    let walletAmountPaid = 0;
+    
+    if (paymentMethod === 'Wallet') {
+      console.log(`💳 Processing wallet payment of ₦${paymentAmount}`);
+      
+      const result = await deductFromWallet(
+        bill.patientId,
+        paymentAmount,
+        `Payment for ${bill.invoiceNumber} - ${bill.description || 'Billing'}`,
+        'Billing',
+        bill.id,
+        'billing',
+        req.user.id
+      );
+      
+      console.log(`💳 Deduct result:`, result);
+      
+      if (!result.success) {
+        return res.status(400).json({ 
+          error: result.error,
+          code: result.code,
+          balance: result.balance,
+          shortfall: result.shortfall
+        });
+      }
+      
+      walletTransaction = result.transaction;
+      walletAmountPaid = paymentAmount;
+      
+      console.log(`✅ Wallet deducted. New balance: ₦${result.balanceAfter}`);
+      
+    } else {
+      console.log(`💵 Processing cash payment of ₦${paymentAmount}`);
+      cashAmountPaid = paymentAmount;
+    }
+
+    // Update billing record items
+    const items = bill.items || [];
+    let updatedItems = [...items];
+    let remainingAmount = paymentAmount;
+    
+    // Mark items as paid in order
+    for (let i = 0; i < updatedItems.length && remainingAmount > 0; i++) {
+      if (updatedItems[i].status === 'Pending') {
+        const itemAmount = updatedItems[i].amount;
+        const toPay = Math.min(remainingAmount, itemAmount);
+        
+        updatedItems[i].status = 'Paid';
+        updatedItems[i].paidAt = new Date().toISOString();
+        updatedItems[i].paidAmount = toPay;
+        
+        remainingAmount -= toPay;
+        console.log(`✅ Item paid: ${updatedItems[i].name}, ₦${toPay}`);
+      }
+    }
+
+    // ✅ DECLARE THESE VARIABLES BEFORE USING THEM
+    const newPaidAmount = bill.paidAmount + paymentAmount;
+    const newBalance = bill.totalAmount - newPaidAmount;
+    const newStatus = newBalance <= 0 ? 'Paid' : 'Partial';
+
+    console.log(`💰 Bill updated: Paid: ₦${newPaidAmount}, Balance: ₦${newBalance}, Status: ${newStatus}`);
+
+    // Update billing record
+    const updatedBill = await prisma.billingRecord.update({
+      where: { id: billingRecordId },
+      data: {
+        items: updatedItems,
+        paidAmount: newPaidAmount,
+        balance: newBalance,
+        status: newStatus,
+        paymentMethod: paymentMethod || undefined,
+        paymentDate: new Date(),
+        isWalletPayment: paymentMethod === 'Wallet',
+        walletTransactionId: walletTransaction?.id || null,
+        cashAmountPaid: cashAmountPaid > 0 ? cashAmountPaid : null,
+        walletAmountPaid: walletAmountPaid > 0 ? walletAmountPaid : null,
+        paymentReference: paymentReference || null,
+        processedBy: req.user.id,
+        receiptGenerated: true,
+        receiptGeneratedAt: new Date(),
+        updatedAt: new Date()
+      },
+      include: {
+        Patient: true,
+        PatientJourney: true
+      }
+    });
+
+    // Auto-clear journey if fully paid
+    let autoAdvanced = false;
+    if (newStatus === 'Paid' && updatedBill.PatientJourney) {
+      autoAdvanced = true;
+      console.log(`🚀 Auto-advancing journey for patient ${updatedBill.Patient?.hospitalId}`);
+      
+      await prisma.patientJourney.update({
+        where: { id: updatedBill.PatientJourney.id },
+        data: {
+          status: 'BILLING_CLEARED',
+          registrationFeePaid: true,
+          cardFeePaid: true,
+          consultationFeePaid: true,
+          updatedAt: new Date()
+        }
+      });
+      
+      await prisma.patientJourney.update({
+        where: { id: updatedBill.PatientJourney.id },
+        data: {
+          status: 'CARD_PRINTED',
+          cardGeneratedAt: new Date(),
+          updatedAt: new Date()
+        }
+      });
+      
+      setTimeout(async () => {
+        await prisma.patientJourney.update({
+          where: { id: updatedBill.PatientJourney.id },
+          data: {
+            status: 'SENT_TO_DESTINATION',
+            sentToDestinationAt: new Date(),
+            updatedAt: new Date()
+          }
+        });
+        console.log(`✅ Patient ${updatedBill.Patient?.hospitalId} auto-sent to clinic`);
+      }, 2000);
+    }
+
+    // Generate receipt
+    const receiptNumber = `RCP-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+    // Format response
+    const responseData = {
+      ...updatedBill,
+      patient: updatedBill.Patient,
+      journey: updatedBill.PatientJourney
+    };
+
+    await prisma.auditLog.create({
+      data: {
+        staffId: req.user.id,
+        action: 'PROCESS_PAYMENT',
+        module: 'Billing',
+        details: `Processed ${paymentMethod} payment of ₦${paymentAmount.toLocaleString()} for ${bill.invoiceNumber} by ${staffName}`
+      }
+    });
+
+    console.log(`✅ Payment complete. Response sent.`);
+
+    res.json({
+      success: true,
+      message: `✅ Payment of ₦${paymentAmount.toLocaleString()} processed successfully by ${staffName}`,
+      bill: responseData,
+      receipt: {
+        number: receiptNumber,
+        date: new Date().toISOString(),
+        issuedBy: staffName,
+        patient: {
+          name: `${bill.Patient?.firstName || ''} ${bill.Patient?.lastName || ''}`.trim() || 'Unknown',
+          hospitalId: bill.Patient?.hospitalId || 'N/A'
+        },
+        items: updatedItems,
+        totalAmount: bill.totalAmount,
+        paidAmount: newPaidAmount,
+        balance: newBalance,
+        paymentMethod: paymentMethod || 'Cash',
+        status: newStatus,
+        invoiceNumber: bill.invoiceNumber,
+        autoAdvanced: autoAdvanced
+      },
+      walletTransaction,
+      autoAdvanced: autoAdvanced,
+      staffName: staffName
+    });
+
+  } catch (error) {
+    console.error('❌ Payment processing error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+// ============================================================
+// WALLET DEDUCTION HELPER - COMPLETE FIX
+// ============================================================
+
+async function deductFromWallet(patientId, amount, description, category, serviceId, serviceType, staffId) {
+  try {
+    // ✅ FETCH STAFF NAME
+    let staffName = 'Unknown Staff';
+    if (staffId) {
+      const staff = await prisma.staff.findUnique({
+        where: { id: staffId },
+        select: { firstName: true, lastName: true, username: true, role: true }
+      });
+      if (staff) {
+        staffName = `${staff.firstName || ''} ${staff.lastName || ''}`.trim() || staff.username || staff.role || 'Unknown Staff';
+      }
+    }
+
+    console.log(`💰 Deducting ₦${amount} from wallet for patient ${patientId}`);
+
+    const wallet = await prisma.patientWallet.findUnique({
+      where: { patientId }
+    });
+
+    if (!wallet) {
+      console.log('❌ Wallet not found for patient:', patientId);
+      return {
+        success: false,
+        error: 'Wallet not found',
+        code: 'WALLET_NOT_FOUND'
+      };
+    }
+
+    console.log(`💰 Current wallet balance: ₦${wallet.balance}`);
+
+    if (wallet.status !== 'Active') {
+      return {
+        success: false,
+        error: `Wallet is ${wallet.status.toLowerCase()}`,
+        code: 'WALLET_INACTIVE'
+      };
+    }
+
+    if (wallet.balance < amount) {
+      console.log(`❌ Insufficient balance: ₦${wallet.balance} < ₦${amount}`);
+      return {
+        success: false,
+        error: `Insufficient balance. Available: ₦${wallet.balance.toLocaleString()}, Required: ₦${amount.toLocaleString()}`,
+        code: 'INSUFFICIENT_BALANCE',
+        balance: wallet.balance,
+        shortfall: amount - wallet.balance
+      };
+    }
+
+    const balanceBefore = wallet.balance;
+    const balanceAfter = balanceBefore - amount;
+
+    console.log(`💰 Balance before: ₦${balanceBefore}, After: ₦${balanceAfter}`);
+
+    const result = await prisma.$transaction(async (tx) => {
+      // ✅ UPDATE WALLET BALANCE
+      const updatedWallet = await tx.patientWallet.update({
+        where: { id: wallet.id },
+        data: {
+          balance: balanceAfter,
+          lastTransactionAt: new Date(),
+          updatedAt: new Date()
+        }
+      });
+
+      console.log(`✅ Wallet updated: ₦${updatedWallet.balance}`);
+
+      // ✅ CREATE TRANSACTION RECORD
+      const transaction = await tx.walletTransaction.create({
+        data: {
+          walletId: wallet.id,
+          transactionType: 'Payment',
+          amount: amount,
+          balanceBefore: balanceBefore,
+          balanceAfter: balanceAfter,
+          description: description,
+          reference: `DED-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+          status: 'Completed',
+          category: category || 'General',
+          serviceId: serviceId || null,
+          serviceType: serviceType || null,
+          paidToStaffId: staffId || null,
+          notes: `Payment processed by ${staffName}`,
+          updatedAt: new Date()
+        }
+      });
+
+      console.log(`✅ Transaction created: ${transaction.reference}`);
+
+      await tx.auditLog.create({
+        data: {
+          staffId: staffId || null,
+          action: 'WALLET_AUTO_DEDUCT',
+          module: 'Wallet',
+          details: `Auto-deducted ₦${amount.toLocaleString()} from wallet by ${staffName} for ${description}`
+        }
+      });
+
+      return { updatedWallet, transaction };
+    });
+
+    console.log(`✅ Deduction complete. New balance: ₦${result.updatedWallet.balance}`);
+
+    return {
+      success: true,
+      balanceAfter: result.updatedWallet.balance,
+      transaction: result.transaction
+    };
+  } catch (error) {
+    console.error('❌ Wallet deduction error:', error);
+    return {
+      success: false,
+      error: error.message,
+      code: 'DEDUCTION_ERROR'
+    };
+  }
+}
 
 // ============ PHARMACY INVENTORY ENDPOINTS ============
 
@@ -4655,9 +6006,8 @@ app.get('/api/audit-logs', authenticate, authorize('Admin', 'ITAdmin'), async (r
   }
 });
 
-// ============ DASHBOARD STATISTICS ============
+// ============ DASHBOARD STATISTICS WITH WARD ADMISSION COUNTS ============
 
-// In server.js - Complete dashboard stats endpoint with LabScientist support
 app.get('/api/dashboard/stats', authenticate, async (req, res) => {
   try {
     const role = req.user.role;
@@ -4671,6 +6021,7 @@ app.get('/api/dashboard/stats', authenticate, async (req, res) => {
       GROUP BY month ORDER BY month ASC
     `;
 
+    // ✅ Admin, Records, ITAdmin - Full access with ward stats
     if (['Admin', 'Records', 'ITAdmin'].includes(role)) {
       const [totalPatients, totalStaff, totalAppointments, pendingBills, totalRevenue, lowStockCount] = await Promise.all([
         prisma.patient.count(),
@@ -4680,48 +6031,178 @@ app.get('/api/dashboard/stats', authenticate, async (req, res) => {
         prisma.billingRecord.aggregate({ _sum: { totalAmount: true }, where: { status: 'Paid' } }),
         prisma.medication.count({ where: { stockQuantity: { lte: prisma.medication.fields.reorderLevel } } })
       ]);
+      
+      // ✅ Get ward admission statistics
+      const wardStats = await prisma.ward.findMany({
+        select: {
+          id: true,
+          name: true,
+          capacity: true,
+          Admission: {
+            where: { status: 'Admitted' },
+            select: { id: true }
+          }
+        }
+      });
+      
+      const totalAdmitted = wardStats.reduce((sum, w) => sum + w.Admission.length, 0);
+      const totalCapacity = wardStats.reduce((sum, w) => sum + (w.capacity || 0), 0);
+      
       responseData = {
-        totalPatients, totalStaff, totalAppointments, pendingBills,
-        totalRevenue: totalRevenue._sum.totalAmount || 0, lowStockCount
+        totalPatients,
+        totalStaff,
+        totalAppointments,
+        pendingBills,
+        totalRevenue: totalRevenue._sum.totalAmount || 0,
+        lowStockCount,
+        wardStats: wardStats.map(w => ({
+          id: w.id,
+          name: w.name,
+          capacity: w.capacity || 0,
+          admitted: w.Admission.length,
+          available: (w.capacity || 0) - w.Admission.length,
+          occupancyRate: w.capacity ? Math.round((w.Admission.length / w.capacity) * 100) : 0
+        })),
+        totalAdmitted,
+        totalCapacity,
+        overallOccupancyRate: totalCapacity ? Math.round((totalAdmitted / totalCapacity) * 100) : 0
       };
-    } else if (['Doctor', 'Nurse', 'Obstetrician', 'Midwife'].includes(role)) {
+      
+    } 
+    // ✅ Nurses and Midwives - Can see assigned ward stats
+    else if (['Nurse', 'Midwife'].includes(role)) {
+      // Get staff assignments
       const staff = await prisma.staff.findUnique({
         where: { id: req.user.id },
-        include: { clinics: { select: { clinicId: true } }, wards: { select: { wardId: true } } }
+        include: { 
+          StaffClinic: { select: { clinicId: true } },
+          StaffWard: { select: { wardId: true } }
+        }
       });
-      const clinicIds = staff?.clinics?.map(c => c.clinicId) || [];
-      const wardIds = staff?.wards?.map(w => w.wardId) || [];
+      
+      const clinicIds = staff?.StaffClinic?.map(c => c.clinicId) || [];
+      const wardIds = staff?.StaffWard?.map(w => w.wardId) || [];
+      
+      // Get patient journeys for assigned clinics/wards
       const patientJourneys = await prisma.patientJourney.findMany({
         where: {
           status: { in: ['SENT_TO_DESTINATION', 'COMPLETED'] },
-          OR: [{ clinicId: { in: clinicIds } }, { wardId: { in: wardIds } }]
+          OR: [
+            { clinicId: { in: clinicIds } },
+            { wardId: { in: wardIds } }
+          ]
         },
         select: { patientId: true }
       });
       const patientIds = patientJourneys.map(j => j.patientId);
+      
+      // Get ward stats for assigned wards only
+      const wardStats = await prisma.ward.findMany({
+        where: { id: { in: wardIds } },
+        select: {
+          id: true,
+          name: true,
+          capacity: true,
+          Admission: {
+            where: { status: 'Admitted' },
+            select: { id: true }
+          }
+        }
+      });
+      
+      const totalAdmitted = wardStats.reduce((sum, w) => sum + w.Admission.length, 0);
+      const totalCapacity = wardStats.reduce((sum, w) => sum + (w.capacity || 0), 0);
+      
+      const [myPatientsCount, myAppointmentsCount, vitalsCount] = await Promise.all([
+        prisma.patientJourney.count({
+          where: {
+            status: { in: ['SENT_TO_DESTINATION', 'COMPLETED'] },
+            OR: [
+              { clinicId: { in: clinicIds } },
+              { wardId: { in: wardIds } }
+            ]
+          }
+        }),
+        prisma.appointment.count({ where: { staffId: req.user.id, status: 'Scheduled' } }),
+        prisma.vitalSign.count({ where: { nurseId: req.user.id } })
+      ]);
+      
+      responseData = {
+        myPatientsCount,
+        myAppointmentsCount,
+        myVitalsCount: vitalsCount,
+        wardStats: wardStats.map(w => ({
+          id: w.id,
+          name: w.name,
+          capacity: w.capacity || 0,
+          admitted: w.Admission.length,
+          available: (w.capacity || 0) - w.Admission.length,
+          occupancyRate: w.capacity ? Math.round((w.Admission.length / w.capacity) * 100) : 0
+        })),
+        totalAdmitted,
+        totalCapacity,
+        overallOccupancyRate: totalCapacity ? Math.round((totalAdmitted / totalCapacity) * 100) : 0,
+        role: 'Nurse'
+      };
+    }
+    
+    // ✅ Doctors and Obstetricians - Clinical dashboard
+    else if (['Doctor', 'Obstetrician'].includes(role)) {
+      const staff = await prisma.staff.findUnique({
+        where: { id: req.user.id },
+        include: { 
+          StaffClinic: { select: { clinicId: true } },
+          StaffWard: { select: { wardId: true } }
+        }
+      });
+      
+      const clinicIds = staff?.StaffClinic?.map(c => c.clinicId) || [];
+      const wardIds = staff?.StaffWard?.map(w => w.wardId) || [];
+      
+      const patientJourneys = await prisma.patientJourney.findMany({
+        where: {
+          status: { in: ['SENT_TO_DESTINATION', 'COMPLETED'] },
+          OR: [
+            { clinicId: { in: clinicIds } },
+            { wardId: { in: wardIds } }
+          ]
+        },
+        select: { patientId: true }
+      });
+      const patientIds = patientJourneys.map(j => j.patientId);
+      
       const [myPatientsCount, myAppointmentsCount] = await Promise.all([
         prisma.patientJourney.count({
           where: {
             status: { in: ['SENT_TO_DESTINATION', 'COMPLETED'] },
-            OR: [{ clinicId: { in: clinicIds } }, { wardId: { in: wardIds } }]
+            OR: [
+              { clinicId: { in: clinicIds } },
+              { wardId: { in: wardIds } }
+            ]
           }
         }),
         prisma.appointment.count({ where: { staffId: req.user.id, status: 'Scheduled' } })
       ]);
+      
       let prescriptionsCount = 0;
-      let vitalsCount = 0;
-      if (['Doctor', 'Obstetrician'].includes(role)) {
-        if (patientIds.length > 0) {
-          prescriptionsCount = await prisma.prescription.count({
-            where: { patientId: { in: patientIds }, prescribingStaffId: req.user.id }
-          });
-        }
-        responseData = { myPatientsCount, myAppointmentsCount, myPrescriptionsCount: prescriptionsCount };
-      } else {
-        vitalsCount = await prisma.vitalSign.count({ where: { nurseId: req.user.id } });
-        responseData = { myPatientsCount, myAppointmentsCount, myVitalsCount: vitalsCount };
+      if (patientIds.length > 0) {
+        prescriptionsCount = await prisma.prescription.count({
+          where: { 
+            patientId: { in: patientIds }, 
+            prescribingStaffId: req.user.id 
+          }
+        });
       }
-    } else if (role === 'Pharmacist') {
+      
+      responseData = { 
+        myPatientsCount, 
+        myAppointmentsCount, 
+        myPrescriptionsCount: prescriptionsCount 
+      };
+    }
+    
+    // ✅ Pharmacist - Pharmacy dashboard
+    else if (role === 'Pharmacist') {
       const [totalMedications, lowStockCount, recentDispensedCount] = await Promise.all([
         prisma.medication.count(),
         prisma.medication.count({ where: { stockQuantity: { lte: prisma.medication.fields.reorderLevel } } }),
@@ -4733,28 +6214,60 @@ app.get('/api/dashboard/stats', authenticate, async (req, res) => {
         })
       ]);
       responseData = { totalMedications, lowStockCount, recentDispensedCount };
-    } else if (['Accountant', 'BillingOfficer'].includes(role)) {
+    }
+    
+    // ✅ Accountant and Billing Officer - Finance dashboard with ward stats
+    else if (['Accountant', 'BillingOfficer'].includes(role)) {
+      // Get all ward stats (view only for billing staff)
+      const wardStats = await prisma.ward.findMany({
+        select: {
+          id: true,
+          name: true,
+          capacity: true,
+          Admission: {
+            where: { status: 'Admitted' },
+            select: { id: true }
+          }
+        }
+      });
+      
+      const totalAdmitted = wardStats.reduce((sum, w) => sum + w.Admission.length, 0);
+      const totalCapacity = wardStats.reduce((sum, w) => sum + (w.capacity || 0), 0);
+      
       const [pendingBills, totalRevenue, paidBillsCount] = await Promise.all([
         prisma.billingRecord.count({ where: { status: 'Pending' } }),
         prisma.billingRecord.aggregate({ _sum: { totalAmount: true }, where: { status: 'Paid' } }),
         prisma.billingRecord.count({ where: { status: 'Paid' } })
       ]);
+      
       responseData = {
         pendingBills,
         totalRevenue: totalRevenue._sum.totalAmount || 0,
-        paidBillsCount
+        paidBillsCount,
+        wardStats: wardStats.map(w => ({
+          id: w.id,
+          name: w.name,
+          capacity: w.capacity || 0,
+          admitted: w.Admission.length,
+          available: (w.capacity || 0) - w.Admission.length,
+          occupancyRate: w.capacity ? Math.round((w.Admission.length / w.capacity) * 100) : 0
+        })),
+        totalAdmitted,
+        totalCapacity,
+        overallOccupancyRate: totalCapacity ? Math.round((totalAdmitted / totalCapacity) * 100) : 0,
+        role: 'Billing'
       };
-    } else if (role === 'LabTechnician' || role === 'LabScientist') {
-      // ✅ FIXED: Show meaningful lab stats for LabScientist (with error handling for missing fields)
+    }
+    
+    // ✅ Lab Technician and Lab Scientist - Lab dashboard
+    else if (role === 'LabTechnician' || role === 'LabScientist') {
       console.log('📊 Fetching lab dashboard stats for:', role);
       
-      // Base stats that don't require validation fields
       let validatedOrders = 0;
       let awaitingValidation = 0;
       let validatedToday = 0;
       
       try {
-        // Try to count validated orders
         validatedOrders = await prisma.labOrder.count({ 
           where: { validated: true } 
         });
@@ -4770,12 +6283,11 @@ app.get('/api/dashboard/stats', authenticate, async (req, res) => {
         prisma.labOrder.count({ where: { status: 'Cancelled' } })
       ]);
 
-      // Get recent lab orders
       const recentOrders = await prisma.labOrder.findMany({
         take: 10,
         orderBy: { createdAt: 'desc' },
         include: {
-          patient: {
+          Patient: {
             select: {
               id: true,
               hospitalId: true,
@@ -4783,13 +6295,13 @@ app.get('/api/dashboard/stats', authenticate, async (req, res) => {
               lastName: true
             }
           },
-          orderedBy: {
+          Staff_LabOrder_orderingStaffIdToStaff: {
             select: {
               firstName: true,
               lastName: true
             }
           },
-          performedBy: {
+          Staff_LabOrder_labStaffIdToStaff: {
             select: {
               firstName: true,
               lastName: true
@@ -4798,23 +6310,16 @@ app.get('/api/dashboard/stats', authenticate, async (req, res) => {
         }
       });
 
-      // Get lab orders by test type (for chart)
       const ordersByType = await prisma.labOrder.groupBy({
         by: ['testType'],
-        _count: {
-          testType: true
-        }
+        _count: { testType: true }
       });
 
-      // Get lab orders by priority (for chart)
       const ordersByPriority = await prisma.labOrder.groupBy({
         by: ['priority'],
-        _count: {
-          priority: true
-        }
+        _count: { priority: true }
       });
 
-      // Get daily lab orders for the last 7 days
       const dailyOrders = await prisma.$queryRaw`
         SELECT DATE("createdAt") as date, COUNT(*) as count
         FROM "LabOrder"
@@ -4823,10 +6328,6 @@ app.get('/api/dashboard/stats', authenticate, async (req, res) => {
         ORDER BY date ASC
       `;
 
-      // Get pending orders count (for alert)
-      const pendingCount = pendingOrders;
-
-      // Get today's orders
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const tomorrow = new Date(today);
@@ -4841,15 +6342,12 @@ app.get('/api/dashboard/stats', authenticate, async (req, res) => {
         }
       });
 
-      // Try to get Lab Scientist specific stats if the fields exist
       if (role === 'LabScientist') {
         try {
-          // Check if validated field exists by trying to query it
           await prisma.labOrder.findFirst({
             select: { validated: true }
           });
           
-          // Field exists, get validation stats
           awaitingValidation = await prisma.labOrder.count({
             where: { 
               validated: false,
@@ -4869,7 +6367,6 @@ app.get('/api/dashboard/stats', authenticate, async (req, res) => {
           });
         } catch (error) {
           console.log('ℹ️ Validation fields not available yet:', error.message);
-          // Fields don't exist, skip validation stats
         }
       }
 
@@ -4883,9 +6380,14 @@ app.get('/api/dashboard/stats', authenticate, async (req, res) => {
           validatedOrders,
           cancelledOrders,
           todaysOrders,
-          pendingCount
+          pendingCount: pendingOrders
         },
-        recentOrders,
+        recentOrders: recentOrders.map(order => ({
+          ...order,
+          patient: order.Patient,
+          orderedBy: order.Staff_LabOrder_orderingStaffIdToStaff,
+          performedBy: order.Staff_LabOrder_labStaffIdToStaff
+        })),
         chartData: {
           ordersByType: ordersByType.map(item => ({
             name: item.testType,
@@ -4902,7 +6404,6 @@ app.get('/api/dashboard/stats', authenticate, async (req, res) => {
         }
       };
       
-      // Only add Lab Scientist stats if we got valid data
       if (role === 'LabScientist' && (awaitingValidation > 0 || validatedToday > 0)) {
         responseData.labScientistStats = {
           awaitingValidation,
@@ -4911,8 +6412,10 @@ app.get('/api/dashboard/stats', authenticate, async (req, res) => {
       }
       
       console.log('✅ Lab dashboard stats fetched successfully');
-    } else {
-      // Default response for unknown roles
+    } 
+    
+    // ✅ Default response for other roles
+    else {
       responseData = { 
         message: 'Stats for this role are work in progress',
         role: role,
@@ -4924,7 +6427,7 @@ app.get('/api/dashboard/stats', authenticate, async (req, res) => {
       };
     }
 
-    // Add common data
+    // Add common data if not already present
     if (!responseData.genderData) {
       responseData.genderData = genderData;
     }
@@ -4999,16 +6502,77 @@ app.get('/api/wards', authenticate, async (req, res) => {
   }
 });
 
+// ✅ FIXED: Create Ward
 app.post('/api/wards', authenticate, authorize('Admin', 'ITAdmin'), async (req, res) => {
   try {
     const { name, description, capacity } = req.body;
     if (!name) return res.status(400).json({ error: 'Ward name is required' });
+    
     const ward = await prisma.ward.create({
-      data: { name: name.trim(), description: description || null, capacity: capacity ? parseInt(capacity) : null }
+      data: { 
+        name: name.trim(), 
+        description: description || null, 
+        capacity: capacity ? parseInt(capacity) : null,
+        updatedAt: new Date() // ✅ ADD THIS
+      }
     });
+    
+    await prisma.auditLog.create({
+      data: {
+        staffId: req.user.id,
+        action: 'CREATE_WARD',
+        module: 'Admin',
+        details: `Created ward: ${name}`
+      }
+    });
+    
     res.status(201).json(ward);
   } catch (error) {
     console.error('Create ward error:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// ✅ FIXED: Update Ward
+app.put('/api/wards/:id', authenticate, authorize('Admin', 'ITAdmin'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, capacity } = req.body;
+    
+    if (!name) {
+      return res.status(400).json({ error: 'Ward name is required' });
+    }
+
+    const existingWard = await prisma.ward.findUnique({
+      where: { id }
+    });
+    
+    if (!existingWard) {
+      return res.status(404).json({ error: 'Ward not found' });
+    }
+
+    const updatedWard = await prisma.ward.update({
+      where: { id },
+      data: { 
+        name: name.trim(), 
+        description: description || null, 
+        capacity: capacity ? parseInt(capacity) : null,
+        updatedAt: new Date() // ✅ ADD THIS
+      }
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        staffId: req.user.id,
+        action: 'UPDATE_WARD',
+        module: 'Admin',
+        details: `Updated ward: ${name}`
+      }
+    });
+
+    res.json(updatedWard);
+  } catch (error) {
+    console.error('Update ward error:', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -5288,19 +6852,51 @@ app.get('/api/patient-journeys', authenticate, authorize('Admin', 'Records'), as
   try {
     const journeys = await prisma.patientJourney.findMany({
       include: {
-        patient: { 
-          select: { 
-            id: true, hospitalId: true, firstName: true, lastName: true, gender: true, dateOfBirth: true,
-            isArchived: true, patientCategory: true, insuranceProvider: true, insuranceId: true, corporateCompany: true
-          } 
+        // ✅ CORRECT: "Patient" (capitalized)
+        Patient: {
+          select: {
+            id: true,
+            hospitalId: true,
+            firstName: true,
+            lastName: true,
+            gender: true,
+            dateOfBirth: true,
+            isArchived: true,
+            patientCategory: true,
+            insuranceProvider: true,
+            insuranceId: true,
+            corporateCompany: true
+          }
         },
-        clinic: true, ward: true,
-        registeredBy: { select: { id: true, firstName: true, lastName: true } },
-        billingRecord: true
+        // ✅ CORRECT: "Clinic" (capitalized)
+        Clinic: true,
+        // ✅ CORRECT: "Ward" (capitalized)
+        Ward: true,
+        // ✅ CORRECT: "Staff" (capitalized) - this maps to registeredBy
+        Staff: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true
+          }
+        },
+        // ✅ CORRECT: "BillingRecord" (capitalized)
+        BillingRecord: true
       },
       orderBy: { createdAt: 'desc' }
     });
-    res.json(journeys);
+    
+    // Format the response to match frontend expectations
+    const formattedJourneys = journeys.map(j => ({
+      ...j,
+      patient: j.Patient,  // Map Patient to patient for frontend
+      registeredBy: j.Staff,  // Map Staff to registeredBy for frontend
+      billingRecord: j.BillingRecord,  // Map BillingRecord to billingRecord for frontend
+      clinic: j.Clinic,
+      ward: j.Ward
+    }));
+    
+    res.json(formattedJourneys);
   } catch (error) { 
     console.error('Get journeys error:', error);
     res.status(500).json({ error: error.message }); 
@@ -5310,44 +6906,80 @@ app.get('/api/patient-journeys', authenticate, authorize('Admin', 'Records'), as
 app.post('/api/patient-journeys', authenticate, authorize('Admin', 'Records'), async (req, res) => {
   try {
     const { patientId: hospitalIdInput, destinationType, clinicId, wardId } = req.body;
+    
     if (!hospitalIdInput || !destinationType) {
       return res.status(400).json({ error: 'Patient and Destination Type are required' });
     }
-    const patient = await prisma.patient.findUnique({ where: { hospitalId: hospitalIdInput } });
-    if (!patient) return res.status(404).json({ error: 'Patient not found. Please check the Hospital ID.' });
+    
+    const patient = await prisma.patient.findUnique({ 
+      where: { hospitalId: hospitalIdInput } 
+    });
+    
+    if (!patient) {
+      return res.status(404).json({ error: 'Patient not found. Please check the Hospital ID.' });
+    }
+    
     if (destinationType === 'CLINIC' && !clinicId) {
       return res.status(400).json({ error: 'A Clinic must be selected for outpatient visits' });
     }
+    
     if (destinationType === 'WARD' && !wardId) {
       return res.status(400).json({ error: 'A Ward must be selected for inpatient admissions' });
     }
+    
     const existing = await prisma.patientJourney.findFirst({
       where: { patientId: patient.id, status: { not: 'COMPLETED' } }
     });
-    if (existing) return res.status(400).json({ error: 'Patient already has an active intake process.' });
+    
+    if (existing) {
+      return res.status(400).json({ error: 'Patient already has an active intake process.' });
+    }
+    
+    // ✅ FIX: Add updatedAt to the data object
     const journey = await prisma.patientJourney.create({
       data: {
-        patientId: patient.id, destinationType,
+        patientId: patient.id,
+        destinationType: destinationType,
         clinicId: destinationType === 'CLINIC' ? clinicId : null,
         wardId: destinationType === 'WARD' ? wardId : null,
-        registeredById: req.user.id, status: 'REGISTERED'
+        registeredById: req.user.id,
+        status: 'REGISTERED',
+        updatedAt: new Date() // ✅ ADD THIS - CRITICAL
       },
-      include: { patient: true, clinic: true, ward: true }
+      include: {
+        Patient: true,    // ✅ FIX: Use "Patient" (capitalized)
+        Clinic: true,     // ✅ FIX: Use "Clinic" (capitalized)
+        Ward: true        // ✅ FIX: Use "Ward" (capitalized)
+      }
     });
+    
+    // Format response for frontend (map capitalized to lowercase)
+    const formattedJourney = {
+      ...journey,
+      patient: journey.Patient,
+      clinic: journey.Clinic,
+      ward: journey.Ward
+    };
+    
     await prisma.auditLog.create({
       data: {
         staffId: req.user.id,
         action: 'START_INTAKE',
         module: 'Records',
-        details: `Started intake for ${journey.patient.hospitalId}`
+        details: `Started intake for ${patient.hospitalId}`
       }
     });
-    res.status(201).json(journey);
+    
+    res.status(201).json(formattedJourney);
   } catch (error) {
     console.error('Error in create journey:', error);
     res.status(400).json({ error: error.message });
   }
 });
+
+// ============================================================
+// UPDATE JOURNEY STATUS - COMPLETE FIXED VERSION
+// ============================================================
 
 app.patch('/api/patient-journeys/:id/status', authenticate, authorize('Admin', 'Records'), async (req, res) => {
   try {
@@ -5364,9 +6996,15 @@ app.patch('/api/patient-journeys/:id/status', authenticate, authorize('Admin', '
       });
     }
 
+    // ✅ Use capitalized field names
     const existingJourney = await prisma.patientJourney.findUnique({
       where: { id },
-      include: { patient: true, clinic: true, ward: true, billingRecord: true }
+      include: {
+        Patient: true,
+        Clinic: true,
+        Ward: true,
+        BillingRecord: true
+      }
     });
 
     if (!existingJourney) {
@@ -5375,32 +7013,36 @@ app.patch('/api/patient-journeys/:id/status', authenticate, authorize('Admin', '
 
     console.log('📋 Found journey:', existingJourney.id, 'Current status:', existingJourney.status);
 
-    const updateData = { status };
+    const updateData = { 
+      status,
+      updatedAt: new Date()
+    };
+    
     if (status === 'CARD_PRINTED') updateData.cardGeneratedAt = new Date();
     if (status === 'SENT_TO_DESTINATION') updateData.sentToDestinationAt = new Date();
 
+    // ============================================================
+    // PENDING_BILLING - Create Invoice
+    // ============================================================
     if (status === 'PENDING_BILLING') {
       console.log('💰 Creating invoice for journey:', existingJourney.id);
       
-      let bill = existingJourney.billingRecord;
+      let bill = existingJourney.BillingRecord;
 
       if (!bill) {
-        const patient = await prisma.patient.findUnique({
-          where: { id: existingJourney.patientId },
-          select: { 
-            patientCategory: true,
-            firstName: true,
-            lastName: true,
-            hospitalId: true
-          }
-        });
+        const patient = existingJourney.Patient;
         
-        console.log('👤 Patient category:', patient?.patientCategory);
+        if (!patient) {
+          return res.status(404).json({ error: 'Patient not found for this journey' });
+        }
         
+        console.log('👤 Patient category:', patient.patientCategory);
+        
+        // Get service price
         let price = await prisma.servicePrice.findFirst({
           where: {
             OR: [
-              { clinicId: existingJourney.clinicId },
+              { clinicId: existingJourney.Clinic?.id },
               { name: 'Consultation' }
             ],
             isActive: true
@@ -5408,19 +7050,23 @@ app.patch('/api/patient-journeys/:id/status', authenticate, authorize('Admin', '
         });
 
         const baseAmount = price ? price.amount : 5000;
-        const category = patient?.patientCategory || 'FPP';
+        const category = patient.patientCategory || 'FPP';
         
         let finalAmount = baseAmount;
         let categoryLabel = '';
+        let multiplier = '100%';
         
         if (category === 'NHIS') {
           finalAmount = Math.round(baseAmount * 0.1);
           categoryLabel = 'NHIS - 10%';
+          multiplier = '10%';
         } else if (category === 'CORPORATE') {
           finalAmount = baseAmount * 2;
           categoryLabel = 'CORPORATE - 200%';
+          multiplier = '200%';
         } else {
           categoryLabel = 'FPP - 100%';
+          multiplier = '100%';
         }
         
         console.log(`💰 Category: ${category}, Base: ${baseAmount}, Final: ${finalAmount}`);
@@ -5430,14 +7076,31 @@ app.patch('/api/patient-journeys/:id/status', authenticate, authorize('Admin', '
         const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
         const invoiceNumber = `INV-${new Date().getFullYear()}-${timestamp}-${random}`;
 
+        // ✅ Create itemized billing record - CORRECT FIELDS ONLY
+        const billingItems = [
+          {
+            name: 'Consultation Fee',
+            category: 'Consultation',
+            amount: finalAmount,
+            status: 'Pending',
+            serviceType: 'CONSULTATION',
+            description: `${description} (${categoryLabel})`
+          }
+        ];
+
+        // ✅ FIXED: Only use fields that exist in your schema
         bill = await prisma.billingRecord.create({
           data: {
-            patientId: existingJourney.patientId,
-            invoiceNumber,
+            patientId: patient.id,
+            invoiceNumber: invoiceNumber,
             description: `${description} (${categoryLabel} - ₦${finalAmount})`,
-            amount: baseAmount,
-            totalAmount: finalAmount,
-            status: 'Pending'
+            totalAmount: finalAmount,    // ✅ EXISTS
+            status: 'Pending',           // ✅ EXISTS
+            items: billingItems,         // ✅ EXISTS
+            balance: finalAmount,        // ✅ EXISTS
+            paidAmount: 0,               // ✅ EXISTS
+            updatedAt: new Date()        // ✅ EXISTS
+            // ❌ NO 'amount' field - removed
           }
         });
 
@@ -5447,66 +7110,98 @@ app.patch('/api/patient-journeys/:id/status', authenticate, authorize('Admin', '
       }
     }
 
+    // ============================================================
+    // UPDATE JOURNEY
+    // ============================================================
     const journey = await prisma.patientJourney.update({
       where: { id },
       data: updateData,
-      include: { patient: true, clinic: true, ward: true, billingRecord: true }
+      include: {
+        Patient: true,
+        Clinic: true,
+        Ward: true,
+        BillingRecord: true
+      }
     });
 
     console.log('✅ Journey updated to:', journey.status);
-    console.log('📋 Billing record:', journey.billingRecord ? journey.billingRecord.invoiceNumber : 'NONE');
 
+    // ============================================================
+    // AUTO-ADMIT TO WARD
+    // ============================================================
     if (status === 'SENT_TO_DESTINATION' && journey.destinationType === 'WARD') {
-      console.log('🏥 Auto-admitting to ward:', journey.wardId);
+      console.log('🏥 Auto-admitting to ward:', journey.Ward?.id);
       
       const existingAdmission = await prisma.admission.findFirst({
-        where: { patientId: journey.patientId, status: 'Admitted' }
+        where: { 
+          patientId: journey.Patient?.id, 
+          status: 'Admitted' 
+        }
       });
       
-      if (!existingAdmission) {
+      if (!existingAdmission && journey.Ward) {
         const count = await prisma.admission.count();
         const admissionNumber = `ADM-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`;
         
         await prisma.admission.create({
           data: {
             admissionNumber,
-            patientId: journey.patientId,
-            wardId: journey.wardId,
+            patientId: journey.Patient?.id,
+            wardId: journey.Ward.id,
             staffId: req.user.id, 
             status: 'Admitted',
-            notes: `Admitted via Patient Intake.`
+            notes: `Admitted via Patient Intake.`,
+            updatedAt: new Date()
           }
         });
         console.log('✅ Admission created:', admissionNumber);
-      } else {
-        console.log('ℹ️ Patient already admitted');
       }
     }
 
+    // ============================================================
+    // AUDIT LOG
+    // ============================================================
     await prisma.auditLog.create({
       data: {
         staffId: req.user.id,
         action: 'UPDATE_INTAKE_STATUS',
         module: 'Records',
-        details: `Patient ${journey.patient.hospitalId} moved to ${status}`
+        details: `Patient ${journey.Patient?.hospitalId} moved to ${status}`
       }
     });
 
-    res.json(journey);
+    // ============================================================
+    // FORMAT RESPONSE
+    // ============================================================
+    const formattedJourney = {
+      ...journey,
+      patient: journey.Patient,
+      clinic: journey.Clinic,
+      ward: journey.Ward,
+      billingRecord: journey.BillingRecord
+    };
+
+    res.json(formattedJourney);
+    
   } catch (error) {
     console.error('❌ Error updating journey status:', error);
     res.status(400).json({ error: error.message || 'Failed to update journey status' });
   }
 });
 
+// ✅ FIXED: Reverse Journey
 app.patch('/api/patient-journeys/:id/reverse', authenticate, authorize('Admin', 'Records'), async (req, res) => {
   try {
     const { id } = req.params;
     const { reason } = req.body;
 
+    // ✅ FIX: Use capitalized field names
     const journey = await prisma.patientJourney.findUnique({
       where: { id },
-      include: { patient: true, billingRecord: true }
+      include: {
+        Patient: true,        // ✅ Capitalized
+        BillingRecord: true   // ✅ Capitalized
+      }
     });
 
     if (!journey) {
@@ -5707,44 +7402,116 @@ app.patch('/api/patient-journeys/:id/return-to-stage', authenticate, authorize('
 
 // ============ ADMISSIONS (ADT) ============
 
+// ✅ FIXED: GET /api/admissions
 app.get('/api/admissions', authenticate, async (req, res) => {
   try {
     const admissions = await prisma.admission.findMany({
       include: {
-        patient: { select: { firstName: true, lastName: true, hospitalId: true } },
-        staff: { select: { firstName: true, lastName: true } },
-        ward: true
+        // ✅ CHANGE: Use "Patient" NOT "patient"
+        Patient: {
+          select: {
+            firstName: true,
+            lastName: true,
+            hospitalId: true,
+            id: true,
+            phone: true,
+            gender: true,
+            dateOfBirth: true
+          }
+        },
+        // ✅ CHANGE: Use "Staff" NOT "staff"
+        Staff: {
+          select: {
+            firstName: true,
+            lastName: true,
+            role: true,
+            id: true
+          }
+        },
+        // ✅ CHANGE: Use "Ward" NOT "ward"
+        Ward: true
       },
       orderBy: { admissionDate: 'desc' }
     });
-    res.json(admissions);
+
+    // Format response to match frontend expectations
+    const formattedAdmissions = admissions.map(a => ({
+      ...a,
+      patient: a.Patient,
+      staff: a.Staff,
+      ward: a.Ward
+    }));
+
+    res.json(formattedAdmissions);
   } catch (error) {
     console.error('Get admissions error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
+// ✅ FIXED: POST /api/admissions
 app.post('/api/admissions', authenticate, authorize('Admin', 'Records', 'ITAdmin'), async (req, res) => {
   try {
     const { patientId, staffId, wardId, notes } = req.body;
+    
     if (!patientId || !staffId || !wardId) {
       return res.status(400).json({ error: 'Missing required fields: patientId, staffId, wardId' });
     }
+    
     const count = await prisma.admission.count();
     const admissionNumber = `ADM-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`;
+    
     const admission = await prisma.admission.create({
-      data: { admissionNumber, patientId, staffId, wardId, notes, status: 'Admitted' },
-      include: { patient: true, staff: true, ward: true }
+      data: { 
+        admissionNumber, 
+        patientId, 
+        staffId, 
+        wardId, 
+        notes, 
+        status: 'Admitted' 
+      },
+      include: { 
+        // ✅ CHANGE: Use "Patient" NOT "patient"
+        Patient: {
+          select: {
+            id: true,
+            hospitalId: true,
+            firstName: true,
+            lastName: true
+          }
+        },
+        // ✅ CHANGE: Use "Staff" NOT "staff"
+        Staff: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true
+          }
+        },
+        // ✅ CHANGE: Use "Ward" NOT "ward"
+        Ward: true
+      }
     });
+    
+    // Format response
+    const formattedAdmission = {
+      ...admission,
+      patient: admission.Patient,
+      staff: admission.Staff,
+      ward: admission.Ward
+    };
+    
     await prisma.auditLog.create({
       data: {
         staffId: req.user.id,
         action: 'ADMIT_PATIENT',
         module: 'Records',
-        details: `Admitted patient ${admission.patient.hospitalId} (${admissionNumber}) to ${admission.ward.name}`
+        details: `Admitted patient ${formattedAdmission.patient.hospitalId} (${admissionNumber}) to ${formattedAdmission.ward?.name || 'N/A'}`
       }
     });
-    res.status(201).json(admission);
+    
+    res.status(201).json(formattedAdmission);
   } catch (error) {
     console.error('Create admission error:', error);
     res.status(400).json({ error: error.message });
@@ -5806,29 +7573,67 @@ app.get('/api/nurse/patients', authenticate, authorize('Nurse', 'Admin', 'Midwif
   try {
     const staff = await prisma.staff.findUnique({
       where: { id: req.user.id },
-      include: { clinics: { select: { clinicId: true } }, wards: { select: { wardId: true } } }
+      include: {
+        // ✅ FIX: Use StaffClinic and StaffWard
+        StaffClinic: { select: { clinicId: true } },
+        StaffWard: { select: { wardId: true } }
+      }
     });
-    const clinicIds = staff.clinics.map(c => c.clinicId);
-    const wardIds = staff.wards.map(w => w.wardId);
-    if (clinicIds.length === 0 && wardIds.length === 0) return res.json([]);
+    
+    if (!staff) {
+      return res.status(404).json({ error: 'Staff not found' });
+    }
+    
+    const clinicIds = staff.StaffClinic?.map(c => c.clinicId) || [];
+    const wardIds = staff.StaffWard?.map(w => w.wardId) || [];
+    
+    if (clinicIds.length === 0 && wardIds.length === 0) {
+      return res.json([]);
+    }
+    
+    // ✅ FIX: Use correct field names
     const journeys = await prisma.patientJourney.findMany({
       where: {
         status: { in: ['SENT_TO_DESTINATION', 'COMPLETED'] },
-        OR: [{ clinicId: { in: clinicIds } }, { wardId: { in: wardIds } }]
+        OR: [
+          { clinicId: { in: clinicIds } },
+          { wardId: { in: wardIds } }
+        ]
       },
       include: {
-        patient: {
+        Patient: {      // ✅ Capitalized
           select: {
-            id: true, hospitalId: true, firstName: true, lastName: true, gender: true,
-            dateOfBirth: true, phone: true, email: true, address: true, emergencyContact: true,
-            allergies: true, nextOfKinName: true, nextOfKinPhone: true, nextOfKinRelationship: true
+            id: true,
+            hospitalId: true,
+            firstName: true,
+            lastName: true,
+            gender: true,
+            dateOfBirth: true,
+            phone: true,
+            email: true,
+            address: true,
+            emergencyContact: true,
+            allergies: true,
+            nextOfKinName: true,
+            nextOfKinPhone: true,
+            nextOfKinRelationship: true
           }
         },
-        clinic: true, ward: true
+        Clinic: true,   // ✅ Capitalized
+        Ward: true      // ✅ Capitalized
       },
       orderBy: { updatedAt: 'desc' }
     });
-    res.json(journeys);
+    
+    // Format for frontend
+    const formattedJourneys = journeys.map(j => ({
+      ...j,
+      patient: j.Patient,
+      clinic: j.Clinic,
+      ward: j.Ward
+    }));
+    
+    res.json(formattedJourneys);
   } catch (error) {
     console.error('Error fetching nurse patients:', error);
     res.status(500).json({ error: error.message });
@@ -5836,38 +7641,45 @@ app.get('/api/nurse/patients', authenticate, authorize('Nurse', 'Admin', 'Midwif
 });
 
 // ✅ UPDATED: GET /api/patients/:patientId/vitals with staff name fallback
+// ============================================================
+// GET VITALS - FIXED
+// ============================================================
+
 app.get('/api/patients/:patientId/vitals', authenticate, async (req, res) => {
   try {
+    const { patientId } = req.params;
+    
+    // ✅ FIX: Use "Staff" NOT "nurse"
     const vitals = await prisma.vitalSign.findMany({
-      where: { patientId: req.params.patientId },
-      include: { 
-        nurse: { 
-          select: { 
+      where: { patientId },
+      include: {
+        Staff: {           // ✅ CHANGED: nurse → Staff
+          select: {
             id: true,
-            firstName: true, 
+            firstName: true,
             lastName: true,
             role: true
-          } 
-        } 
+          }
+        }
       },
       orderBy: { recordedAt: 'desc' }
     });
     
-    // ✅ Add fallback for unknown staff
+    // Format for frontend
     const formattedVitals = vitals.map(v => ({
       ...v,
-      nurse: v.nurse ? {
-        ...v.nurse,
-        fullName: v.nurse.firstName && v.nurse.lastName 
-          ? `${v.nurse.firstName} ${v.nurse.lastName}`
-          : `${v.nurse.role || 'Unknown'} (ID: ${v.nurseId?.slice(0, 8) || 'Unknown'})`
+      nurse: v.Staff ? {   // ✅ Map Staff to nurse for frontend
+        ...v.Staff,
+        fullName: v.Staff.firstName && v.Staff.lastName 
+          ? `${v.Staff.firstName} ${v.Staff.lastName}`
+          : `${v.Staff.role || 'Unknown'} (ID: ${v.nurseId?.slice(0, 8) || 'Unknown'})`
       } : {
         fullName: 'Unknown Nurse (Deleted)',
         role: 'Unknown'
       }
     }));
     
-    console.log('📋 Vitals fetched:', formattedVitals.length);
+    console.log(`📋 Found ${formattedVitals.length} vitals for patient ${patientId}`);
     res.json(formattedVitals);
   } catch (error) {
     console.error('Error fetching vitals:', error);
@@ -5875,14 +7687,34 @@ app.get('/api/patients/:patientId/vitals', authenticate, async (req, res) => {
   }
 });
 
+// ============================================================
+// RECORD VITALS - FIXED
+// ============================================================
+
 app.post('/api/vitals', authenticate, authorize('Nurse', 'Midwife', 'Doctor', 'Obstetrician', 'Admin'), async (req, res) => {
   try {
-    const { patientId, bloodPressureSystolic, bloodPressureDiastolic, heartRate, temperature,
-      respiratoryRate, oxygenSaturation, weight, height, notes } = req.body;
-    if (!patientId) return res.status(400).json({ error: 'Patient ID is required' });
+    const { 
+      patientId, 
+      bloodPressureSystolic, 
+      bloodPressureDiastolic, 
+      heartRate, 
+      temperature,
+      respiratoryRate, 
+      oxygenSaturation, 
+      weight, 
+      height, 
+      notes 
+    } = req.body;
+    
+    if (!patientId) {
+      return res.status(400).json({ error: 'Patient ID is required' });
+    }
+    
+    // ✅ FIX: Add updatedAt to the create data
     const vital = await prisma.vitalSign.create({
       data: {
-        patientId, nurseId: req.user.id,
+        patientId,
+        nurseId: req.user.id,
         bloodPressureSystolic: bloodPressureSystolic ? parseInt(bloodPressureSystolic) : null,
         bloodPressureDiastolic: bloodPressureDiastolic ? parseInt(bloodPressureDiastolic) : null,
         heartRate: heartRate ? parseInt(heartRate) : null,
@@ -5891,9 +7723,11 @@ app.post('/api/vitals', authenticate, authorize('Nurse', 'Midwife', 'Doctor', 'O
         oxygenSaturation: oxygenSaturation ? parseInt(oxygenSaturation) : null,
         weight: weight ? parseFloat(weight) : null,
         height: height ? parseFloat(height) : null,
-        notes: notes || null
+        notes: notes || null,
+        updatedAt: new Date() // ✅ ADD THIS
       }
     });
+    
     await prisma.auditLog.create({
       data: {
         staffId: req.user.id,
@@ -5902,6 +7736,7 @@ app.post('/api/vitals', authenticate, authorize('Nurse', 'Midwife', 'Doctor', 'O
         details: `Recorded vitals for patient ${patientId}`
       }
     });
+    
     res.status(201).json(vital);
   } catch (error) {
     console.error('Error recording vitals:', error);
@@ -5911,59 +7746,172 @@ app.post('/api/vitals', authenticate, authorize('Nurse', 'Midwife', 'Doctor', 'O
 
 // ============ NURSE ASSIGNMENT ENDPOINTS (Admin Only) ============
 
+// ============================================================
+// STAFF ASSIGNMENTS - FIXED BACKEND
+// ============================================================
+
+// GET Staff Assignments
 app.get('/api/staff/:staffId/assignments', authenticate, authorize('Admin'), async (req, res) => {
-  const staff = await prisma.staff.findUnique({
-    where: { id: req.params.staffId },
-    include: {
-      clinics: { include: { clinic: true } },
-      wards: { include: { ward: true } }
+  try {
+    const { staffId } = req.params;
+    
+    // ✅ FIX: Use correct field names - StaffClinic and StaffWard
+    const staff = await prisma.staff.findUnique({
+      where: { id: staffId },
+      include: {
+        StaffClinic: {
+          include: {
+            Clinic: true
+          }
+        },
+        StaffWard: {
+          include: {
+            Ward: true
+          }
+        }
+      }
+    });
+    
+    if (!staff) {
+      return res.status(404).json({ error: 'Staff not found' });
     }
-  });
-  res.json({
-    clinicIds: staff.clinics.map(c => c.clinicId),
-    wardIds: staff.wards.map(w => w.wardId)
-  });
+    
+    // Format response for frontend
+    const clinicIds = staff.StaffClinic?.map(sc => sc.clinicId).filter(Boolean) || [];
+    const wardIds = staff.StaffWard?.map(sw => sw.wardId).filter(Boolean) || [];
+    
+    // Also return the full clinic and ward objects
+    const clinics = staff.StaffClinic?.map(sc => sc.Clinic).filter(Boolean) || [];
+    const wards = staff.StaffWard?.map(sw => sw.Ward).filter(Boolean) || [];
+    
+    console.log(`✅ Staff ${staffId} assignments: ${clinicIds.length} clinics, ${wardIds.length} wards`);
+    
+    res.json({
+      clinicIds,
+      wardIds,
+      clinics,
+      wards
+    });
+  } catch (error) {
+    console.error('Get assignments error:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
+// ASSIGN CLINIC TO STAFF
 app.post('/api/staff/:staffId/clinics', authenticate, authorize('Admin'), async (req, res) => {
-  const { clinicId } = req.body;
-  await prisma.staffClinic.create({
-    data: { staffId: req.params.staffId, clinicId }
-  });
-  res.json({ message: 'Clinic assigned' });
+  try {
+    const { staffId } = req.params;
+    const { clinicId } = req.body;
+    
+    // ✅ Check if assignment already exists
+    const existing = await prisma.staffClinic.findUnique({
+      where: {
+        staffId_clinicId: {
+          staffId,
+          clinicId
+        }
+      }
+    });
+    
+    if (existing) {
+      return res.status(400).json({ error: 'Staff already assigned to this clinic' });
+    }
+    
+    await prisma.staffClinic.create({
+      data: { 
+        staffId, 
+        clinicId 
+      }
+    });
+    
+    console.log(`✅ Clinic ${clinicId} assigned to staff ${staffId}`);
+    res.json({ message: 'Clinic assigned successfully' });
+  } catch (error) {
+    console.error('Assign clinic error:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
+// REMOVE CLINIC FROM STAFF
 app.delete('/api/staff/:staffId/clinics/:clinicId', authenticate, authorize('Admin'), async (req, res) => {
-  await prisma.staffClinic.delete({
-    where: {
-      staffId_clinicId: {
-        staffId: req.params.staffId,
-        clinicId: req.params.clinicId
+  try {
+    const { staffId, clinicId } = req.params;
+    
+    await prisma.staffClinic.delete({
+      where: {
+        staffId_clinicId: {
+          staffId,
+          clinicId
+        }
       }
-    }
-  });
-  res.json({ message: 'Clinic unassigned' });
+    });
+    
+    console.log(`✅ Clinic ${clinicId} removed from staff ${staffId}`);
+    res.json({ message: 'Clinic unassigned successfully' });
+  } catch (error) {
+    console.error('Unassign clinic error:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
+// ASSIGN WARD TO STAFF
 app.post('/api/staff/:staffId/wards', authenticate, authorize('Admin'), async (req, res) => {
-  const { wardId } = req.body;
-  await prisma.staffWard.create({
-    data: { staffId: req.params.staffId, wardId }
-  });
-  res.json({ message: 'Ward assigned' });
+  try {
+    const { staffId } = req.params;
+    const { wardId } = req.body;
+    
+    // ✅ Check if assignment already exists
+    const existing = await prisma.staffWard.findUnique({
+      where: {
+        staffId_wardId: {
+          staffId,
+          wardId
+        }
+      }
+    });
+    
+    if (existing) {
+      return res.status(400).json({ error: 'Staff already assigned to this ward' });
+    }
+    
+    await prisma.staffWard.create({
+      data: { 
+        staffId, 
+        wardId 
+      }
+    });
+    
+    console.log(`✅ Ward ${wardId} assigned to staff ${staffId}`);
+    res.json({ message: 'Ward assigned successfully' });
+  } catch (error) {
+    console.error('Assign ward error:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
+// REMOVE WARD FROM STAFF
 app.delete('/api/staff/:staffId/wards/:wardId', authenticate, authorize('Admin'), async (req, res) => {
-  await prisma.staffWard.delete({
-    where: {
-      staffId_wardId: {
-        staffId: req.params.staffId,
-        wardId: req.params.wardId
+  try {
+    const { staffId, wardId } = req.params;
+    
+    await prisma.staffWard.delete({
+      where: {
+        staffId_wardId: {
+          staffId,
+          wardId
+        }
       }
-    }
-  });
-  res.json({ message: 'Ward unassigned' });
+    });
+    
+    console.log(`✅ Ward ${wardId} removed from staff ${staffId}`);
+    res.json({ message: 'Ward unassigned successfully' });
+  } catch (error) {
+    console.error('Unassign ward error:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
+
 
 // ============ DOCTOR ENDPOINTS ============
 
@@ -5971,29 +7919,67 @@ app.get('/api/doctor/patients', authenticate, authorize('Doctor', 'Obstetrician'
   try {
     const staff = await prisma.staff.findUnique({
       where: { id: req.user.id },
-      include: { clinics: { select: { clinicId: true } }, wards: { select: { wardId: true } } }
+      include: {
+        // ✅ FIX: Use StaffClinic and StaffWard (correct field names)
+        StaffClinic: { select: { clinicId: true } },
+        StaffWard: { select: { wardId: true } }
+      }
     });
-    const clinicIds = staff.clinics.map(c => c.clinicId);
-    const wardIds = staff.wards.map(w => w.wardId);
-    if (clinicIds.length === 0 && wardIds.length === 0) return res.json([]);
+    
+    if (!staff) {
+      return res.status(404).json({ error: 'Staff not found' });
+    }
+    
+    const clinicIds = staff.StaffClinic?.map(c => c.clinicId) || [];
+    const wardIds = staff.StaffWard?.map(w => w.wardId) || [];
+    
+    if (clinicIds.length === 0 && wardIds.length === 0) {
+      return res.json([]);
+    }
+    
+    // ✅ FIX: Use correct field names in include
     const journeys = await prisma.patientJourney.findMany({
       where: {
         status: { in: ['SENT_TO_DESTINATION', 'COMPLETED'] },
-        OR: [{ clinicId: { in: clinicIds } }, { wardId: { in: wardIds } }]
+        OR: [
+          { clinicId: { in: clinicIds } },
+          { wardId: { in: wardIds } }
+        ]
       },
       include: {
-        patient: {
+        Patient: {      // ✅ Capitalized
           select: {
-            id: true, hospitalId: true, firstName: true, lastName: true, gender: true,
-            dateOfBirth: true, phone: true, email: true, address: true, emergencyContact: true,
-            allergies: true, nextOfKinName: true, nextOfKinPhone: true, nextOfKinRelationship: true
+            id: true,
+            hospitalId: true,
+            firstName: true,
+            lastName: true,
+            gender: true,
+            dateOfBirth: true,
+            phone: true,
+            email: true,
+            address: true,
+            emergencyContact: true,
+            allergies: true,
+            nextOfKinName: true,
+            nextOfKinPhone: true,
+            nextOfKinRelationship: true
           }
         },
-        clinic: true, ward: true
+        Clinic: true,   // ✅ Capitalized
+        Ward: true      // ✅ Capitalized
       },
       orderBy: { updatedAt: 'desc' }
     });
-    res.json(journeys);
+    
+    // Format for frontend
+    const formattedJourneys = journeys.map(j => ({
+      ...j,
+      patient: j.Patient,
+      clinic: j.Clinic,
+      ward: j.Ward
+    }));
+    
+    res.json(formattedJourneys);
   } catch (error) {
     console.error('Error fetching doctor patients:', error);
     res.status(500).json({ error: error.message });
@@ -7187,36 +9173,70 @@ async function autoArchivePatients() {
   try {
     const threeDaysAgo = new Date();
     threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+    
+    // ✅ FIX: Use "Patient" (capitalized) NOT "patient"
     const completedJourneys = await prisma.patientJourney.findMany({
-      where: { status: 'COMPLETED', completedAt: { lte: threeDaysAgo } },
-      select: { patientId: true, patient: { select: { isArchived: true, hospitalId: true, firstName: true, lastName: true } } },
+      where: { 
+        status: 'COMPLETED', 
+        completedAt: { lte: threeDaysAgo } 
+      },
+      select: {
+        patientId: true,
+        Patient: {        // ✅ CHANGED: patient → Patient
+          select: {
+            isArchived: true,
+            hospitalId: true,
+            firstName: true,
+            lastName: true
+          }
+        }
+      },
       distinct: ['patientId']
     });
-    const patientsToArchive = completedJourneys.filter(j => !j.patient.isArchived).map(j => j.patient);
+    
+    // ✅ FIX: Access Patient properly
+    const patientsToArchive = completedJourneys
+      .filter(j => j.Patient && !j.Patient.isArchived)
+      .map(j => j.Patient);
+    
     let archivedCount = 0;
     for (const patient of patientsToArchive) {
       try {
         await prisma.patient.update({
           where: { id: patient.id },
           data: {
-            isArchived: true, archivedAt: new Date(),
+            isArchived: true,
+            archivedAt: new Date(),
             archivedReason: 'Auto-archived after 3 days of completion',
-            archivedBy: null, autoArchived: true
+            archivedBy: null,
+            autoArchived: true,
+            updatedAt: new Date() // ✅ Add this
           }
         });
+        
         const journey = await prisma.patientJourney.findFirst({
-          where: { patientId: patient.id, status: 'COMPLETED' },
+          where: { 
+            patientId: patient.id, 
+            status: 'COMPLETED' 
+          },
           orderBy: { completedAt: 'desc' }
         });
+        
         if (journey) {
           await prisma.patientJourney.update({
             where: { id: journey.id },
-            data: { archivedAt: new Date() }
+            data: { 
+              archivedAt: new Date(),
+              updatedAt: new Date() // ✅ Add this
+            }
           });
         }
+        
         await prisma.auditLog.create({
           data: {
-            staffId: null, action: 'AUTO_ARCHIVE_PATIENT', module: 'System',
+            staffId: null,
+            action: 'AUTO_ARCHIVE_PATIENT',
+            module: 'System',
             details: `Auto-archived patient ${patient.hospitalId} - ${patient.firstName} ${patient.lastName}`
           }
         });
@@ -9196,6 +11216,20 @@ app.get('/api/patient/search/quick', authenticate, async (req, res) => {
 // Deduct from wallet with balance check
 async function deductFromWallet(patientId, amount, description, category, serviceId, serviceType, staffId) {
   try {
+    // Fetch staff name
+    let staffName = 'Unknown Staff';
+    if (staffId) {
+      const staff = await prisma.staff.findUnique({
+        where: { id: staffId },
+        select: { firstName: true, lastName: true, username: true, role: true }
+      });
+      if (staff) {
+        staffName = `${staff.firstName || ''} ${staff.lastName || ''}`.trim() || staff.username || staff.role || 'Unknown Staff';
+      }
+    }
+
+    console.log(`💰 Deducting ₦${amount} from wallet for patient ${patientId}`);
+
     const wallet = await prisma.patientWallet.findUnique({
       where: { patientId }
     });
@@ -9207,6 +11241,8 @@ async function deductFromWallet(patientId, amount, description, category, servic
         code: 'WALLET_NOT_FOUND'
       };
     }
+
+    console.log(`💰 Current wallet balance: ₦${wallet.balance}`);
 
     if (wallet.status !== 'Active') {
       return {
@@ -9229,15 +11265,22 @@ async function deductFromWallet(patientId, amount, description, category, servic
     const balanceBefore = wallet.balance;
     const balanceAfter = balanceBefore - amount;
 
+    console.log(`💰 Balance before: ₦${balanceBefore}, After: ₦${balanceAfter}`);
+
     const result = await prisma.$transaction(async (tx) => {
+      // Update wallet balance
       const updatedWallet = await tx.patientWallet.update({
         where: { id: wallet.id },
         data: {
           balance: balanceAfter,
-          lastTransactionAt: new Date()
+          lastTransactionAt: new Date(),
+          updatedAt: new Date()
         }
       });
 
+      console.log(`✅ Wallet updated: ₦${updatedWallet.balance}`);
+
+      // ✅ CREATE TRANSACTION WITH updatedAt
       const transaction = await tx.walletTransaction.create({
         data: {
           walletId: wallet.id,
@@ -9252,21 +11295,26 @@ async function deductFromWallet(patientId, amount, description, category, servic
           serviceId: serviceId || null,
           serviceType: serviceType || null,
           paidToStaffId: staffId || null,
-          notes: `Auto-deducted for ${category || 'service'}`
+          notes: `Payment processed by ${staffName}`,
+          updatedAt: new Date() 
         }
       });
+
+      console.log(`✅ Transaction created: ${transaction.reference}`);
 
       await tx.auditLog.create({
         data: {
           staffId: staffId || null,
           action: 'WALLET_AUTO_DEDUCT',
           module: 'Wallet',
-          details: `Auto-deducted ₦${amount.toLocaleString()} from wallet for ${description}`
+          details: `Auto-deducted ₦${amount.toLocaleString()} from wallet by ${staffName} for ${description}`
         }
       });
 
       return { updatedWallet, transaction };
     });
+
+    console.log(`✅ Deduction complete. New balance: ₦${result.updatedWallet.balance}`);
 
     return {
       success: true,
@@ -9274,7 +11322,7 @@ async function deductFromWallet(patientId, amount, description, category, servic
       transaction: result.transaction
     };
   } catch (error) {
-    console.error('Wallet deduction error:', error);
+    console.error('❌ Wallet deduction error:', error);
     return {
       success: false,
       error: error.message,
@@ -9493,6 +11541,96 @@ app.get('/api/patient/wallet/notifications', authenticatePatient, async (req, re
 
 // ============ AUTO-ARCHIVE SCHEDULER ============
 console.log('Auto-archive scheduler started (runs every 6 hours)');
+
+
+// ============================================================
+// SERVICE CONFIGURATION ENDPOINTS
+// ============================================================
+
+// Get all service fees
+app.get('/api/services/config', authenticate, authorize('Admin', 'ITAdmin', 'Accountant'), async (req, res) => {
+  try {
+    const configs = await prisma.serviceConfiguration.findMany({
+      orderBy: { serviceType: 'asc' }
+    });
+    res.json(configs);
+  } catch (error) {
+    console.error('Get service configs error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get single service fee
+app.get('/api/services/config/:serviceType', async (req, res) => {
+  try {
+    const { serviceType } = req.params;
+    const config = await prisma.serviceConfiguration.findUnique({
+      where: { serviceType }
+    });
+    
+    if (!config) {
+      const defaults = {
+        'REGISTRATION': { baseAmount: 2000, name: 'Registration Fee' },
+        'CARD': { baseAmount: 1000, name: 'Hospital ID Card' },
+        'CONSULTATION': { baseAmount: 5000, name: 'Consultation Fee' }
+      };
+      return res.json({
+        serviceType,
+        name: defaults[serviceType]?.name || serviceType,
+        baseAmount: defaults[serviceType]?.baseAmount || 3000,
+        isActive: true
+      });
+    }
+    
+    res.json(config);
+  } catch (error) {
+    console.error('Get service config error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update service fee
+app.put('/api/services/config/:serviceType', authenticate, authorize('Admin', 'ITAdmin', 'Accountant'), async (req, res) => {
+  try {
+    const { serviceType } = req.params;
+    const { name, description, baseAmount, nhisAmount, corporateAmount, isActive } = req.body;
+    
+    const config = await prisma.serviceConfiguration.upsert({
+      where: { serviceType },
+      update: {
+        name: name || undefined,
+        description: description || undefined,
+        baseAmount: baseAmount !== undefined ? parseFloat(baseAmount) : undefined,
+        nhisAmount: nhisAmount !== undefined ? parseFloat(nhisAmount) : undefined,
+        corporateAmount: corporateAmount !== undefined ? parseFloat(corporateAmount) : undefined,
+        isActive: isActive !== undefined ? isActive : undefined
+      },
+      create: {
+        serviceType,
+        name: name || serviceType,
+        description: description || null,
+        baseAmount: parseFloat(baseAmount) || 0,
+        nhisAmount: nhisAmount ? parseFloat(nhisAmount) : null,
+        corporateAmount: corporateAmount ? parseFloat(corporateAmount) : null,
+        isActive: isActive !== undefined ? isActive : true
+      }
+    });
+    
+    await prisma.auditLog.create({
+      data: {
+        staffId: req.user.id,
+        action: 'UPDATE_SERVICE_CONFIG',
+        module: 'Pricing',
+        details: `Updated ${serviceType} fee to ₦${config.baseAmount}`
+      }
+    });
+    
+    res.json(config);
+  } catch (error) {
+    console.error('Update service config error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // ============ START SERVER ============
 const PORT = process.env.PORT || 3000;

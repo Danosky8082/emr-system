@@ -52,6 +52,8 @@ import PatientChangeCredentials from './pages/PatientChangeCredentials';
 
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
+import ServiceConfig from './pages/ServiceConfig';
+
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('emr_token'));
@@ -146,6 +148,7 @@ function App() {
           <Route path="audit-logs" element={<AuditLogs />} />
           <Route path="system-status" element={<SystemStatus />} />
           <Route path="wallet" element={<WalletDashboard />} />
+          <Route path="service-config" element={<ServiceConfig />} />
         </Route>
         
         {/* ============================================================

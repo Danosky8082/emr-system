@@ -1,4 +1,5 @@
-// src/pages/StaffManagement.jsx
+// src/pages/StaffManagement.jsx - COMPLETE FIXED VERSION
+
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
@@ -27,21 +28,19 @@ const StaffManagement = () => {
     password: ''
   });
 
-  // Assignment state (for nurses and doctors)
+  // Assignment state
   const [clinics, setClinics] = useState([]);
   const [wards, setWards] = useState([]);
   const [assignedClinicIds, setAssignedClinicIds] = useState([]);
   const [assignedWardIds, setAssignedWardIds] = useState([]);
 
-  // ✅ Available roles - ADDED LabScientist
   const roles = [
     'Admin', 'ITAdmin', 'ITSupport', 'Doctor', 'Nurse',
-    'Pharmacist', 'Accountant', 'Records', 'LabTechnician', 
-    'LabScientist',  // ✅ ADDED
-    'Receptionist', 'BillingOfficer', 'Obstetrician', 'Midwife', 'Radiologist'
+    'Pharmacist', 'Accountant', 'Records', 'LabTechnician',
+    'LabScientist', 'Receptionist', 'BillingOfficer',
+    'Obstetrician', 'Midwife', 'Radiologist', 'HR'
   ];
 
-  // ✅ Departments - ADDED LabScientist
   const departments = [
     'Administration', 'Internal Medicine', 'Surgery', 'Paediatrics',
     'Obstetrics & Gynaecology', 'Pharmacy', 'Laboratory', 'Medical Records',
@@ -49,21 +48,44 @@ const StaffManagement = () => {
     'Information Technology', 'Health Informatics', 'LabScientist'
   ];
 
-  // ✅ Roles that require clinic/ward assignment
   const rolesRequiringAssignment = ['Doctor', 'Nurse', 'Obstetrician', 'Midwife'];
 
-  // Fetch staff on load
-  useEffect(() => {
-    fetchStaff();
-    fetchClinicsAndWards();
-  }, []);
-
+  // ✅ FETCH STAFF WITH ASSIGNMENTS
   const fetchStaff = async () => {
+    setLoading(true);
     try {
+      console.log('📋 Fetching staff list...');
       const res = await axios.get('http://localhost:3000/api/staff', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setStaff(res.data);
+
+      const staffWithAssignments = await Promise.all(
+        res.data.map(async (staffMember) => {
+          try {
+            const assignRes = await axios.get(
+              `http://localhost:3000/api/staff/${staffMember.id}/assignments`,
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+            
+            return {
+              ...staffMember,
+              // ✅ The API returns direct clinic/ward objects
+              StaffClinic: assignRes.data.clinics || [],
+              StaffWard: assignRes.data.wards || []
+            };
+          } catch (e) {
+            return { 
+              ...staffMember, 
+              StaffClinic: [], 
+              StaffWard: [] 
+            };
+          }
+        })
+      );
+
+      setStaff(staffWithAssignments);
+      localStorage.setItem('staffData', JSON.stringify(staffWithAssignments));
+      console.log(`✅ Staff loaded: ${staffWithAssignments.length} members`);
     } catch (error) {
       console.error('Error fetching staff:', error);
       toast.error('Failed to load staff');
@@ -72,11 +94,16 @@ const StaffManagement = () => {
     }
   };
 
+  // ✅ FETCH CLINICS AND WARDS
   const fetchClinicsAndWards = async () => {
     try {
       const [clinicRes, wardRes] = await Promise.all([
-        axios.get('http://localhost:3000/api/clinics', { headers: { Authorization: `Bearer ${token}` } }),
-        axios.get('http://localhost:3000/api/wards', { headers: { Authorization: `Bearer ${token}` } })
+        axios.get('http://localhost:3000/api/clinics', {
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        axios.get('http://localhost:3000/api/wards', {
+          headers: { Authorization: `Bearer ${token}` }
+        })
       ]);
       setClinics(clinicRes.data);
       setWards(wardRes.data);
@@ -86,12 +113,13 @@ const StaffManagement = () => {
     }
   };
 
-  // Fetch assignments when editing a nurse or doctor
+  // ✅ FETCH ASSIGNMENTS FOR EDITING
   const fetchAssignments = async (staffId) => {
     try {
-      const res = await axios.get(`http://localhost:3000/api/staff/${staffId}/assignments`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await axios.get(
+        `http://localhost:3000/api/staff/${staffId}/assignments`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
       setAssignedClinicIds(res.data.clinicIds || []);
       setAssignedWardIds(res.data.wardIds || []);
     } catch (error) {
@@ -100,6 +128,52 @@ const StaffManagement = () => {
       setAssignedWardIds([]);
     }
   };
+
+  // ✅ GET ASSIGNMENT DISPLAY - FIXED: Use direct 'name' property
+  const getAssignmentDisplay = (staffMember) => {
+    const assignedClinics = staffMember?.StaffClinic || [];
+    const assignedWards = staffMember?.StaffWard || [];
+    
+    // ✅ FIX: Use direct 'name' property (not Clinic.name or Ward.name)
+    const clinicNames = assignedClinics
+      .map(clinic => clinic?.name)
+      .filter(Boolean);
+      
+    const wardNames = assignedWards
+      .map(ward => ward?.name)
+      .filter(Boolean);
+      
+    const allAssignments = [...clinicNames, ...wardNames];
+
+    if (allAssignments.length > 0) {
+      return (
+        <span style={{ color: '#10b981', fontSize: '11px', display: 'block', marginTop: '2px' }}>
+          📍 {allAssignments.join(', ')}
+        </span>
+      );
+    }
+    return (
+      <span style={{
+        display: 'inline-block',
+        marginTop: '2px',
+        padding: '2px 8px',
+        background: '#fef3c7',
+        color: '#92400e',
+        fontSize: '10px',
+        borderRadius: '12px',
+        fontWeight: '600'
+      }}>
+        ⚠️ No Clinic/Ward Assigned
+      </span>
+    );
+  };
+
+  useEffect(() => {
+    if (token) {
+      fetchStaff();
+      fetchClinicsAndWards();
+    }
+  }, [token]);
 
   // Filter staff by search term
   const filteredStaff = staff.filter(s => {
@@ -116,7 +190,6 @@ const StaffManagement = () => {
     e.preventDefault();
     try {
       if (editingStaff) {
-        // Update existing staff
         const { password, ...updateData } = formData;
         if (updateData.username) updateData.username = updateData.username.toLowerCase().trim();
         await axios.put(`http://localhost:3000/api/staff/${editingStaff.id}`, updateData, {
@@ -124,58 +197,73 @@ const StaffManagement = () => {
         });
         toast.success('Staff updated successfully!');
 
-        // If editing a nurse or doctor, update assignments
-        if (rolesRequiringAssignment.includes(formData.role)) {
-          // Remove all existing assignments
-          const currentClinics = await axios.get(`http://localhost:3000/api/staff/${editingStaff.id}/assignments`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          const oldClinicIds = currentClinics.data.clinicIds;
-          const oldWardIds = currentClinics.data.wardIds;
+        if (rolesRequiringAssignment.includes(formData.role) && editingStaff) {
+          try {
+            const currentAssignments = await axios.get(
+              `http://localhost:3000/api/staff/${editingStaff.id}/assignments`,
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
 
-          // Remove old clinics
-          await Promise.all(oldClinicIds.map(clinicId =>
-            axios.delete(`http://localhost:3000/api/staff/${editingStaff.id}/clinics/${clinicId}`, {
-              headers: { Authorization: `Bearer ${token}` }
-            })
-          ));
-          // Remove old wards
-          await Promise.all(oldWardIds.map(wardId =>
-            axios.delete(`http://localhost:3000/api/staff/${editingStaff.id}/wards/${wardId}`, {
-              headers: { Authorization: `Bearer ${token}` }
-            })
-          ));
+            const oldClinicIds = currentAssignments.data.clinicIds || [];
+            const oldWardIds = currentAssignments.data.wardIds || [];
 
-          // Add new assignments
-          await Promise.all(assignedClinicIds.map(clinicId =>
-            axios.post(`http://localhost:3000/api/staff/${editingStaff.id}/clinics`, { clinicId }, {
-              headers: { Authorization: `Bearer ${token}` }
-            })
-          ));
-          await Promise.all(assignedWardIds.map(wardId =>
-            axios.post(`http://localhost:3000/api/staff/${editingStaff.id}/wards`, { wardId }, {
-              headers: { Authorization: `Bearer ${token}` }
-            })
-          ));
-          toast.success('Assignments updated successfully!');
+            for (const clinicId of oldClinicIds) {
+              try {
+                await axios.delete(
+                  `http://localhost:3000/api/staff/${editingStaff.id}/clinics/${clinicId}`,
+                  { headers: { Authorization: `Bearer ${token}` } }
+                );
+              } catch (err) {}
+            }
+
+            for (const wardId of oldWardIds) {
+              try {
+                await axios.delete(
+                  `http://localhost:3000/api/staff/${editingStaff.id}/wards/${wardId}`,
+                  { headers: { Authorization: `Bearer ${token}` } }
+                );
+              } catch (err) {}
+            }
+
+            for (const clinicId of assignedClinicIds) {
+              try {
+                await axios.post(
+                  `http://localhost:3000/api/staff/${editingStaff.id}/clinics`,
+                  { clinicId },
+                  { headers: { Authorization: `Bearer ${token}` } }
+                );
+              } catch (err) {}
+            }
+
+            for (const wardId of assignedWardIds) {
+              try {
+                await axios.post(
+                  `http://localhost:3000/api/staff/${editingStaff.id}/wards`,
+                  { wardId },
+                  { headers: { Authorization: `Bearer ${token}` } }
+                );
+              } catch (err) {}
+            }
+
+            toast.success('Assignments updated successfully!');
+          } catch (error) {
+            toast.error('Failed to update assignments');
+          }
         }
       } else {
-        // Create new staff
         const newStaff = { ...formData, username: formData.username.toLowerCase().trim() };
         const response = await axios.post('http://localhost:3000/api/staff', newStaff, {
           headers: { Authorization: `Bearer ${token}` }
         });
-        
+
         const createdStaff = response.data;
         toast.success('Staff created successfully!');
 
-        // Show assignment alert for roles that need it
         if (rolesRequiringAssignment.includes(formData.role)) {
           setNewStaffName(`${formData.firstName} ${formData.lastName}`);
           setNewStaffRole(formData.role);
           setShowAssignmentAlert(true);
-          
-          // Auto-open the edit modal for the new staff
+
           setEditingStaff(createdStaff);
           setFormData({
             employeeId: createdStaff.employeeId,
@@ -187,7 +275,6 @@ const StaffManagement = () => {
             department: createdStaff.department || '',
             password: ''
           });
-          // Fetch assignments for the new staff
           if (rolesRequiringAssignment.includes(createdStaff.role)) {
             await fetchAssignments(createdStaff.id);
           }
@@ -210,7 +297,7 @@ const StaffManagement = () => {
     }
   };
 
-  const handleEdit = (staffMember) => {
+  const handleEdit = async (staffMember) => {
     setEditingStaff(staffMember);
     setFormData({
       employeeId: staffMember.employeeId,
@@ -222,13 +309,14 @@ const StaffManagement = () => {
       department: staffMember.department || '',
       password: ''
     });
-    // If editing a nurse or doctor, fetch their assignments
+
     if (rolesRequiringAssignment.includes(staffMember.role)) {
-      fetchAssignments(staffMember.id);
+      await fetchAssignments(staffMember.id);
     } else {
       setAssignedClinicIds([]);
       setAssignedWardIds([]);
     }
+
     setShowModal(true);
   };
 
@@ -299,15 +387,12 @@ const StaffManagement = () => {
                 {newStaffRole} Created Successfully!
               </strong>
               <p style={{ margin: '4px 0 0 0', color: '#78350f', fontSize: '14px' }}>
-                <strong>{newStaffName}</strong> needs to be assigned to a <strong>Clinic</strong> or <strong>Ward</strong> 
+                <strong>{newStaffName}</strong> needs to be assigned to a <strong>Clinic</strong> or <strong>Ward</strong>
                 before they can see patients.
-              </p>
-              <p style={{ margin: '2px 0 0 0', color: '#78350f', fontSize: '13px' }}>
-                💡 The edit modal is now open. Scroll down to "Assign Clinics" or "Assign Wards" section.
               </p>
             </div>
           </div>
-          <button 
+          <button
             className="btn btn-sm btn-primary"
             onClick={() => setShowAssignmentAlert(false)}
             style={{ flexShrink: 0 }}
@@ -319,8 +404,8 @@ const StaffManagement = () => {
 
       <div className="page-header">
         <h2>Staff Management</h2>
-        <button 
-          className="btn btn-primary" 
+        <button
+          className="btn btn-primary"
           onClick={() => {
             setEditingStaff(null);
             setFormData({
@@ -351,8 +436,8 @@ const StaffManagement = () => {
       }}>
         <span style={{ fontSize: '18px' }}>💡</span>
         <span style={{ fontSize: '14px', color: '#1e3a5f' }}>
-          <strong>Tip:</strong> After creating a <strong>Doctor</strong>, <strong>Nurse</strong>, <strong>Obstetrician</strong>, or <strong>Midwife</strong>, 
-          remember to <strong>Edit</strong> them and assign to a <strong>Clinic</strong> or <strong>Ward</strong> 
+          <strong>Tip:</strong> After creating a <strong>Doctor</strong>, <strong>Nurse</strong>, <strong>Obstetrician</strong>, or <strong>Midwife</strong>,
+          remember to <strong>Edit</strong> them and assign to a <strong>Clinic</strong> or <strong>Ward</strong>
           so they can see patients.
         </span>
       </div>
@@ -374,9 +459,6 @@ const StaffManagement = () => {
           <tbody>
             {filteredStaff.map((s) => {
               const needsAssignment = rolesRequiringAssignment.includes(s.role);
-              const hasNoAssignments = needsAssignment && 
-                (!s.clinics || s.clinics.length === 0) && 
-                (!s.wards || s.wards.length === 0);
               
               return (
                 <tr key={s.id}>
@@ -384,20 +466,7 @@ const StaffManagement = () => {
                   <td><code>{s.username || '—'}</code></td>
                   <td>
                     {s.firstName} {s.lastName}
-                    {hasNoAssignments && (
-                      <span style={{ 
-                        display: 'inline-block',
-                        marginLeft: '8px',
-                        padding: '2px 8px',
-                        background: '#fef3c7',
-                        color: '#92400e',
-                        fontSize: '10px',
-                        borderRadius: '12px',
-                        fontWeight: '600'
-                      }}>
-                        ⚠️ No Clinic/Ward
-                      </span>
-                    )}
+                    {needsAssignment && getAssignmentDisplay(s)}
                   </td>
                   <td>{s.email}</td>
                   <td><span className="role-badge">{s.role}</span></td>
@@ -472,8 +541,8 @@ const StaffManagement = () => {
                 </div>
                 <div className="form-row">
                   <div className="form-group">
-                    <label>Department *</label>
-                    <select name="department" value={formData.department} onChange={handleInputChange} required>
+                    <label>Department</label>
+                    <select name="department" value={formData.department} onChange={handleInputChange}>
                       <option value="">Select Department</option>
                       {departments.map(dept => <option key={dept} value={dept}>{dept}</option>)}
                     </select>
@@ -487,7 +556,7 @@ const StaffManagement = () => {
                   </div>
                 )}
 
-                {/* ✅ Assignment section for roles that need it */}
+                {/* Assignment section for roles that need it */}
                 {editingStaff && rolesRequiringAssignment.includes(formData.role) && (
                   <>
                     <div style={{
@@ -498,7 +567,7 @@ const StaffManagement = () => {
                       marginBottom: '16px'
                     }}>
                       <p style={{ margin: 0, fontSize: '14px', color: '#1e3a5f' }}>
-                        <strong>⚠️ Important:</strong> Assign this {formData.role} to at least one 
+                        <strong>⚠️ Important:</strong> Assign this {formData.role} to at least one
                         <strong> Clinic</strong> or <strong>Ward</strong> so they can see patients.
                       </p>
                     </div>
@@ -528,13 +597,15 @@ const StaffManagement = () => {
                           </span>
                         )}
                       </div>
-                      <small style={{ color: '#6b7280' }}>
-                        {formData.role === 'Doctor' || formData.role === 'Obstetrician' 
-                          ? '✅ Select the clinics where this doctor will see patients.'
-                          : '✅ Select the clinics where this nurse/midwife will work.'}
-                      </small>
+                      {assignedClinicIds.length > 0 && (
+                        <div style={{ marginTop: '4px', fontSize: '12px', color: '#10b981' }}>
+                          ✅ Currently assigned to: {assignedClinicIds.map(id =>
+                            clinics.find(c => c.id === id)?.name
+                          ).filter(Boolean).join(', ')}
+                        </div>
+                      )}
                     </div>
-                    
+
                     <div className="form-group">
                       <label>Assign Wards</label>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
@@ -560,16 +631,17 @@ const StaffManagement = () => {
                           </span>
                         )}
                       </div>
-                      <small style={{ color: '#6b7280' }}>
-                        {formData.role === 'Nurse' || formData.role === 'Midwife'
-                          ? '✅ Select the wards where this nurse/midwife will work.'
-                          : '✅ Select the wards where this doctor will see inpatients.'}
-                      </small>
+                      {assignedWardIds.length > 0 && (
+                        <div style={{ marginTop: '4px', fontSize: '12px', color: '#10b981' }}>
+                          ✅ Currently assigned to: {assignedWardIds.map(id =>
+                            wards.find(w => w.id === id)?.name
+                          ).filter(Boolean).join(', ')}
+                        </div>
+                      )}
                     </div>
                   </>
                 )}
 
-                {/* ✅ Show message for roles that don't need assignment */}
                 {editingStaff && !rolesRequiringAssignment.includes(formData.role) && (
                   <div style={{
                     background: '#f0fdf4',

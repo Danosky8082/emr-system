@@ -1,4 +1,5 @@
-// src/pages/WalletDashboard.jsx
+// src/pages/WalletDashboard.jsx - COMPLETE MODERN REDESIGN
+
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
@@ -39,7 +40,7 @@ const WalletDashboard = () => {
   const fetchWallet = async (patientId) => {
     setLoading(true);
     try {
-      const res = await axios.get(`http://localhost:3000/api/patients/${patientId}/wallet`, {
+      const res = await axios.get(`http://localhost:3000/api/patients/${patientId}/wallet?_t=${Date.now()}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setWalletData(res.data);
@@ -80,10 +81,11 @@ const WalletDashboard = () => {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      toast.success(response.data.message);
+      toast.success(response.data.message || `✅ ₦${depositAmount} deposited successfully!`);
       setShowDepositModal(false);
       setDepositAmount('');
-      fetchWallet(selectedPatient.id);
+      await fetchWallet(selectedPatient.id);
+      window.dispatchEvent(new Event('walletUpdated'));
     } catch (error) {
       toast.error(error.response?.data?.error || 'Deposit failed');
     }
@@ -118,11 +120,12 @@ const WalletDashboard = () => {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      toast.success(response.data.message);
+      toast.success(response.data.message || 'Payment successful!');
       setShowPayModal(false);
       setPayAmount('');
       setPayDescription('');
-      fetchWallet(selectedPatient.id);
+      await fetchWallet(selectedPatient.id);
+      window.dispatchEvent(new Event('walletUpdated'));
     } catch (error) {
       toast.error(error.response?.data?.error || 'Payment failed');
     }
@@ -132,367 +135,777 @@ const WalletDashboard = () => {
     `${p.firstName} ${p.lastName} ${p.hospitalId}`.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const formatCurrency = (amount) => `₦${(amount || 0).toLocaleString()}`;
+
   if (!isFinance && !isClinical) {
     return (
       <div className="dashboard">
-        <h3>Access Denied</h3>
-        <p>You don't have permission to view this page.</p>
+        <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+          <span style={{ fontSize: '48px' }}>🔒</span>
+          <h3 style={{ color: '#1f2937', marginTop: '16px' }}>Access Denied</h3>
+          <p style={{ color: '#6b7280' }}>You don't have permission to view this page.</p>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="dashboard">
-      <div className="page-header">
-        <h2>💰 Patient Wallet Management</h2>
+      {/* Header */}
+      <div className="page-header" style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '12px'
+      }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: '24px', fontWeight: '700' }}>💰 Patient Wallet Management</h2>
+          <p style={{ margin: '4px 0 0 0', color: '#6b7280', fontSize: '14px' }}>
+            View and manage patient wallet balances and transactions
+          </p>
+        </div>
         <button 
           className="btn btn-secondary" 
           onClick={() => {
             fetchPatients();
             if (selectedPatient) fetchWallet(selectedPatient.id);
           }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 20px',
+            background: '#f3f4f6',
+            border: '1px solid #d1d5db',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            fontWeight: '500'
+          }}
         >
-          🔄 Refresh
+          <span>🔄</span> Refresh
         </button>
       </div>
 
-      {/* Patient Selector */}
+      {/* Patient Selector - Modern Card */}
       <div style={{
         background: 'white',
-        padding: '20px',
-        borderRadius: '12px',
-        marginBottom: '20px',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
+        padding: '24px',
+        borderRadius: '16px',
+        marginBottom: '24px',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+        border: '1px solid #e5e7eb'
       }}>
-        <h4 style={{ margin: '0 0 12px 0' }}>👤 Select Patient</h4>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+          <span style={{ fontSize: '24px' }}>👤</span>
+          <div>
+            <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '600' }}>Select Patient</h4>
+            <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>
+              Search by name or Hospital ID to view wallet
+            </p>
+          </div>
+        </div>
+        
         <input
           type="text"
           placeholder="🔍 Search by name or Hospital ID..."
           className="form-control"
-          style={{ marginBottom: '12px' }}
+          style={{
+            width: '100%',
+            padding: '12px 16px',
+            borderRadius: '10px',
+            border: '2px solid #e5e7eb',
+            fontSize: '14px',
+            marginBottom: '16px',
+            transition: 'border-color 0.2s'
+          }}
           value={searchTerm}
           onChange={(e) => {}}
         />
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+        
+        <div style={{ 
+          display: 'flex', 
+          flexWrap: 'wrap', 
+          gap: '8px',
+          maxHeight: '120px',
+          overflowY: 'auto',
+          padding: '4px 2px'
+        }}>
           {filteredPatients.slice(0, 20).map(p => (
             <button
               key={p.id}
-              className={`btn btn-sm ${selectedPatient?.id === p.id ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => handlePatientSelect(p)}
               style={{
-                background: selectedPatient?.id === p.id ? '#0f3460' : '#e5e7eb',
-                color: selectedPatient?.id === p.id ? 'white' : '#1f2937'
+                padding: '8px 16px',
+                borderRadius: '20px',
+                border: selectedPatient?.id === p.id ? '2px solid #0f3460' : '1px solid #e5e7eb',
+                background: selectedPatient?.id === p.id ? '#0f3460' : 'white',
+                color: selectedPatient?.id === p.id ? 'white' : '#1f2937',
+                cursor: 'pointer',
+                fontSize: '13px',
+                fontWeight: selectedPatient?.id === p.id ? '600' : '400',
+                transition: 'all 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
               }}
             >
-              {p.hospitalId} - {p.firstName} {p.lastName}
+              <span>{p.hospitalId}</span>
+              <span>-</span>
+              <span>{p.firstName} {p.lastName}</span>
             </button>
           ))}
+          {filteredPatients.length === 0 && (
+            <div style={{ color: '#6b7280', fontSize: '14px', padding: '8px 0' }}>
+              No patients found matching your search.
+            </div>
+          )}
         </div>
       </div>
 
       {selectedPatient && (
         <>
-          {/* Wallet Summary */}
-          <div className="stats-grid">
-            <div className="stat-card" style={{ borderLeft: '4px solid #10b981' }}>
-              <div className="stat-icon">💰</div>
-              <div className="stat-info">
-                <div className="stat-value" style={{ color: '#10b981' }}>
-                  ₦{walletData?.balance?.toLocaleString() || '0'}
+          {/* Wallet Summary - Modern Cards */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: '16px',
+            marginBottom: '24px'
+          }}>
+            {/* Balance Card */}
+            <div style={{
+              background: 'linear-gradient(135deg, #0f3460, #1a4a7a)',
+              borderRadius: '16px',
+              padding: '24px',
+              color: 'white',
+              boxShadow: '0 4px 12px rgba(15, 52, 96, 0.2)'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <span style={{ fontSize: '13px', opacity: 0.8 }}>Available Balance</span>
+                  <div style={{ fontSize: '32px', fontWeight: '700', marginTop: '4px' }}>
+                    {formatCurrency(walletData?.balance)}
+                  </div>
                 </div>
-                <div className="stat-label">Wallet Balance</div>
+                <span style={{ fontSize: '32px' }}>💰</span>
+              </div>
+              <div style={{ marginTop: '12px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                <span style={{ 
+                  fontSize: '12px', 
+                  padding: '4px 12px', 
+                  borderRadius: '12px',
+                  background: walletData?.status === 'Active' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)',
+                  color: walletData?.status === 'Active' ? '#6ee7b7' : '#fca5a5'
+                }}>
+                  {walletData?.status || 'Active'}
+                </span>
+                <span style={{ fontSize: '12px', opacity: 0.7 }}>
+                  Last: {walletData?.lastTransactionAt ? new Date(walletData.lastTransactionAt).toLocaleDateString() : 'None'}
+                </span>
               </div>
             </div>
-            <div className="stat-card" style={{ borderLeft: '4px solid #3b82f6' }}>
-              <div className="stat-icon">📊</div>
-              <div className="stat-info">
-                <div className="stat-value">{transactions.length}</div>
-                <div className="stat-label">Total Transactions</div>
+
+            {/* Stats Cards */}
+            <div style={{
+              background: 'white',
+              borderRadius: '16px',
+              padding: '20px',
+              border: '1px solid #e5e7eb',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: '#6b7280', fontSize: '13px' }}>Total Transactions</span>
+                <span style={{ fontSize: '24px' }}>📊</span>
+              </div>
+              <div style={{ fontSize: '28px', fontWeight: '700', color: '#1f2937', marginTop: '4px' }}>
+                {transactions.length}
               </div>
             </div>
-            <div className="stat-card" style={{ borderLeft: '4px solid #f59e0b' }}>
-              <div className="stat-icon">📈</div>
-              <div className="stat-info">
-                <div className="stat-value" style={{ color: '#f59e0b' }}>
-                  ₦{transactions
-                    .filter(t => t.transactionType === 'Deposit')
-                    .reduce((sum, t) => sum + t.amount, 0)
-                    .toLocaleString()}
-                </div>
-                <div className="stat-label">Total Deposits</div>
+
+            <div style={{
+              background: 'white',
+              borderRadius: '16px',
+              padding: '20px',
+              border: '1px solid #e5e7eb',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: '#6b7280', fontSize: '13px' }}>Total Deposits</span>
+                <span style={{ fontSize: '24px' }}>📈</span>
+              </div>
+              <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981', marginTop: '4px' }}>
+                {formatCurrency(transactions.filter(t => t.transactionType === 'Deposit').reduce((sum, t) => sum + t.amount, 0))}
               </div>
             </div>
-            <div className="stat-card" style={{ borderLeft: '4px solid #ef4444' }}>
-              <div className="stat-icon">💸</div>
-              <div className="stat-info">
-                <div className="stat-value" style={{ color: '#ef4444' }}>
-                  ₦{transactions
-                    .filter(t => t.transactionType === 'Payment')
-                    .reduce((sum, t) => sum + t.amount, 0)
-                    .toLocaleString()}
-                </div>
-                <div className="stat-label">Total Payments</div>
+
+            <div style={{
+              background: 'white',
+              borderRadius: '16px',
+              padding: '20px',
+              border: '1px solid #e5e7eb',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: '#6b7280', fontSize: '13px' }}>Total Payments</span>
+                <span style={{ fontSize: '24px' }}>💸</span>
+              </div>
+              <div style={{ fontSize: '28px', fontWeight: '700', color: '#ef4444', marginTop: '4px' }}>
+                {formatCurrency(transactions.filter(t => t.transactionType === 'Payment').reduce((sum, t) => sum + t.amount, 0))}
               </div>
             </div>
           </div>
 
-          {/* Actions */}
+          {/* Action Buttons */}
           <div style={{
             display: 'flex',
             gap: '12px',
-            marginBottom: '20px',
+            marginBottom: '24px',
             flexWrap: 'wrap'
           }}>
             <button 
-              className="btn btn-success" 
               onClick={() => setShowDepositModal(true)}
               style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '12px 24px',
                 background: '#10b981',
                 color: 'white',
                 border: 'none',
-                padding: '12px 24px',
-                borderRadius: '8px',
+                borderRadius: '10px',
                 cursor: 'pointer',
-                fontWeight: '600'
+                fontWeight: '600',
+                fontSize: '14px',
+                boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)',
+                transition: 'all 0.2s'
               }}
+              onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+              onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
             >
-              💳 Deposit
+              <span>💳</span> Deposit
             </button>
             <button 
-              className="btn btn-primary" 
               onClick={() => setShowPayModal(true)}
               style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '12px 24px',
                 background: '#0f3460',
                 color: 'white',
                 border: 'none',
-                padding: '12px 24px',
-                borderRadius: '8px',
+                borderRadius: '10px',
                 cursor: 'pointer',
-                fontWeight: '600'
+                fontWeight: '600',
+                fontSize: '14px',
+                boxShadow: '0 2px 8px rgba(15, 52, 96, 0.3)',
+                transition: 'all 0.2s'
               }}
+              onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+              onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
             >
-              💸 Pay from Wallet
+              <span>💸</span> Pay from Wallet
             </button>
             <button 
-              className="btn btn-secondary" 
               onClick={() => fetchWallet(selectedPatient.id)}
               style={{
-                background: '#e5e7eb',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '12px 24px',
+                background: '#f3f4f6',
                 color: '#1f2937',
                 border: '1px solid #d1d5db',
-                padding: '12px 24px',
-                borderRadius: '8px',
+                borderRadius: '10px',
                 cursor: 'pointer',
-                fontWeight: '600'
+                fontWeight: '500',
+                fontSize: '14px',
+                transition: 'all 0.2s'
               }}
             >
-              🔄 Refresh Balance
+              <span>🔄</span> Refresh Balance
             </button>
           </div>
 
-          {/* Wallet Info */}
+          {/* Patient Info Card */}
           <div style={{
             background: '#f8fafc',
+            borderRadius: '12px',
             padding: '16px 20px',
-            borderRadius: '8px',
-            marginBottom: '20px',
-            border: '1px solid #e2e8f0'
+            marginBottom: '24px',
+            border: '1px solid #e2e8f0',
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '16px',
+            alignItems: 'center'
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-              <span><strong>Patient:</strong> {selectedPatient.firstName} {selectedPatient.lastName}</span>
-              <span><strong>Hospital ID:</strong> {selectedPatient.hospitalId}</span>
-              <span><strong>Wallet Status:</strong> 
-                <span style={{ 
-                  color: walletData?.status === 'Active' ? '#10b981' : '#ef4444',
-                  fontWeight: '600'
-                }}>
-                  {' '}{walletData?.status || 'Active'}
-                </span>
-              </span>
-              <span><strong>Last Transaction:</strong> 
-                {walletData?.lastTransactionAt ? new Date(walletData.lastTransactionAt).toLocaleString() : 'None'}
-              </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontSize: '32px' }}>👤</span>
+              <div>
+                <div style={{ fontWeight: '600', fontSize: '16px' }}>
+                  {selectedPatient.firstName} {selectedPatient.lastName}
+                </div>
+                <div style={{ fontSize: '13px', color: '#6b7280' }}>
+                  ID: {selectedPatient.hospitalId}
+                </div>
+              </div>
+            </div>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+              <div>
+                <span style={{ fontSize: '12px', color: '#6b7280' }}>Status</span>
+                <div>
+                  <span style={{
+                    display: 'inline-block',
+                    padding: '2px 12px',
+                    borderRadius: '12px',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    background: walletData?.status === 'Active' ? '#d1fae5' : '#fecaca',
+                    color: walletData?.status === 'Active' ? '#065f46' : '#991b1b'
+                  }}>
+                    {walletData?.status || 'Active'}
+                  </span>
+                </div>
+              </div>
+              <div>
+                <span style={{ fontSize: '12px', color: '#6b7280' }}>Last Transaction</span>
+                <div style={{ fontSize: '14px', fontWeight: '500' }}>
+                  {walletData?.lastTransactionAt ? new Date(walletData.lastTransactionAt).toLocaleString() : 'None'}
+                </div>
+              </div>
             </div>
           </div>
 
           {/* Transactions Table */}
-          <div className="table-container">
-            <h4 style={{ padding: '16px 16px 0', margin: 0 }}>📋 Transaction History</h4>
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Type</th>
-                  <th>Amount</th>
-                  <th>Balance Before</th>
-                  <th>Balance After</th>
-                  <th>Description</th>
-                  <th>Reference</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr><td colSpan="8" className="text-center">Loading...</td></tr>
-                ) : transactions.length > 0 ? (
-                  transactions.map(t => (
-                    <tr key={t.id}>
-                      <td>{new Date(t.createdAt).toLocaleString()}</td>
-                      <td>
-                        <span className={`status-badge ${
-                          t.transactionType === 'Deposit' ? 'status-active' :
-                          t.transactionType === 'Payment' ? 'status-pending' :
-                          'status-scheduled'
-                        }`}>
-                          {t.transactionType}
-                        </span>
-                      </td>
-                      <td style={{ 
-                        color: t.transactionType === 'Deposit' ? '#10b981' : '#ef4444',
-                        fontWeight: '600'
-                      }}>
-                        {t.transactionType === 'Deposit' ? '+' : '-'} ₦{t.amount.toLocaleString()}
-                      </td>
-                      <td>₦{t.balanceBefore?.toLocaleString() || '0'}</td>
-                      <td>₦{t.balanceAfter?.toLocaleString() || '0'}</td>
-                      <td>{t.description}</td>
-                      <td><code style={{ fontSize: '11px' }}>{t.reference}</code></td>
-                      <td>
-                        <span className={`status-badge ${
-                          t.status === 'Completed' ? 'status-active' :
-                          t.status === 'Pending' ? 'status-pending' :
-                          'status-inactive'
-                        }`}>
-                          {t.status}
-                        </span>
-                      </td>
+          <div style={{
+            background: 'white',
+            borderRadius: '16px',
+            border: '1px solid #e5e7eb',
+            overflow: 'hidden',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
+          }}>
+            <div style={{
+              padding: '16px 20px',
+              borderBottom: '1px solid #e5e7eb',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '20px' }}>📋</span>
+                <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '600' }}>Transaction History</h4>
+              </div>
+              <span style={{ fontSize: '13px', color: '#6b7280' }}>
+                {transactions.length} transactions
+              </span>
+            </div>
+            
+            {loading ? (
+              <div style={{ textAlign: 'center', padding: '40px' }}>
+                <div className="spinner" />
+                <p style={{ color: '#6b7280', marginTop: '12px' }}>Loading transactions...</p>
+              </div>
+            ) : transactions.length > 0 ? (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+                  <thead>
+                    <tr style={{ background: '#f8fafc' }}>
+                      <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600', color: '#6b7280' }}>Date</th>
+                      <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600', color: '#6b7280' }}>Type</th>
+                      <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600', color: '#6b7280' }}>Amount</th>
+                      <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600', color: '#6b7280' }}>Balance</th>
+                      <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600', color: '#6b7280' }}>Description</th>
+                      <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600', color: '#6b7280' }}>Reference</th>
+                      <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600', color: '#6b7280' }}>Status</th>
                     </tr>
-                  ))
-                ) : (
-                  <tr><td colSpan="8" className="text-center">No transactions found</td></tr>
-                )}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {transactions.map((t, index) => (
+                      <tr key={t.id} style={{ borderBottom: index < transactions.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
+                        <td style={{ padding: '12px 16px', color: '#1f2937' }}>
+                          {new Date(t.createdAt).toLocaleDateString()}
+                          <div style={{ fontSize: '11px', color: '#6b7280' }}>
+                            {new Date(t.createdAt).toLocaleTimeString()}
+                          </div>
+                        </td>
+                        <td style={{ padding: '12px 16px' }}>
+                          <span style={{
+                            display: 'inline-block',
+                            padding: '2px 12px',
+                            borderRadius: '12px',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            background: t.transactionType === 'Deposit' ? '#d1fae5' : '#fef3c7',
+                            color: t.transactionType === 'Deposit' ? '#065f46' : '#92400e'
+                          }}>
+                            {t.transactionType === 'Deposit' ? '📥 Deposit' : '📤 Payment'}
+                          </span>
+                        </td>
+                        <td style={{
+                          padding: '12px 16px',
+                          textAlign: 'right',
+                          fontWeight: '600',
+                          color: t.transactionType === 'Deposit' ? '#10b981' : '#ef4444'
+                        }}>
+                          {t.transactionType === 'Deposit' ? '+' : '-'} {formatCurrency(t.amount)}
+                        </td>
+                        <td style={{ padding: '12px 16px', textAlign: 'right', color: '#1f2937' }}>
+                          {formatCurrency(t.balanceAfter)}
+                        </td>
+                        <td style={{ padding: '12px 16px', color: '#1f2937', maxWidth: '200px' }}>
+                          <div style={{ fontSize: '13px' }}>{t.description}</div>
+                          <div style={{ fontSize: '11px', color: '#6b7280' }}>{t.category || 'General'}</div>
+                        </td>
+                        <td style={{ padding: '12px 16px' }}>
+                          <code style={{
+                            fontSize: '11px',
+                            background: '#f3f4f6',
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            color: '#374151'
+                          }}>
+                            {t.reference}
+                          </code>
+                        </td>
+                        <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                          <span style={{
+                            display: 'inline-block',
+                            padding: '2px 12px',
+                            borderRadius: '12px',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            background: t.status === 'Completed' ? '#d1fae5' : '#fef3c7',
+                            color: t.status === 'Completed' ? '#065f46' : '#92400e'
+                          }}>
+                            {t.status === 'Completed' ? '✅' : '⏳'} {t.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+                <span style={{ fontSize: '48px' }}>📭</span>
+                <p style={{ color: '#6b7280', marginTop: '12px', fontSize: '16px' }}>No transactions yet</p>
+                <p style={{ color: '#9ca3af', fontSize: '14px' }}>Transactions will appear here when the patient makes deposits or payments</p>
+              </div>
+            )}
           </div>
         </>
       )}
 
-      {/* Deposit Modal */}
+      {/* ============================================================
+          DEPOSIT MODAL - MODERN
+          ============================================================ */}
       {showDepositModal && selectedPatient && (
         <div className="modal-overlay" onClick={() => setShowDepositModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
-            <div className="modal-header">
-              <h3>💳 Deposit to Wallet</h3>
-              <button className="modal-close" onClick={() => setShowDepositModal(false)}>×</button>
-            </div>
-            <form onSubmit={handleDeposit}>
-              <div className="modal-body">
-                <p><strong>Patient:</strong> {selectedPatient.firstName} {selectedPatient.lastName}</p>
-                <p><strong>Current Balance:</strong> ₦{walletData?.balance?.toLocaleString() || '0'}</p>
-                
-                <div className="form-group">
-                  <label>Amount (₦) *</label>
-                  <input
-                    type="number"
-                    value={depositAmount}
-                    onChange={(e) => setDepositAmount(e.target.value)}
-                    placeholder="Enter amount"
-                    required
-                    min="1"
-                    step="0.01"
-                    autoFocus
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Payment Method</label>
-                  <select
-                    value={paymentMethod}
-                    onChange={(e) => setPaymentMethod(e.target.value)}
-                  >
-                    <option value="Cash">Cash</option>
-                    <option value="Transfer">Bank Transfer</option>
-                    <option value="Card">Card</option>
-                    <option value="Bank">Bank Deposit</option>
-                  </select>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px', borderRadius: '16px', padding: '0' }}>
+            <div style={{ 
+              padding: '24px',
+              borderBottom: '1px solid #e5e7eb',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '28px' }}>💳</span>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600' }}>Deposit to Wallet</h3>
+                  <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: '#6b7280' }}>
+                    {selectedPatient.firstName} {selectedPatient.lastName}
+                  </p>
                 </div>
               </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowDepositModal(false)}>Cancel</button>
-                <button type="submit" className="btn btn-success">💳 Confirm Deposit</button>
+              <button 
+                className="modal-close" 
+                onClick={() => setShowDepositModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '24px',
+                  cursor: 'pointer',
+                  color: '#6b7280'
+                }}
+              >
+                ×
+              </button>
+            </div>
+            
+            <form onSubmit={handleDeposit} style={{ padding: '24px' }}>
+              <div style={{
+                background: '#f8fafc',
+                padding: '16px',
+                borderRadius: '12px',
+                marginBottom: '20px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap'
+              }}>
+                <div>
+                  <span style={{ fontSize: '13px', color: '#6b7280' }}>Current Balance</span>
+                  <div style={{ fontSize: '24px', fontWeight: '700', color: '#0f3460' }}>
+                    {formatCurrency(walletData?.balance)}
+                  </div>
+                </div>
+                <div>
+                  <span style={{ fontSize: '13px', color: '#6b7280' }}>Patient ID</span>
+                  <div style={{ fontSize: '16px', fontWeight: '600' }}>{selectedPatient.hospitalId}</div>
+                </div>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontWeight: '600', marginBottom: '6px', fontSize: '14px' }}>
+                  Amount (₦) *
+                </label>
+                <input
+                  type="number"
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(e.target.value)}
+                  placeholder="Enter amount to deposit"
+                  required
+                  min="1"
+                  step="0.01"
+                  autoFocus
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px',
+                    borderRadius: '10px',
+                    border: '2px solid #e5e7eb',
+                    fontSize: '16px',
+                    transition: 'border-color 0.2s'
+                  }}
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', fontWeight: '600', marginBottom: '6px', fontSize: '14px' }}>
+                  Payment Method
+                </label>
+                <select
+                  value={paymentMethod}
+                  onChange={(e) => setPaymentMethod(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px',
+                    borderRadius: '10px',
+                    border: '2px solid #e5e7eb',
+                    fontSize: '14px',
+                    background: 'white'
+                  }}
+                >
+                  <option value="Cash">💵 Cash</option>
+                  <option value="Transfer">🏦 Bank Transfer</option>
+                  <option value="Card">💳 Card</option>
+                  <option value="Bank">🏛️ Bank Deposit</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowDepositModal(false)}
+                  style={{
+                    padding: '10px 24px',
+                    borderRadius: '10px',
+                    border: '1px solid #d1d5db',
+                    background: 'white',
+                    cursor: 'pointer',
+                    fontWeight: '500',
+                    fontSize: '14px'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  style={{
+                    padding: '10px 24px',
+                    borderRadius: '10px',
+                    border: 'none',
+                    background: '#10b981',
+                    color: 'white',
+                    cursor: 'pointer',
+                    fontWeight: '600',
+                    fontSize: '14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  <span>💳</span> Confirm Deposit
+                </button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* Pay from Wallet Modal */}
+      {/* ============================================================
+          PAY FROM WALLET MODAL - MODERN
+          ============================================================ */}
       {showPayModal && selectedPatient && (
         <div className="modal-overlay" onClick={() => setShowPayModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
-            <div className="modal-header">
-              <h3>💸 Pay from Wallet</h3>
-              <button className="modal-close" onClick={() => setShowPayModal(false)}>×</button>
-            </div>
-            <form onSubmit={handlePayFromWallet}>
-              <div className="modal-body">
-                <p><strong>Patient:</strong> {selectedPatient.firstName} {selectedPatient.lastName}</p>
-                <p><strong>Available Balance:</strong> 
-                  <span style={{ color: '#10b981', fontWeight: 'bold' }}>
-                    ₦{walletData?.balance?.toLocaleString() || '0'}
-                  </span>
-                </p>
-                
-                <div className="form-group">
-                  <label>Amount (₦) *</label>
-                  <input
-                    type="number"
-                    value={payAmount}
-                    onChange={(e) => setPayAmount(e.target.value)}
-                    placeholder="Enter amount"
-                    required
-                    min="1"
-                    step="0.01"
-                    max={walletData?.balance}
-                    autoFocus
-                  />
-                  {parseFloat(payAmount) > (walletData?.balance || 0) && (
-                    <small style={{ color: '#ef4444' }}>Insufficient balance!</small>
-                  )}
-                </div>
-                <div className="form-group">
-                  <label>Description *</label>
-                  <input
-                    type="text"
-                    value={payDescription}
-                    onChange={(e) => setPayDescription(e.target.value)}
-                    placeholder="e.g., Lab Test Payment"
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Category</label>
-                  <select
-                    value={payCategory}
-                    onChange={(e) => setPayCategory(e.target.value)}
-                  >
-                    <option value="General">General</option>
-                    <option value="Consultation">Consultation</option>
-                    <option value="Lab">Lab Test</option>
-                    <option value="Pharmacy">Pharmacy</option>
-                    <option value="Imaging">Imaging/X-Ray</option>
-                    <option value="Treatment">Treatment</option>
-                    <option value="Others">Others</option>
-                  </select>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px', borderRadius: '16px', padding: '0' }}>
+            <div style={{ 
+              padding: '24px',
+              borderBottom: '1px solid #e5e7eb',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '28px' }}>💸</span>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600' }}>Pay from Wallet</h3>
+                  <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: '#6b7280' }}>
+                    {selectedPatient.firstName} {selectedPatient.lastName}
+                  </p>
                 </div>
               </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowPayModal(false)}>Cancel</button>
-                <button 
-                  type="submit" 
-                  className="btn btn-primary"
-                  disabled={parseFloat(payAmount) > (walletData?.balance || 0)}
+              <button 
+                className="modal-close" 
+                onClick={() => setShowPayModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '24px',
+                  cursor: 'pointer',
+                  color: '#6b7280'
+                }}
+              >
+                ×
+              </button>
+            </div>
+            
+            <form onSubmit={handlePayFromWallet} style={{ padding: '24px' }}>
+              <div style={{
+                background: walletData?.balance > 0 ? '#f0fdf4' : '#fef3c7',
+                padding: '16px',
+                borderRadius: '12px',
+                marginBottom: '20px',
+                border: `1px solid ${walletData?.balance > 0 ? '#10b981' : '#f59e0b'}`
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '14px', color: '#6b7280' }}>Available Balance</span>
+                  <span style={{ fontSize: '24px', fontWeight: '700', color: walletData?.balance > 0 ? '#065f46' : '#92400e' }}>
+                    {formatCurrency(walletData?.balance)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontWeight: '600', marginBottom: '6px', fontSize: '14px' }}>
+                  Amount (₦) *
+                </label>
+                <input
+                  type="number"
+                  value={payAmount}
+                  onChange={(e) => setPayAmount(e.target.value)}
+                  placeholder="Enter amount to pay"
+                  required
+                  min="1"
+                  step="0.01"
+                  max={walletData?.balance}
+                  autoFocus
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px',
+                    borderRadius: '10px',
+                    border: `2px solid ${parseFloat(payAmount) > (walletData?.balance || 0) ? '#ef4444' : '#e5e7eb'}`,
+                    fontSize: '16px',
+                    transition: 'border-color 0.2s'
+                  }}
+                />
+                {parseFloat(payAmount) > (walletData?.balance || 0) && (
+                  <div style={{ color: '#ef4444', fontSize: '13px', marginTop: '4px' }}>
+                    ⚠️ Insufficient balance. Available: {formatCurrency(walletData?.balance)}
+                  </div>
+                )}
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontWeight: '600', marginBottom: '6px', fontSize: '14px' }}>
+                  Description *
+                </label>
+                <input
+                  type="text"
+                  value={payDescription}
+                  onChange={(e) => setPayDescription(e.target.value)}
+                  placeholder="e.g., Lab Test Payment"
+                  required
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px',
+                    borderRadius: '10px',
+                    border: '2px solid #e5e7eb',
+                    fontSize: '14px',
+                    transition: 'border-color 0.2s'
+                  }}
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', fontWeight: '600', marginBottom: '6px', fontSize: '14px' }}>
+                  Category
+                </label>
+                <select
+                  value={payCategory}
+                  onChange={(e) => setPayCategory(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px',
+                    borderRadius: '10px',
+                    border: '2px solid #e5e7eb',
+                    fontSize: '14px',
+                    background: 'white'
+                  }}
                 >
-                  💸 Confirm Payment
+                  <option value="General">📋 General</option>
+                  <option value="Consultation">🩺 Consultation</option>
+                  <option value="Lab">🔬 Lab Test</option>
+                  <option value="Pharmacy">💊 Pharmacy</option>
+                  <option value="Imaging">📷 Imaging/X-Ray</option>
+                  <option value="Treatment">💉 Treatment</option>
+                  <option value="Others">📌 Others</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowPayModal(false)}
+                  style={{
+                    padding: '10px 24px',
+                    borderRadius: '10px',
+                    border: '1px solid #d1d5db',
+                    background: 'white',
+                    cursor: 'pointer',
+                    fontWeight: '500',
+                    fontSize: '14px'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={parseFloat(payAmount) > (walletData?.balance || 0)}
+                  style={{
+                    padding: '10px 24px',
+                    borderRadius: '10px',
+                    border: 'none',
+                    background: parseFloat(payAmount) > (walletData?.balance || 0) ? '#9ca3af' : '#0f3460',
+                    color: 'white',
+                    cursor: parseFloat(payAmount) > (walletData?.balance || 0) ? 'not-allowed' : 'pointer',
+                    fontWeight: '600',
+                    fontSize: '14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  <span>💸</span> Confirm Payment
                 </button>
               </div>
             </form>
