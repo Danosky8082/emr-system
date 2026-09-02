@@ -5,7 +5,7 @@ import axios from 'axios';
 import './Dashboard.css';
 import { useSearch } from '../components/Layout';
 import toast from 'react-hot-toast';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 
 const Patients = () => {
   const { token, user } = useAuth();
@@ -16,7 +16,7 @@ const Patients = () => {
   const [editingPatient, setEditingPatient] = useState(null);
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [refreshKey, setRefreshKey] = useState(0);
-  
+
   const [formData, setFormData] = useState({
     firstName: '', lastName: '', gender: 'Male', dateOfBirth: '', phone: '', email: '', address: '',
     emergencyContact: '', allergies: '', nextOfKinName: '', nextOfKinPhone: '', nextOfKinRelationship: '',
@@ -26,14 +26,30 @@ const Patients = () => {
     corporateCompany: '',
   });
 
+  // ✅ FIXED: Define permission checks at the top
+  const canManage = ['Admin', 'Records', 'ITAdmin'].includes(user?.role);
+  
+  // ✅ FIXED: Added Paediatrician to canViewProfile
+  const canViewProfile = ['Admin', 'Records', 'ITAdmin', 'Nurse', 'Doctor', 'Obstetrician', 'Midwife', 'Paediatrician', 'Dentist', 'Optometrist'].includes(user?.role);
+  
+  // ✅ FIXED: Check if user can view patients at all
+  const canViewPatients = ['Admin', 'Records', 'ITAdmin', 'Doctor', 'Nurse', 'Obstetrician', 'Midwife', 'Paediatrician', 'Dentist', 'Optometrist', 'Radiologist', 'LabTechnician', 'LabScientist', 'BillingOfficer'].includes(user?.role);
+
+  // ✅ FIXED: Redirect if user cannot view patients
+  if (!canViewPatients && !loading) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
   // Use useCallback to memoize fetchPatients
   const fetchPatients = useCallback(async () => {
     setLoading(true);
     try {
       let url = 'http://localhost:3000/api/patients';
+      
+      // ✅ FIXED: Include Paediatrician in role checks
       if (['Nurse', 'Midwife'].includes(user?.role)) {
         url = 'http://localhost:3000/api/nurse/patients';
-      } else if (['Doctor', 'Obstetrician'].includes(user?.role)) {
+      } else if (['Doctor', 'Obstetrician', 'Paediatrician'].includes(user?.role)) {
         url = 'http://localhost:3000/api/doctor/patients';
       }
 
@@ -43,7 +59,9 @@ const Patients = () => {
       });
 
       let patientsList = res.data;
-      if (['Nurse', 'Midwife', 'Doctor', 'Obstetrician'].includes(user?.role)) {
+      
+      // ✅ FIXED: Include Paediatrician in the mapping
+      if (['Nurse', 'Midwife', 'Doctor', 'Obstetrician', 'Paediatrician'].includes(user?.role)) {
         patientsList = res.data.map(j => j.patient);
       }
       
@@ -51,17 +69,22 @@ const Patients = () => {
       setPatients(patientsList);
     } catch (error) {
       console.error('Fetch error:', error);
-      toast.error('Failed to load patients');
+      // ✅ FIXED: Better error handling with status code
+      if (error.response?.status === 403) {
+        toast.error('You do not have permission to view patients.');
+      } else {
+        toast.error('Failed to load patients');
+      }
     } finally {
       setLoading(false);
     }
   }, [token, user?.role]);
 
   useEffect(() => {
-    if (user && token) {
+    if (user && token && canViewPatients) {
       fetchPatients();
     }
-  }, [user, token, fetchPatients, refreshKey]);
+  }, [user, token, fetchPatients, refreshKey, canViewPatients]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -161,87 +184,84 @@ const Patients = () => {
     }
   };
 
-  // ✅ FIXED: Handle Enable Portal Access - No toast.info
+  // ✅ FIXED: Handle Enable Portal Access
   const handleEnablePortal = async (patient) => {
-  // Ask user which method to use
-  const method = window.confirm(
-    `🔑 Set up portal access for ${patient.firstName} ${patient.lastName}?\n\n` +
-    `Click OK to set a PIN (4-6 digits - recommended for quick access)\n` +
-    `Click Cancel to set a Password (min 6 characters)`
-  );
+    // Ask user which method to use
+    const method = window.confirm(
+      `🔑 Set up portal access for ${patient.firstName} ${patient.lastName}?\n\n` +
+      `Click OK to set a PIN (4-6 digits - recommended for quick access)\n` +
+      `Click Cancel to set a Password (min 6 characters)`
+    );
 
-  let credential;
-  let isPin = true;
-  
-  if (method) {
-    credential = prompt(`Enter a 4-6 digit PIN for ${patient.firstName}:`, '1234');
-    isPin = true;
-  } else {
-    credential = prompt(`Enter a password for ${patient.firstName} (min 6 characters):`, '');
-    isPin = false;
-  }
-
-  if (credential === null) {
-    toast.error('Portal setup cancelled');
-    return;
-  }
-
-  if (!credential || credential.trim() === '') {
-    toast.error('Credential is required');
-    return;
-  }
-
-  if (isPin && !/^\d{4,6}$/.test(credential)) {
-    toast.error('PIN must be 4-6 digits (numbers only)');
-    return;
-  }
-
-  if (!isPin && credential.length < 6) {
-    toast.error('Password must be at least 6 characters');
-    return;
-  }
-
-  const forceChange = window.confirm(
-    `🔐 Require password change on first login?\n\n` +
-    `Click OK to require patient to change credentials on first login (Recommended)\n` +
-    `Click Cancel to allow patient to keep the ${isPin ? 'PIN' : 'password'} as is`
-  );
-
-  try {
-    const payload = { 
-      patientId: patient.id,
-      forceChange: forceChange !== false,
-    };
+    let credential;
+    let isPin = true;
     
-    if (isPin) {
-      payload.pinCode = credential;
+    if (method) {
+      credential = prompt(`Enter a 4-6 digit PIN for ${patient.firstName}:`, '1234');
+      isPin = true;
     } else {
-      payload.password = credential;
+      credential = prompt(`Enter a password for ${patient.firstName} (min 6 characters):`, '');
+      isPin = false;
     }
 
-    await axios.post('http://localhost:3000/api/patient/setup-portal', payload, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    
-    // Show success messages
-    toast.success(`✅ Portal access enabled for ${patient.firstName} ${patient.lastName}`);
-    toast.success(`🔑 ${isPin ? 'PIN' : 'Password'} set: ${credential}`);
-    
-    // Show warning if force change is enabled
-    if (forceChange !== false) {
-      // ✅ Fixed: Use toast.error with emoji for warning (no toast.warning)
-      toast.error(`⚠️ Patient MUST change credentials on first login!`, {
-        duration: 5000,
-        icon: '⚠️',
-      });
+    if (credential === null) {
+      toast.error('Portal setup cancelled');
+      return;
     }
-    
-    setRefreshKey(prev => prev + 1);
-  } catch (error) {
-    console.error('Enable portal error:', error);
-    toast.error(error.response?.data?.error || 'Failed to enable portal access');
-  }
-};
+
+    if (!credential || credential.trim() === '') {
+      toast.error('Credential is required');
+      return;
+    }
+
+    if (isPin && !/^\d{4,6}$/.test(credential)) {
+      toast.error('PIN must be 4-6 digits (numbers only)');
+      return;
+    }
+
+    if (!isPin && credential.length < 6) {
+      toast.error('Password must be at least 6 characters');
+      return;
+    }
+
+    const forceChange = window.confirm(
+      `🔐 Require password change on first login?\n\n` +
+      `Click OK to require patient to change credentials on first login (Recommended)\n` +
+      `Click Cancel to allow patient to keep the ${isPin ? 'PIN' : 'password'} as is`
+    );
+
+    try {
+      const payload = { 
+        patientId: patient.id,
+        forceChange: forceChange !== false,
+      };
+      
+      if (isPin) {
+        payload.pinCode = credential;
+      } else {
+        payload.password = credential;
+      }
+
+      await axios.post('http://localhost:3000/api/patient/setup-portal', payload, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      toast.success(`✅ Portal access enabled for ${patient.firstName} ${patient.lastName}`);
+      toast.success(`🔑 ${isPin ? 'PIN' : 'Password'} set: ${credential}`);
+      
+      if (forceChange !== false) {
+        toast.error(`⚠️ Patient MUST change credentials on first login!`, {
+          duration: 5000,
+          icon: '⚠️',
+        });
+      }
+      
+      setRefreshKey(prev => prev + 1);
+    } catch (error) {
+      console.error('Enable portal error:', error);
+      toast.error(error.response?.data?.error || 'Failed to enable portal access');
+    }
+  };
 
   // Handle Reset Portal Access
   const handleResetPortal = async (patient) => {
@@ -284,10 +304,15 @@ const Patients = () => {
     return matchesSearch && matchesCategory;
   });
 
-  if (loading && patients.length === 0) return <div className="spinner" />;
-  
-  const canManage = ['Admin', 'Records', 'ITAdmin'].includes(user?.role);
-  const canViewProfile = ['Admin', 'Records', 'ITAdmin', 'Nurse', 'Doctor', 'Obstetrician', 'Midwife'].includes(user?.role);
+  // ✅ FIXED: Loading state with better UI
+  if (loading && patients.length === 0) {
+    return (
+      <div className="dashboard" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
+        <div className="spinner" />
+        <p style={{ marginLeft: '16px', color: '#6b7280' }}>Loading patients...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="dashboard">

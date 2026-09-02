@@ -3990,13 +3990,14 @@ app.get('/api/audit-logs', authenticate, authorize('Admin', 'ITAdmin'), async (r
   try {
     const { limit = 100, offset = 0 } = req.query;
     const logs = await prisma.auditLog.findMany({
-      include: { staff: true },
+      include: { Staff: true },
       orderBy: { createdAt: 'desc' },
       take: parseInt(limit),
       skip: parseInt(offset)
     });
     const total = await prisma.auditLog.count();
-    res.json({ data: logs, total, limit: parseInt(limit), offset: parseInt(offset) });
+    const formattedLogs = logs.map(log => ({ ...log, staff: log.Staff }));
+    res.json({ data: formattedLogs, total, limit: parseInt(limit), offset: parseInt(offset) });
   } catch (error) {
     console.error('Get audit logs error:', error);
     res.status(500).json({ error: error.message });
@@ -4026,17 +4027,35 @@ app.get('/api/system/status', authenticate, authorize('Admin', 'ITAdmin'), async
   }
 });
 
+// ============================================================
+// SYSTEM LOGS ENDPOINT - FIXED
+// ============================================================
+
 app.get('/api/system/logs', authenticate, authorize('Admin', 'ITAdmin'), async (req, res) => {
   try {
-    const { limit = 50, offset = 0 } = req.query;
+    const { limit = 100, offset = 0 } = req.query;
     const logs = await prisma.auditLog.findMany({
-      include: { staff: { select: { firstName: true, lastName: true, email: true, role: true } } },
+      include: {
+        Staff: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            role: true
+          }
+        }
+      },
       orderBy: { createdAt: 'desc' },
       take: parseInt(limit),
       skip: parseInt(offset)
     });
     const total = await prisma.auditLog.count();
-    res.json({ data: logs, total, limit: parseInt(limit), offset: parseInt(offset) });
+    const formattedLogs = logs.map(log => ({
+      ...log,
+      staff: log.Staff
+    }));
+    res.json({ data: formattedLogs, total, limit: parseInt(limit), offset: parseInt(offset) });
   } catch (error) {
     console.error('Get system logs error:', error);
     res.status(500).json({ error: error.message });
@@ -4800,44 +4819,163 @@ app.post('/api/vitals', authenticate, authorize('Nurse', 'Midwife', 'Doctor', 'O
 
 app.get('/api/pregnancies', authenticate, checkPermission('antenatal'), async (req, res) => {
   try {
-    const pregnancies = await prisma.pregnancy.findMany({
-      include: {
-        patient: {
-          select: { id: true, hospitalId: true, firstName: true, lastName: true, gender: true, dateOfBirth: true, phone: true, email: true }
+    const role = req.user.role;
+    console.log(`🔍 Fetching pregnancies for role: ${role}`);
+    
+    let where = {};
+    
+    if (['Nurse', 'Midwife'].includes(role)) {
+      const staff = await prisma.staff.findUnique({
+        where: { id: req.user.id },
+        include: {
+          StaffClinic: { select: { clinicId: true } },
+          StaffWard: { select: { wardId: true } }
+        }
+      });
+      
+      const clinicIds = staff?.StaffClinic?.map(c => c.clinicId) || [];
+      const wardIds = staff?.StaffWard?.map(w => w.wardId) || [];
+      
+      if (clinicIds.length === 0 && wardIds.length === 0) {
+        return res.json([]);
+      }
+      
+      const patientJourneys = await prisma.patientJourney.findMany({
+        where: {
+          status: { in: ['SENT_TO_DESTINATION', 'COMPLETED'] },
+          OR: [
+            { clinicId: { in: clinicIds } },
+            { wardId: { in: wardIds } }
+          ]
         },
-        visits: {
+        select: { patientId: true }
+      });
+      
+      const patientIds = patientJourneys.map(j => j.patientId);
+      if (patientIds.length === 0) {
+        return res.json([]);
+      }
+      where = { patientId: { in: patientIds } };
+    }
+    
+    const pregnancies = await prisma.pregnancy.findMany({
+      where,
+      include: {
+        Patient: {
+          select: {
+            id: true,
+            hospitalId: true,
+            firstName: true,
+            lastName: true,
+            gender: true,
+            dateOfBirth: true,
+            phone: true,
+            email: true
+          }
+        },
+        AntenatalVisit: {
           orderBy: { visitDate: 'desc' },
           take: 1,
-          select: { id: true, visitDate: true, gestationalWeeks: true, bloodPressure: true, heartRate: true, weight: true, fundalHeight: true, notes: true }
+          select: {
+            id: true,
+            visitDate: true,
+            gestationalWeeks: true,
+            bloodPressure: true,
+            heartRate: true,
+            weight: true,
+            fundalHeight: true,
+            notes: true
+          }
         },
-        delivery: {
-          select: { id: true, deliveryDate: true, type: true, babyGender: true, babyWeight: true, babyApgar: true, outcome: true }
+        Delivery: {
+          select: {
+            id: true,
+            deliveryDate: true,
+            type: true,
+            babyGender: true,
+            babyWeight: true,
+            babyApgar: true,
+            outcome: true
+          }
         }
       },
       orderBy: { createdAt: 'desc' }
     });
-    res.json(pregnancies);
+    
+    const formattedPregnancies = pregnancies.map(p => ({
+      ...p,
+      patient: p.Patient,
+      visits: p.AntenatalVisit || [],
+      delivery: p.Delivery
+    }));
+    
+    console.log(`✅ Found ${formattedPregnancies.length} pregnancies`);
+    res.json(formattedPregnancies);
   } catch (error) {
     console.error('Get pregnancies error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error.message || 'Failed to fetch pregnancies' });
   }
 });
 
 app.get('/api/pregnancies/:id', authenticate, checkPermission('antenatal'), async (req, res) => {
   try {
     const { id } = req.params;
+    
     const pregnancy = await prisma.pregnancy.findUnique({
       where: { id },
       include: {
-        Patient: { select: { id: true, hospitalId: true, firstName: true, lastName: true, gender: true, dateOfBirth: true, phone: true, email: true } },
-        AntenatalVisit: { include: { Staff: { select: { firstName: true, lastName: true, role: true } } }, orderBy: { visitDate: 'desc' } },
-        Delivery: { include: { Staff: { select: { firstName: true, lastName: true, role: true } } } }
+        Patient: {
+          select: {
+            id: true,
+            hospitalId: true,
+            firstName: true,
+            lastName: true,
+            gender: true,
+            dateOfBirth: true,
+            phone: true,
+            email: true
+          }
+        },
+        AntenatalVisit: {
+          include: {
+            Staff: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                role: true
+              }
+            }
+          },
+          orderBy: { visitDate: 'desc' }
+        },
+        Delivery: {
+          include: {
+            Staff: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                role: true
+              }
+            }
+          }
+        }
       }
     });
+    
     if (!pregnancy) {
       return res.status(404).json({ error: 'Pregnancy not found' });
     }
-    res.json(pregnancy);
+    
+    const formattedPregnancy = {
+      ...pregnancy,
+      patient: pregnancy.Patient,
+      visits: pregnancy.AntenatalVisit || [],
+      delivery: pregnancy.Delivery
+    };
+    
+    res.json(formattedPregnancy);
   } catch (error) {
     console.error('Get pregnancy error:', error);
     res.status(500).json({ error: error.message });
@@ -5146,7 +5284,7 @@ app.post('/api/deliveries', authenticate, checkPermission('antenatal'), async (r
         data: { status: 'Delivered', deliveryDate: deliveryDate ? new Date(deliveryDate) : new Date(), updatedAt: new Date() }
       });
       const mother = delivery.pregnancy.patient;
-      // Generate baby hospital ID
+      
       const allPatients = await tx.patient.findMany({ select: { hospitalId: true } });
       let maxNumericId = 0;
       for (const p of allPatients) {
@@ -5171,7 +5309,7 @@ app.post('/api/deliveries', authenticate, checkPermission('antenatal'), async (r
       if (!babyHospitalId) {
         throw new Error('Failed to generate unique hospital ID for baby');
       }
-      // Generate baby email
+      
       let babyEmail;
       const emailPrefix = `baby_${babyHospitalId}`;
       if (mother.email) {
@@ -5187,6 +5325,7 @@ app.post('/api/deliveries', authenticate, checkPermission('antenatal'), async (r
         emailExists = await tx.patient.findUnique({ where: { email: babyEmail } });
         counter++;
       }
+      
       const baby = await tx.patient.create({
         data: {
           hospitalId: babyHospitalId,
@@ -5205,17 +5344,7 @@ app.post('/api/deliveries', authenticate, checkPermission('antenatal'), async (r
           updatedAt: new Date()
         }
       });
-      // Create baby pregnancy record
-      await tx.pregnancy.create({
-        data: {
-          patientId: baby.id, expectedDelivery: new Date(),
-          gravida: 0, para: 0, status: 'Active',
-          riskLevel: 'Low',
-          notes: `Baby of ${mother.firstName} ${mother.lastName} (Mother ID: ${mother.hospitalId})`,
-          updatedAt: new Date()
-        }
-      });
-      // Find or create Paediatrics clinic
+      
       let paediatricsClinic = await tx.clinic.findFirst({
         where: { name: { equals: 'Paediatrics', mode: 'insensitive' } }
       });
@@ -5224,7 +5353,7 @@ app.post('/api/deliveries', authenticate, checkPermission('antenatal'), async (r
           data: { name: 'Paediatrics', description: 'Paediatrics Clinic for newborns and children', location: 'Main Hospital - Ground Floor', updatedAt: new Date() }
         });
       }
-      // Create journey for baby
+      
       await tx.patientJourney.create({
         data: {
           patientId: baby.id, destinationType: 'CLINIC',
@@ -5232,7 +5361,7 @@ app.post('/api/deliveries', authenticate, checkPermission('antenatal'), async (r
           status: 'SENT_TO_DESTINATION', sentToDestinationAt: new Date(), updatedAt: new Date()
         }
       });
-      // Create clinical note
+      
       await tx.clinicalNote.create({
         data: {
           patientId: baby.id, authorId: req.user.id, type: 'Delivery Note',
@@ -5240,6 +5369,7 @@ app.post('/api/deliveries', authenticate, checkPermission('antenatal'), async (r
           updatedAt: new Date()
         }
       });
+      
       await tx.patient_notifications.create({
         data: { patientId: baby.id, title: '🎉 Newborn Registration', message: `Welcome to the world! ${baby.firstName} ${baby.lastName} has been registered and transferred to Paediatrics.`, type: 'registration' }
       });
@@ -6771,7 +6901,7 @@ cron.schedule('0 2 * * *', async () => {
 });
 
 // ============================================================
-// DASHBOARD STATISTICS
+// DASHBOARD STATISTICS - COMPLETE FIXED VERSION
 // ============================================================
 
 app.get('/api/dashboard/stats', authenticate, async (req, res) => {
@@ -6779,65 +6909,712 @@ app.get('/api/dashboard/stats', authenticate, async (req, res) => {
     const role = req.user.role;
     let responseData = {};
 
-    const genderDataRaw = await prisma.patient.groupBy({ by: ['gender'], _count: true });
-    const genderData = genderDataRaw.filter(g => g.gender !== null && g.gender !== undefined && g.gender !== '').map(g => ({ gender: g.gender, _count: g._count || 0 }));
-    if (genderData.length === 0) { genderData.push({ gender: 'Unknown', _count: 0 }); }
+    // ✅ FIXED: Gender data - properly structured
+    const genderDataRaw = await prisma.patient.groupBy({
+      by: ['gender'],
+      _count: {
+        gender: true
+      }
+    });
+    
+    const genderData = genderDataRaw.map(g => ({
+      gender: g.gender || 'Unknown',
+      _count: g._count.gender || 0
+    }));
+    
+    if (genderData.length === 0) {
+      genderData.push({ gender: 'Unknown', _count: 0 });
+    }
 
-    const monthlyRegistrations = await prisma.$queryRaw`
+    // ✅ FIXED: Monthly registrations - handle null values
+    const monthlyRegistrationsRaw = await prisma.$queryRaw`
       SELECT TO_CHAR("createdAt", 'YYYY-MM') as month, COUNT(*) as count
       FROM "Patient"
       WHERE "createdAt" >= NOW() - INTERVAL '6 months'
       GROUP BY month ORDER BY month ASC
     `;
+    
+    const monthlyRegistrations = monthlyRegistrationsRaw.map(item => ({
+      month: item.month || 'Unknown',
+      count: Number(item.count) || 0
+    }));
 
-    // All the role-based dashboard logic goes here...
-    // (This is where the Paediatrician, Surgeon, Psychiatrist, Dentist, etc. logic goes)
-    // I've already shown this in previous responses
-
-    // Add common data if not already present
-    if (!responseData.genderData) { responseData.genderData = genderData; }
-    if (!responseData.monthlyRegistrations) {
-      responseData.monthlyRegistrations = monthlyRegistrations.map(item => ({ month: item.month, count: Number(item.count) }));
+    // ============================================================
+    // ADMIN, RECORDS, ITAdmin - Full access with ward stats
+    // ============================================================
+    if (['Admin', 'Records', 'ITAdmin'].includes(role)) {
+      let totalPatients = 0, totalStaff = 0, totalAppointments = 0, pendingBills = 0, totalRevenue = 0, lowStockCount = 0;
+      
+      try { totalPatients = await prisma.patient.count(); } catch (e) { console.log('⚠️ Patient count error:', e.message); }
+      try { totalStaff = await prisma.staff.count(); } catch (e) { console.log('⚠️ Staff count error:', e.message); }
+      try { totalAppointments = await prisma.appointment.count({ where: { status: 'Scheduled' } }); } catch (e) { console.log('⚠️ Appointment count error:', e.message); }
+      try { pendingBills = await prisma.billingRecord.count({ where: { status: 'Pending' } }); } catch (e) { console.log('⚠️ Billing count error:', e.message); }
+      try {
+        const revenueResult = await prisma.billingRecord.aggregate({ 
+          _sum: { totalAmount: true }, 
+          where: { status: 'Paid' } 
+        });
+        totalRevenue = revenueResult._sum.totalAmount || 0;
+      } catch (e) { console.log('⚠️ Revenue error:', e.message); }
+      try { lowStockCount = await prisma.medication.count({ where: { stockQuantity: { lte: prisma.medication.fields.reorderLevel } } }); } catch (e) { console.log('⚠️ Low stock error:', e.message); }
+      
+      let wardStats = [];
+      let totalAdmitted = 0;
+      let totalCapacity = 0;
+      try {
+        wardStats = await prisma.ward.findMany({
+          select: {
+            id: true,
+            name: true,
+            capacity: true,
+            Admission: {
+              where: { status: 'Admitted' },
+              select: { id: true }
+            }
+          }
+        });
+        totalAdmitted = wardStats.reduce((sum, w) => sum + w.Admission.length, 0);
+        totalCapacity = wardStats.reduce((sum, w) => sum + (w.capacity || 0), 0);
+      } catch (e) { console.log('⚠️ Ward stats error:', e.message); }
+      
+      responseData = {
+        totalPatients,
+        totalStaff,
+        totalAppointments,
+        pendingBills,
+        totalRevenue,
+        lowStockCount,
+        wardStats: wardStats.map(w => ({
+          id: w.id,
+          name: w.name,
+          capacity: w.capacity || 0,
+          admitted: w.Admission.length,
+          available: (w.capacity || 0) - w.Admission.length,
+          occupancyRate: w.capacity ? Math.round((w.Admission.length / w.capacity) * 100) : 0
+        })),
+        totalAdmitted,
+        totalCapacity,
+        overallOccupancyRate: totalCapacity ? Math.round((totalAdmitted / totalCapacity) * 100) : 0,
+        genderData: genderData,
+        monthlyRegistrations: monthlyRegistrations
+      };
     }
 
+    // ============================================================
+    // DOCTORS AND OBSTETRICIANS
+    // ============================================================
+    else if (['Doctor', 'Obstetrician'].includes(role)) {
+      let myPatientsCount = 0, myAppointmentsCount = 0, prescriptionsCount = 0;
+      
+      try {
+        const staff = await prisma.staff.findUnique({
+          where: { id: req.user.id },
+          include: { 
+            StaffClinic: { select: { clinicId: true } },
+            StaffWard: { select: { wardId: true } }
+          }
+        });
+        const clinicIds = staff?.StaffClinic?.map(c => c.clinicId) || [];
+        const wardIds = staff?.StaffWard?.map(w => w.wardId) || [];
+        
+        if (clinicIds.length > 0 || wardIds.length > 0) {
+          myPatientsCount = await prisma.patientJourney.count({
+            where: {
+              status: { in: ['SENT_TO_DESTINATION', 'COMPLETED'] },
+              OR: [
+                { clinicId: { in: clinicIds } },
+                { wardId: { in: wardIds } }
+              ]
+            }
+          });
+        }
+        myAppointmentsCount = await prisma.appointment.count({ where: { staffId: req.user.id, status: 'Scheduled' } });
+        prescriptionsCount = await prisma.prescription.count({ where: { prescribingStaffId: req.user.id } });
+      } catch (e) { console.log('⚠️ Doctor stats error:', e.message); }
+      
+      responseData = { 
+        myPatientsCount, 
+        myAppointmentsCount, 
+        myPrescriptionsCount: prescriptionsCount,
+        genderData: genderData,
+        monthlyRegistrations: monthlyRegistrations
+      };
+    }
+
+    // ============================================================
+    // NURSES AND MIDWIVES
+    // ============================================================
+    else if (['Nurse', 'Midwife'].includes(role)) {
+      let myPatientsCount = 0, myAppointmentsCount = 0, vitalsCount = 0;
+      
+      try {
+        const staff = await prisma.staff.findUnique({
+          where: { id: req.user.id },
+          include: { 
+            StaffClinic: { select: { clinicId: true } },
+            StaffWard: { select: { wardId: true } }
+          }
+        });
+        const clinicIds = staff?.StaffClinic?.map(c => c.clinicId) || [];
+        const wardIds = staff?.StaffWard?.map(w => w.wardId) || [];
+        
+        if (clinicIds.length > 0 || wardIds.length > 0) {
+          myPatientsCount = await prisma.patientJourney.count({
+            where: {
+              status: { in: ['SENT_TO_DESTINATION', 'COMPLETED'] },
+              OR: [
+                { clinicId: { in: clinicIds } },
+                { wardId: { in: wardIds } }
+              ]
+            }
+          });
+        }
+        myAppointmentsCount = await prisma.appointment.count({ where: { staffId: req.user.id, status: 'Scheduled' } });
+        vitalsCount = await prisma.vitalSign.count({ where: { nurseId: req.user.id } });
+      } catch (e) { console.log('⚠️ Nurse stats error:', e.message); }
+      
+      responseData = {
+        myPatientsCount,
+        myAppointmentsCount,
+        myVitalsCount: vitalsCount,
+        role: 'Nurse',
+        genderData: genderData,
+        monthlyRegistrations: monthlyRegistrations
+      };
+    }
+
+    // ============================================================
+    // PHARMACIST
+    // ============================================================
+    else if (role === 'Pharmacist') {
+      let totalMedications = 0, lowStockCount = 0, recentDispensedCount = 0;
+      
+      try {
+        totalMedications = await prisma.medication.count();
+        lowStockCount = await prisma.medication.count({ where: { stockQuantity: { lte: prisma.medication.fields.reorderLevel } } });
+        recentDispensedCount = await prisma.prescription.count({
+          where: {
+            status: 'Dispensed',
+            createdAt: { gte: new Date(new Date().setDate(new Date().getDate() - 7)) }
+          }
+        });
+      } catch (e) { console.log('⚠️ Pharmacist stats error:', e.message); }
+      
+      responseData = { 
+        totalMedications, 
+        lowStockCount, 
+        recentDispensedCount,
+        genderData: genderData,
+        monthlyRegistrations: monthlyRegistrations
+      };
+    }
+
+    // ============================================================
+    // ACCOUNTANT AND BILLING OFFICER
+    // ============================================================
+    else if (['Accountant', 'BillingOfficer'].includes(role)) {
+      let pendingBills = 0, totalRevenue = 0, paidBillsCount = 0;
+      
+      try {
+        pendingBills = await prisma.billingRecord.count({ where: { status: 'Pending' } });
+        const revenueResult = await prisma.billingRecord.aggregate({ _sum: { totalAmount: true }, where: { status: 'Paid' } });
+        totalRevenue = revenueResult._sum.totalAmount || 0;
+        paidBillsCount = await prisma.billingRecord.count({ where: { status: 'Paid' } });
+      } catch (e) { console.log('⚠️ Finance stats error:', e.message); }
+      
+      responseData = {
+        pendingBills,
+        totalRevenue,
+        paidBillsCount,
+        role: 'Billing',
+        genderData: genderData,
+        monthlyRegistrations: monthlyRegistrations
+      };
+    }
+
+    // ============================================================
+    // PAEDIATRICIAN
+    // ============================================================
+    else if (role === 'Paediatrician') {
+      let childPatients = 0, todayAppointments = 0, growthRecords = 0, vaccinationCompliance = 0;
+      
+      try {
+        const eighteenYearsAgo = new Date();
+        eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
+        
+        childPatients = await prisma.patient.count({
+          where: { dateOfBirth: { gte: eighteenYearsAgo } }
+        });
+        
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        
+        todayAppointments = await prisma.appointment.count({
+          where: {
+            staffId: req.user.id,
+            dateTime: { gte: today, lt: tomorrow },
+            status: 'Scheduled'
+          }
+        });
+        
+        growthRecords = await prisma.vitalSign.count({
+          where: { weight: { not: null } }
+        });
+        
+        vaccinationCompliance = await prisma.immunization.count({
+          where: { nextDueDate: { gte: new Date() } }
+        });
+      } catch (e) { console.log('⚠️ Paediatrician stats error:', e.message); }
+      
+      responseData = {
+        role: 'Paediatrician',
+        childPatients,
+        todayAppointments,
+        growthRecords,
+        vaccinationCompliance,
+        genderData: genderData,
+        monthlyRegistrations: monthlyRegistrations
+      };
+    }
+
+    // ============================================================
+    // LAB TECHNICIAN AND LAB SCIENTIST
+    // ============================================================
+    else if (role === 'LabTechnician' || role === 'LabScientist') {
+      let totalOrders = 0, pendingOrders = 0, completedOrders = 0;
+      
+      try {
+        totalOrders = await prisma.labOrder.count();
+        pendingOrders = await prisma.labOrder.count({ where: { status: { in: ['Ordered', 'In Progress'] } } });
+        completedOrders = await prisma.labOrder.count({ where: { status: 'Completed' } });
+      } catch (e) { console.log('⚠️ Lab stats error:', e.message); }
+      
+      responseData = {
+        role: role,
+        summary: {
+          totalOrders,
+          pendingOrders,
+          inProgressOrders: 0,
+          completedOrders,
+          validatedOrders: 0,
+          cancelledOrders: 0,
+          todaysOrders: 0,
+          pendingCount: pendingOrders
+        },
+        genderData: genderData,
+        monthlyRegistrations: monthlyRegistrations
+      };
+    }
+
+    // ============================================================
+    // RADIOLOGIST
+    // ============================================================
+    else if (role === 'Radiologist') {
+      let totalOrders = 0, pendingOrders = 0, completedOrders = 0;
+      
+      try {
+        totalOrders = await prisma.imagingOrder.count();
+        pendingOrders = await prisma.imagingOrder.count({ where: { status: { in: ['Ordered', 'Scheduled'] } } });
+        completedOrders = await prisma.imagingOrder.count({ where: { status: 'Completed' } });
+      } catch (e) { console.log('⚠️ Radiology stats error:', e.message); }
+      
+      responseData = {
+        totalImagingOrders: totalOrders,
+        pendingImagingOrders: pendingOrders,
+        completedImagingOrders: completedOrders,
+        genderData: genderData,
+        monthlyRegistrations: monthlyRegistrations
+      };
+    }
+
+    // ============================================================
+    // DENTIST
+    // ============================================================
+    else if (role === 'Dentist') {
+      let dentalPatients = 0, todayAppointments = 0;
+      
+      try {
+        dentalPatients = await prisma.patient.count({
+          where: { dental_records: { some: {} } }
+        });
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        todayAppointments = await prisma.appointment.count({
+          where: {
+            staffId: req.user.id,
+            dateTime: { gte: today, lt: tomorrow },
+            status: 'Scheduled'
+          }
+        });
+      } catch (e) { console.log('⚠️ Dentist stats error:', e.message); }
+      
+      responseData = {
+        role: 'Dentist',
+        totalDentalPatients: dentalPatients,
+        todayAppointments: todayAppointments,
+        genderData: genderData,
+        monthlyRegistrations: monthlyRegistrations
+      };
+    }
+
+    // ============================================================
+    // OPTOMETRIST
+    // ============================================================
+    else if (role === 'Optometrist') {
+      let optometryPatients = 0, todayAppointments = 0;
+      
+      try {
+        optometryPatients = await prisma.patient.count({
+          where: { optometry_records: { some: {} } }
+        });
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        todayAppointments = await prisma.appointment.count({
+          where: {
+            staffId: req.user.id,
+            dateTime: { gte: today, lt: tomorrow },
+            status: 'Scheduled'
+          }
+        });
+      } catch (e) { console.log('⚠️ Optometrist stats error:', e.message); }
+      
+      responseData = {
+        role: 'Optometrist',
+        totalOptometryPatients: optometryPatients,
+        todayAppointments: todayAppointments,
+        genderData: genderData,
+        monthlyRegistrations: monthlyRegistrations
+      };
+    }
+
+    // ============================================================
+    // SURGEON
+    // ============================================================
+    else if (role === 'Surgeon') {
+      let todayAppointments = 0, scheduledSurgeries = 0;
+      
+      try {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        todayAppointments = await prisma.appointment.count({
+          where: {
+            staffId: req.user.id,
+            dateTime: { gte: today, lt: tomorrow },
+            status: 'Scheduled'
+          }
+        });
+        scheduledSurgeries = await prisma.appointment.count({
+          where: {
+            staffId: req.user.id,
+            type: 'Surgery',
+            status: 'Scheduled'
+          }
+        });
+      } catch (e) { console.log('⚠️ Surgeon stats error:', e.message); }
+      
+      responseData = {
+        role: 'Surgeon',
+        todayAppointments: todayAppointments,
+        scheduledSurgeries: scheduledSurgeries,
+        genderData: genderData,
+        monthlyRegistrations: monthlyRegistrations
+      };
+    }
+
+    // ============================================================
+    // PSYCHIATRIST
+    // ============================================================
+    else if (role === 'Psychiatrist') {
+      let todayAppointments = 0, mentalHealthNotes = 0;
+      
+      try {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        todayAppointments = await prisma.appointment.count({
+          where: {
+            staffId: req.user.id,
+            dateTime: { gte: today, lt: tomorrow },
+            status: 'Scheduled'
+          }
+        });
+        mentalHealthNotes = await prisma.clinicalNote.count({
+          where: {
+            OR: [
+              { type: { contains: 'Psychiatric', mode: 'insensitive' } },
+              { fullContent: { contains: 'mental', mode: 'insensitive' } }
+            ]
+          }
+        });
+      } catch (e) { console.log('⚠️ Psychiatrist stats error:', e.message); }
+      
+      responseData = {
+        role: 'Psychiatrist',
+        todayAppointments: todayAppointments,
+        mentalHealthNotes: mentalHealthNotes,
+        genderData: genderData,
+        monthlyRegistrations: monthlyRegistrations
+      };
+    }
+
+    // ============================================================
+    // HR DASHBOARD (KEEP THIS - IT'S FOR THE MAIN DASHBOARD)
+    // ============================================================
+    else if (role === 'HR') {
+      let totalEmployees = 0, activeEmployees = 0, departments = 0, pendingLeaves = 0;
+      
+      try {
+        totalEmployees = await prisma.staff.count();
+        activeEmployees = await prisma.staff.count({ where: { isActive: true } });
+        departments = await prisma.department.count({ where: { isActive: true } });
+        pendingLeaves = await prisma.leaveRequest.count({ where: { status: 'Pending' } });
+      } catch (e) { console.log('⚠️ HR stats error:', e.message); }
+      
+      responseData = {
+        statistics: {
+          totalEmployees,
+          activeEmployees,
+          departments,
+          pendingLeaves,
+          employeesOnLeave: 0,
+          clockedInToday: 0,
+          totalTrainings: 0
+        },
+        genderData: genderData,
+        monthlyRegistrations: monthlyRegistrations
+      };
+    }
+
+    // ============================================================
+    // DEFAULT FALLBACK - Return basic stats for any role
+    // ============================================================
+    else {
+      let totalPatients = 0;
+      try { totalPatients = await prisma.patient.count(); } catch (e) {}
+      
+      responseData = {
+        message: 'Stats for this role are work in progress',
+        role: role,
+        totalPatients: totalPatients,
+        genderData: genderData,
+        monthlyRegistrations: monthlyRegistrations
+      };
+    }
+
+    // Add common data if not already present
+    if (!responseData.genderData) {
+      responseData.genderData = genderData;
+    }
+    if (!responseData.monthlyRegistrations) {
+      responseData.monthlyRegistrations = monthlyRegistrations;
+    }
+
+    console.log(`✅ Dashboard stats for ${role}:`, Object.keys(responseData));
     res.json(responseData);
+    
   } catch (error) {
     console.error('Dashboard stats error:', error);
-    res.status(500).json({ error: error.message, message: 'Failed to load dashboard statistics', role: req.user?.role || 'unknown' });
+    res.status(500).json({ 
+      error: error.message,
+      message: 'Failed to load dashboard statistics',
+      role: req.user?.role || 'unknown'
+    });
   }
 });
 
 // ============================================================
-// HR MODULE ENDPOINTS (HANDLED SEPARATELY - NOT IN DASHBOARD)
+// HR MODULE ENDPOINTS - COMPLETE (ADD THESE)
+// ============================================================
+// ============================================================
+// HR - DEPARTMENTS
 // ============================================================
 
-// Get all departments
 app.get('/api/hr/departments', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
   try {
+    console.log('📋 GET /api/hr/departments');
+    
     let departments = [];
     try {
-      departments = await prisma.department.findMany({
-        include: { staff: { select: { id: true, firstName: true, lastName: true, role: true, employeeId: true } } },
+      departments = await prisma.Department.findMany({  // ✅ Capitalized
+        include: {
+          staff: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              role: true,
+              employeeId: true
+            }
+          }
+        },
         orderBy: { name: 'asc' }
       });
     } catch (error) {
-      console.log('⚠️ Department table not found, returning empty array');
+      console.log('⚠️ Department table error:', error.message);
+      departments = [];
     }
+    
+    console.log(`✅ Found ${departments.length} departments`);
     res.json(departments);
   } catch (error) {
-    console.error('Get departments error:', error);
+    console.error('❌ Get departments error:', error);
     res.json([]);
   }
 });
 
-// Get all employees
+app.post('/api/hr/departments', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
+  try {
+    const { name, description, managerId, location, costCenter } = req.body;
+    
+    if (!name) {
+      return res.status(400).json({ error: 'Department name is required' });
+    }
+
+    const department = await prisma.Department.create({  // ✅ Capitalized
+      data: {
+        name,
+        description,
+        managerId: managerId || null,
+        location,
+        costCenter
+      },
+      include: {
+        manager: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            employeeId: true
+          }
+        }
+      }
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        staffId: req.user.id,
+        action: 'CREATE_DEPARTMENT',
+        module: 'HR',
+        details: `Created department: ${name}`
+      }
+    });
+
+    res.status(201).json(department);
+  } catch (error) {
+    console.error('❌ Create department error:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.put('/api/hr/departments/:id', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, managerId, location, costCenter, isActive } = req.body;
+
+    const department = await prisma.Department.update({  // ✅ Capitalized
+      where: { id },
+      data: {
+        name,
+        description,
+        managerId: managerId || null,
+        location,
+        costCenter,
+        isActive: isActive !== undefined ? isActive : true
+      },
+      include: {
+        manager: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            employeeId: true
+          }
+        }
+      }
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        staffId: req.user.id,
+        action: 'UPDATE_DEPARTMENT',
+        module: 'HR',
+        details: `Updated department: ${name}`
+      }
+    });
+
+    res.json(department);
+  } catch (error) {
+    console.error('❌ Update department error:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.delete('/api/hr/departments/:id', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const staffCount = await prisma.staff.count({
+      where: { departmentId: id }
+    });
+    
+    if (staffCount > 0) {
+      return res.status(400).json({ 
+        error: 'Cannot delete department with assigned staff. Reassign or deactivate staff first.' 
+      });
+    }
+
+    await prisma.Department.delete({  // ✅ Capitalized
+      where: { id }
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        staffId: req.user.id,
+        action: 'DELETE_DEPARTMENT',
+        module: 'HR',
+        details: `Deleted department ID: ${id}`
+      }
+    });
+
+    res.json({ message: 'Department deleted successfully' });
+  } catch (error) {
+    console.error('❌ Delete department error:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// ============================================================
+// HR - EMPLOYEES
+// ============================================================
+
 app.get('/api/hr/employees', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
   try {
     const { department, status, search } = req.query;
+    
+    console.log('📋 GET /api/hr/employees - Query:', req.query);
+    
     let where = {};
-    if (department) { try { where.departmentId = department; } catch (e) {} }
+    
+    if (department) {
+      try {
+        where.departmentId = department;
+      } catch (e) {
+        console.log('⚠️ departmentId field not found');
+      }
+    }
+    
     if (status === 'active') where.isActive = true;
     if (status === 'inactive') where.isActive = false;
+    
     if (search) {
       where.OR = [
         { firstName: { contains: search, mode: 'insensitive' } },
@@ -6846,27 +7623,160 @@ app.get('/api/hr/employees', authenticate, authorize('Admin', 'ITAdmin', 'HR'), 
         { email: { contains: search, mode: 'insensitive' } }
       ];
     }
+
     let employees = [];
     try {
-      employees = await prisma.staff.findMany({ where, orderBy: { createdAt: 'desc' } });
+      employees = await prisma.staff.findMany({
+        where,
+        orderBy: { createdAt: 'desc' }
+      });
     } catch (error) {
       console.log('⚠️ Error fetching employees, returning empty array');
+      employees = [];
     }
+
+    console.log(`✅ Found ${employees.length} employees`);
+
     const formattedEmployees = employees.map(emp => {
       const { password, ...employeeWithoutPassword } = emp;
-      return { ...employeeWithoutPassword, pendingLeaves: 0, lastReview: null, trainings: [] };
+      return {
+        ...employeeWithoutPassword,
+        pendingLeaves: 0,
+        lastReview: null,
+        trainings: []
+      };
     });
+
     res.json(formattedEmployees);
   } catch (error) {
-    console.error('Get employees error:', error);
+    console.error('❌ Get employees error:', error);
     res.json([]);
   }
 });
 
-// Get leave requests
+app.get('/api/hr/employees/:id', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    console.log(`📋 GET /api/hr/employees/${id}`);
+
+    let employee = null;
+    try {
+      employee = await prisma.staff.findUnique({
+        where: { id }
+      });
+    } catch (error) {
+      console.log('⚠️ Error fetching employee');
+    }
+
+    if (!employee) {
+      return res.status(404).json({ error: 'Employee not found' });
+    }
+
+    const { password, ...employeeWithoutPassword } = employee;
+    res.json(employeeWithoutPassword);
+  } catch (error) {
+    console.error('❌ Get employee error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/hr/employees/:id', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      employeeId,
+      firstName,
+      lastName,
+      email,
+      role,
+      departmentId,
+      managerId,
+      dateOfBirth,
+      gender,
+      phone,
+      address,
+      emergencyContact,
+      employmentType,
+      startDate,
+      endDate,
+      salary,
+      bankName,
+      bankAccount,
+      bankBranch,
+      taxId,
+      nationalId,
+      isActive
+    } = req.body;
+
+    console.log(`📝 PUT /api/hr/employees/${id}`);
+
+    const employee = await prisma.staff.update({
+      where: { id },
+      data: {
+        employeeId,
+        firstName,
+        lastName,
+        email,
+        role,
+        departmentId: departmentId || null,
+        managerId: managerId || null,
+        dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
+        gender,
+        phone,
+        address,
+        emergencyContact,
+        employmentType,
+        startDate: startDate ? new Date(startDate) : null,
+        endDate: endDate ? new Date(endDate) : null,
+        salary: salary ? parseFloat(salary) : null,
+        bankName,
+        bankAccount,
+        bankBranch,
+        taxId,
+        nationalId,
+        isActive: isActive !== undefined ? isActive : true
+      },
+      include: {
+        department: true,
+        manager: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            employeeId: true
+          }
+        }
+      }
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        staffId: req.user.id,
+        action: 'UPDATE_EMPLOYEE',
+        module: 'HR',
+        details: `Updated employee: ${employee.firstName} ${employee.lastName}`
+      }
+    });
+
+    const { password, ...employeeWithoutPassword } = employee;
+    res.json(employeeWithoutPassword);
+  } catch (error) {
+    console.error('❌ Update employee error:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// ============================================================
+// HR - LEAVES
+// ============================================================
+
 app.get('/api/hr/leaves', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
   try {
     const { status, employeeId, dateFrom, dateTo } = req.query;
+    
+    console.log('📋 GET /api/hr/leaves - Query:', req.query);
+    
     let where = {};
     if (status) where.status = status;
     if (employeeId) where.staffId = employeeId;
@@ -6875,66 +7785,622 @@ app.get('/api/hr/leaves', authenticate, authorize('Admin', 'ITAdmin', 'HR'), asy
       if (dateFrom) where.startDate.gte = new Date(dateFrom);
       if (dateTo) where.startDate.lte = new Date(dateTo);
     }
+
     let leaves = [];
     try {
       leaves = await prisma.leaveRequest.findMany({
         where,
-        include: { staff: { select: { id: true, firstName: true, lastName: true, employeeId: true, role: true } } },
+        include: {
+          staff: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              employeeId: true,
+              role: true
+            }
+          },
+          approvedBy: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              employeeId: true
+            }
+          }
+        },
         orderBy: { createdAt: 'desc' }
       });
     } catch (error) {
       console.log('⚠️ LeaveRequest table not found, returning empty array');
+      leaves = [];
     }
+
+    console.log(`✅ Found ${leaves.length} leave requests`);
     res.json(leaves);
   } catch (error) {
-    console.error('Get leaves error:', error);
+    console.error('❌ Get leaves error:', error);
     res.json([]);
   }
 });
 
-// HR Dashboard
+app.post('/api/hr/leaves', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
+  try {
+    const {
+      staffId,
+      leaveType,
+      startDate,
+      endDate,
+      reason,
+      contactDuringLeave,
+      substituteId
+    } = req.body;
+
+    console.log('📋 POST /api/hr/leaves - StaffId:', staffId);
+
+    if (!staffId || !leaveType || !startDate || !endDate) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const staff = await prisma.staff.findUnique({
+      where: { id: staffId }
+    });
+    if (!staff) {
+      return res.status(404).json({ error: 'Staff not found' });
+    }
+
+    const overlapping = await prisma.leaveRequest.findFirst({
+      where: {
+        staffId,
+        status: 'Approved',
+        OR: [
+          {
+            startDate: { lte: new Date(endDate) },
+            endDate: { gte: new Date(startDate) }
+          }
+        ]
+      }
+    });
+
+    if (overlapping) {
+      return res.status(400).json({ error: 'Employee already has an approved leave during this period' });
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+
+    const leave = await prisma.leaveRequest.create({
+      data: {
+        staffId,
+        leaveType,
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+        days,
+        reason,
+        contactDuringLeave,
+        substituteId: substituteId || null,
+        status: 'Pending'
+      },
+      include: {
+        staff: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            employeeId: true
+          }
+        },
+        substitute: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            employeeId: true
+          }
+        }
+      }
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        staffId: req.user.id,
+        action: 'CREATE_LEAVE_REQUEST',
+        module: 'HR',
+        details: `${staff.firstName} ${staff.lastName} requested ${leaveType} leave (${days} days)`
+      }
+    });
+
+    res.status(201).json(leave);
+  } catch (error) {
+    console.error('❌ Create leave error:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.patch('/api/hr/leaves/:id', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, comments } = req.body;
+
+    if (!status || !['Approved', 'Rejected', 'Cancelled'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+
+    const leave = await prisma.leaveRequest.update({
+      where: { id },
+      data: {
+        status,
+        approvedById: req.user.id,
+        approvedAt: new Date(),
+        comments
+      },
+      include: {
+        staff: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            employeeId: true
+          }
+        },
+        approvedBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            employeeId: true
+          }
+        }
+      }
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        staffId: req.user.id,
+        action: 'LEAVE_APPROVAL',
+        module: 'HR',
+        details: `${leave.staff.firstName} ${leave.staff.lastName} leave ${status}`
+      }
+    });
+
+    res.json(leave);
+  } catch (error) {
+    console.error('❌ Update leave error:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// ============================================================
+// HR - DASHBOARD
+// ============================================================
+
 app.get('/api/hr/dashboard', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
   try {
+    console.log('📊 GET /api/hr/dashboard - User:', req.user?.role);
+    
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    let totalEmployees = 0, activeEmployees = 0, departments = 0, pendingLeaves = 0, employeesOnLeave = 0, clockedInToday = 0, totalTrainings = 0;
-    try { totalEmployees = await prisma.staff.count(); } catch (e) {}
-    try { activeEmployees = await prisma.staff.count({ where: { isActive: true } }); } catch (e) {}
-    try { departments = await prisma.department.count({ where: { isActive: true } }); } catch (e) {}
-    try { pendingLeaves = await prisma.leaveRequest.count({ where: { status: 'Pending' } }); } catch (e) {}
+    
+    let totalEmployees = 0;
+    let activeEmployees = 0;
+    try {
+      totalEmployees = await prisma.staff.count();
+      activeEmployees = await prisma.staff.count({ where: { isActive: true } });
+    } catch (error) {
+      console.log('⚠️ Error counting staff');
+    }
+    
+    let departments = 0;
+    try {
+    departments = await prisma.Department.count({ where: { isActive: true } });  // ✅ Capitalized
+  } catch (error) {
+    console.log('⚠️ Department table not found');
+  }
+    
+    let pendingLeaves = 0;
+    try {
+      pendingLeaves = await prisma.leaveRequest.count({ where: { status: 'Pending' } });
+    } catch (error) {
+      console.log('⚠️ LeaveRequest table not found');
+    }
+    
+    let employeesOnLeave = 0;
     try {
       employeesOnLeave = await prisma.leaveRequest.count({
-        where: { status: 'Approved', startDate: { lte: today }, endDate: { gte: today } }
+        where: {
+          status: 'Approved',
+          startDate: { lte: today },
+          endDate: { gte: today }
+        }
       });
-    } catch (e) {}
+    } catch (error) {
+      console.log('⚠️ LeaveRequest table not found');
+    }
+
+    let clockedInToday = 0;
     try {
       clockedInToday = await prisma.attendance.count({
-        where: { date: today, clockIn: { not: null }, clockOut: null }
+        where: {
+          date: today,
+          clockIn: { not: null },
+          clockOut: null
+        }
       });
-    } catch (e) { console.log('⚠️ Attendance table might not exist yet'); }
+    } catch (e) {
+      console.log('⚠️ Attendance table might not exist yet');
+    }
+    
+    let totalTrainings = 0;
     try {
       totalTrainings = await prisma.training.count({
-        where: { startDate: { gte: new Date(today.getFullYear(), today.getMonth(), 1), lte: new Date(today.getFullYear(), today.getMonth() + 1, 0) } }
+        where: {
+          startDate: { 
+            gte: new Date(today.getFullYear(), today.getMonth(), 1), 
+            lte: new Date(today.getFullYear(), today.getMonth() + 1, 0) 
+          }
+        }
       });
-    } catch (e) { console.log('⚠️ Training table might not exist yet'); }
+    } catch (e) {
+      console.log('⚠️ Training table might not exist yet');
+    }
+
     let recentLeaves = [];
     try {
       recentLeaves = await prisma.leaveRequest.findMany({
         take: 5,
         where: { status: 'Pending' },
-        include: { staff: { select: { id: true, firstName: true, lastName: true, employeeId: true } } },
+        include: {
+          staff: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              employeeId: true
+            }
+          }
+        },
         orderBy: { createdAt: 'desc' }
       });
-    } catch (e) {}
-    res.json({
-      statistics: { totalEmployees, activeEmployees, departments, pendingLeaves, employeesOnLeave, clockedInToday, totalTrainings },
-      recentLeaves, recentEmployees: []
-    });
+    } catch (error) {
+      console.log('⚠️ LeaveRequest table not found');
+    }
+
+    const result = {
+      statistics: {
+        totalEmployees,
+        activeEmployees,
+        departments,
+        pendingLeaves,
+        employeesOnLeave,
+        clockedInToday,
+        totalTrainings
+      },
+      recentLeaves,
+      recentEmployees: []
+    };
+
+    console.log('✅ HR Dashboard stats:', result.statistics);
+    res.json(result);
   } catch (error) {
-    console.error('HR dashboard error:', error);
-    res.json({ statistics: { totalEmployees: 0, activeEmployees: 0, departments: 0, pendingLeaves: 0, employeesOnLeave: 0, clockedInToday: 0, totalTrainings: 0 }, recentLeaves: [], recentEmployees: [] });
+    console.error('❌ HR dashboard error:', error);
+    res.json({
+      statistics: {
+        totalEmployees: 0,
+        activeEmployees: 0,
+        departments: 0,
+        pendingLeaves: 0,
+        employeesOnLeave: 0,
+        clockedInToday: 0,
+        totalTrainings: 0
+      },
+      recentLeaves: [],
+      recentEmployees: []
+    });
   }
 });
+
+// ============================================================
+// HR - LEAVE POLICY & ENTITLEMENT
+// ============================================================
+
+app.get('/api/hr/leave-policy', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
+  try {
+    let policy = await prisma.leavePolicy.findFirst({
+      where: { isActive: true }
+    });
+    
+    if (!policy) {
+      policy = await prisma.leavePolicy.create({
+        data: {
+          name: 'Default Policy',
+          description: 'Standard leave policy for all employees',
+          defaultAnnualDays: 21,
+          defaultSickDays: 10,
+          defaultStudyDays: 5,
+          defaultMaternityDays: 90,
+          defaultPaternityDays: 14,
+          maxCarryOverDays: 5,
+          leaveYearStartMonth: 1,
+          leaveYearEndMonth: 12,
+          proRataEnabled: true,
+          reminderDays: 30,
+          isActive: true
+        }
+      });
+    }
+    
+    res.json(policy);
+  } catch (error) {
+    console.error('❌ Get leave policy error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/hr/leave-policy', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
+  try {
+    const {
+      defaultAnnualDays,
+      defaultSickDays,
+      defaultStudyDays,
+      defaultMaternityDays,
+      defaultPaternityDays,
+      maxCarryOverDays,
+      carryOverExpiry,
+      leaveYearStartMonth,
+      leaveYearEndMonth,
+      proRataEnabled,
+      reminderDays
+    } = req.body;
+    
+    await prisma.leavePolicy.updateMany({
+      where: { isActive: true },
+      data: {
+        defaultAnnualDays,
+        defaultSickDays,
+        defaultStudyDays,
+        defaultMaternityDays,
+        defaultPaternityDays,
+        maxCarryOverDays,
+        carryOverExpiry,
+        leaveYearStartMonth,
+        leaveYearEndMonth,
+        proRataEnabled,
+        reminderDays
+      }
+    });
+    
+    await prisma.auditLog.create({
+      data: {
+        staffId: req.user.id,
+        action: 'UPDATE_LEAVE_POLICY',
+        module: 'HR',
+        details: 'Updated leave policy settings'
+      }
+    });
+    
+    res.json({ message: 'Leave policy updated successfully' });
+  } catch (error) {
+    console.error('❌ Update leave policy error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/hr/leave-entitlement', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
+  try {
+    const { staffId, year } = req.query;
+    const currentYear = new Date().getFullYear();
+    const targetYear = year ? parseInt(year) : currentYear;
+    
+    if (!staffId) {
+      const entitlements = await prisma.staffLeaveEntitlement.findMany({
+        where: { year: targetYear },
+        include: {
+          staff: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              employeeId: true,
+              role: true
+            }
+          }
+        },
+        orderBy: { staff: { firstName: 'asc' } }
+      });
+      return res.json(entitlements);
+    }
+    
+    const entitlement = await prisma.staffLeaveEntitlement.findUnique({
+      where: {
+        staffId_year: {
+          staffId,
+          year: targetYear
+        }
+      },
+      include: {
+        staff: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            employeeId: true,
+            role: true
+          }
+        }
+      }
+    });
+    
+    if (!entitlement) {
+      return res.status(404).json({ 
+        message: 'No leave entitlement found for this staff member',
+        hasEntitlement: false
+      });
+    }
+    
+    res.json(entitlement);
+  } catch (error) {
+    console.error('❌ Get leave entitlement error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/hr/leave-entitlement', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
+  try {
+    const {
+      staffId,
+      year,
+      annualLeaveDays,
+      sickLeaveDays,
+      studyLeaveDays,
+      maternityLeaveDays,
+      paternityLeaveDays,
+      carriedOverDays,
+      notes
+    } = req.body;
+    
+    if (!staffId || !year) {
+      return res.status(400).json({ error: 'Staff ID and year are required' });
+    }
+    
+    const currentYear = new Date().getFullYear();
+    if (year < currentYear - 1 || year > currentYear + 1) {
+      return res.status(400).json({ error: 'Invalid year. Can only set for previous, current, or next year.' });
+    }
+    
+    const annualLeave = annualLeaveDays || 21;
+    const sickLeave = sickLeaveDays || 10;
+    const studyLeave = studyLeaveDays || 5;
+    const maternityLeave = maternityLeaveDays || 90;
+    const paternityLeave = paternityLeaveDays || 14;
+    const carriedOver = carriedOverDays || 0;
+    const totalAvailable = annualLeave + carriedOver;
+    
+    const entitlement = await prisma.staffLeaveEntitlement.upsert({
+      where: {
+        staffId_year: {
+          staffId,
+          year
+        }
+      },
+      update: {
+        annualLeaveDays: annualLeave,
+        sickLeaveDays: sickLeave,
+        studyLeaveDays: studyLeave,
+        maternityLeaveDays: maternityLeave,
+        paternityLeaveDays: paternityLeave,
+        carriedOverDays: carriedOver,
+        totalAvailableDays: totalAvailable,
+        remainingAnnualDays: annualLeave,
+        remainingSickDays: sickLeave,
+        remainingStudyDays: studyLeave,
+        remainingMaternityDays: maternityLeave,
+        remainingPaternityDays: paternityLeave,
+        notes,
+        updatedBy: req.user.id
+      },
+      create: {
+        staffId,
+        year,
+        annualLeaveDays: annualLeave,
+        sickLeaveDays: sickLeave,
+        studyLeaveDays: studyLeave,
+        maternityLeaveDays: maternityLeave,
+        paternityLeaveDays: paternityLeave,
+        carriedOverDays: carriedOver,
+        totalAvailableDays: totalAvailable,
+        remainingAnnualDays: annualLeave,
+        remainingSickDays: sickLeave,
+        remainingStudyDays: studyLeave,
+        remainingMaternityDays: maternityLeave,
+        remainingPaternityDays: paternityLeave,
+        createdBy: req.user.id,
+        notes
+      },
+      include: {
+        staff: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            employeeId: true
+          }
+        }
+      }
+    });
+    
+    await prisma.auditLog.create({
+      data: {
+        staffId: req.user.id,
+        action: 'CREATE_LEAVE_ENTITLEMENT',
+        module: 'HR',
+        details: `Created leave entitlement for ${entitlement.staff.firstName} ${entitlement.staff.lastName} (${year})`
+      }
+    });
+    
+    res.json({ message: 'Leave entitlement saved successfully', entitlement });
+  } catch (error) {
+    console.error('❌ Create leave entitlement error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// My leave balance (for logged-in staff)
+app.get('/api/hr/my-leave-balance', authenticate, async (req, res) => {
+  try {
+    const staffId = req.user.id;
+    const currentYear = new Date().getFullYear();
+    
+    const entitlement = await prisma.staffLeaveEntitlement.findUnique({
+      where: {
+        staffId_year: {
+          staffId,
+          year: currentYear
+        }
+      }
+    });
+    
+    if (!entitlement) {
+      return res.json({
+        message: 'No leave entitlement found for this year. Please contact HR.',
+        hasEntitlement: false
+      });
+    }
+    
+    res.json({
+      hasEntitlement: true,
+      year: currentYear,
+      annual: {
+        total: entitlement.annualLeaveDays,
+        remaining: entitlement.remainingAnnualDays,
+        carriedOver: entitlement.carriedOverDays
+      },
+      sick: {
+        total: entitlement.sickLeaveDays,
+        remaining: entitlement.remainingSickDays
+      },
+      study: {
+        total: entitlement.studyLeaveDays || 0,
+        remaining: entitlement.remainingStudyDays || 0
+      },
+      maternity: {
+        total: entitlement.maternityLeaveDays || 0,
+        remaining: entitlement.remainingMaternityDays || 0
+      },
+      paternity: {
+        total: entitlement.paternityLeaveDays || 0,
+        remaining: entitlement.remainingPaternityDays || 0
+      }
+    });
+  } catch (error) {
+    console.error('❌ Get my leave balance error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================================
+// END OF HR MODULE ENDPOINTS
+// ============================================================
 
 // ============================================================
 // START SERVER
