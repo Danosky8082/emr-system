@@ -1,11 +1,13 @@
-// src/pages/PregnancyProfile.jsx
+// src/pages/PregnancyProfile.jsx - WITH LABOR & DELIVERY TAB
+
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import './Dashboard.css';
-import './PregnancyProfile.css'; // ✅ Import new styles
+import './PregnancyProfile.css';
+import LaborDeliveryTab from '../components/LaborDeliveryTab'; // ✅ IMPORT
 
 const PregnancyProfile = () => {
   const { id } = useParams();
@@ -101,7 +103,6 @@ const PregnancyProfile = () => {
   }
   return null;
 };
-
 
   // --- Check all vitals for warnings ---
   const getVitalWarnings = (vitals) => {
@@ -592,12 +593,13 @@ const PregnancyProfile = () => {
         boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
         overflow: 'hidden'
       }}>
-        {/* ... Tab navigation and content remains the same ... */}
+        {/* Tab Navigation */}
         <div style={{
           display: 'flex',
           borderBottom: '1px solid #e8ecf1',
           background: '#f8fafc',
-          padding: '0 24px'
+          padding: '0 24px',
+          flexWrap: 'wrap'
         }}>
           <button
             style={{
@@ -664,6 +666,40 @@ const PregnancyProfile = () => {
             onClick={() => setActiveTab('delivery')}
           >
             🏥 Delivery {delivery ? '✅' : '⏳'}
+          </button>
+
+          {/* ✅ NEW: LABOR & DELIVERY TAB */}
+          <button
+            style={{
+              padding: '16px 24px',
+              background: 'transparent',
+              border: 'none',
+              fontSize: '15px',
+              fontWeight: '500',
+              color: activeTab === 'labor' ? '#0f3460' : '#6b7280',
+              cursor: 'pointer',
+              position: 'relative',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              borderBottom: activeTab === 'labor' ? '3px solid #0f3460' : '3px solid transparent'
+            }}
+            onClick={() => setActiveTab('labor')}
+          >
+            🤱 Labor & Delivery
+            {pregnancy?.status === 'In Labor' && (
+              <span style={{
+                background: '#dc2626',
+                color: 'white',
+                padding: '2px 8px',
+                borderRadius: '12px',
+                fontSize: '10px',
+                fontWeight: '600',
+                animation: 'pulse 1.5s infinite'
+              }}>
+                LIVE
+              </span>
+            )}
           </button>
         </div>
 
@@ -763,8 +799,102 @@ const PregnancyProfile = () => {
             </div>
           )}
 
-          {/* Visits Tab - Keep existing content */}
-          {/* ... */}
+          {/* Visits Tab */}
+          {activeTab === 'visits' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <h4 style={{ margin: 0 }}>📋 Antenatal Visits</h4>
+                {canRecordVitals && (
+                  <button className="btn btn-primary btn-sm" onClick={() => setShowVisitModal(true)}>
+                    + Record Visit
+                  </button>
+                )}
+              </div>
+              {sortedVisits.length > 0 ? (
+                <div className="table-container">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Weeks</th>
+                        <th>BP</th>
+                        <th>Heart Rate</th>
+                        <th>Weight</th>
+                        <th>Fundal Height</th>
+                        <th>Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedVisits.map(v => (
+                        <tr key={v.id}>
+                          <td>{new Date(v.visitDate).toLocaleString()}</td>
+                          <td>{v.gestationalWeeks || '—'}</td>
+                          <td>{v.bloodPressure || '—'}</td>
+                          <td>{v.heartRate || '—'}</td>
+                          <td>{v.weight || '—'}</td>
+                          <td>{v.fundalHeight || '—'}</td>
+                          <td>{v.notes || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p style={{ color: '#6b7280' }}>No visits recorded yet.</p>
+              )}
+            </div>
+          )}
+
+          {/* Delivery Tab */}
+          {activeTab === 'delivery' && (
+            <div>
+              <h4 style={{ margin: '0 0 16px 0' }}>🏥 Delivery Information</h4>
+              {delivery ? (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px' }}>
+                    <strong>Delivery Date:</strong> {new Date(delivery.deliveryDate).toLocaleString()}
+                  </div>
+                  <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px' }}>
+                    <strong>Type:</strong> {delivery.type}
+                  </div>
+                  <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px' }}>
+                    <strong>Duration:</strong> {delivery.durationHours ? `${delivery.durationHours} hours` : 'N/A'}
+                  </div>
+                  <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px' }}>
+                    <strong>Outcome:</strong> {delivery.outcome}
+                  </div>
+                  <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px' }}>
+                    <strong>Baby Gender:</strong> {delivery.babyGender}
+                  </div>
+                  <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px' }}>
+                    <strong>Baby Weight:</strong> {delivery.babyWeight ? `${delivery.babyWeight} kg` : 'N/A'}
+                  </div>
+                  <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px' }}>
+                    <strong>Apgar Score:</strong> {delivery.babyApgar || 'N/A'}
+                  </div>
+                  <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px' }}>
+                    <strong>Maternal Condition:</strong> {delivery.maternalCondition || 'N/A'}
+                  </div>
+                  {delivery.notes && (
+                    <div style={{ gridColumn: '1 / -1', background: '#f8fafc', padding: '16px', borderRadius: '8px' }}>
+                      <strong>Notes:</strong> {delivery.notes}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p style={{ color: '#6b7280' }}>No delivery recorded yet.</p>
+              )}
+            </div>
+          )}
+
+          {/* ✅ LABOR & DELIVERY TAB CONTENT */}
+          {activeTab === 'labor' && (
+            <LaborDeliveryTab 
+              pregnancy={pregnancy} 
+              token={token} 
+              onUpdate={fetchPregnancy}
+            />
+          )}
         </div>
       </div>
 

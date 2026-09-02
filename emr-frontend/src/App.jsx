@@ -1,4 +1,4 @@
-// src/App.jsx - Complete with Kiosk independent
+// src/App.jsx - Add Labor & Delivery route
 
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
@@ -44,16 +44,21 @@ import AuditLogs from './pages/AuditLogs';
 import SystemStatus from './pages/SystemStatus';
 import WalletDashboard from './pages/WalletDashboard';
 import PatientWallet from './pages/PatientWallet';
+import LaborDeliveryPage from './pages/LaborDeliveryPage';  // ✅ ADD THIS
 
-// ============ PATIENT PORTAL IMPORTS (INDEPENDENT) ============
+// ============ PATIENT PORTAL IMPORTS ============
 import PatientLogin from './pages/PatientLogin';
 import PatientDashboard from './pages/PatientDashboard';
 import PatientChangeCredentials from './pages/PatientChangeCredentials';
+import DentalDashboard from './pages/DentalDashboard';
+import OptometryDashboard from './pages/OptometryDashboard';
+import PaediatricDashboard from './pages/PaediatricDashboard';
+import SurgeryDashboard from './pages/SurgeryDashboard';
+import PsychiatryDashboard from './pages/PsychiatryDashboard';
 
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import ServiceConfig from './pages/ServiceConfig';
-
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('emr_token'));
@@ -89,23 +94,22 @@ function App() {
     <AuthContext.Provider value={authValue}>
       <Routes>
         {/* ============================================================
-                PATIENT PORTAL ROUTES - COMPLETELY INDEPENDENT
-                No staff authentication required!
-                ============================================================ */}
+            PATIENT PORTAL ROUTES
+            ============================================================ */}
         <Route path="/patient-login" element={<PatientLogin />} />
         <Route path="/patient-dashboard" element={<PatientDashboard />} />
         <Route path="/patient-wallet" element={<PatientWallet />} />
         <Route path="/patient-change-credentials" element={<PatientChangeCredentials />} />
         
         {/* ============================================================
-                PUBLIC ROUTES - COMPLETELY INDEPENDENT
-                ============================================================ */}
-        <Route path="/kiosk" element={<KioskMode />} />   {/* ✅ Kiosk is independent */}
+            PUBLIC ROUTES
+            ============================================================ */}
+        <Route path="/kiosk" element={<KioskMode />} />
         <Route path="/login" element={<Login />} />
         
         {/* ============================================================
-                STAFF ROUTES - Requires Authentication
-                ============================================================ */}
+            STAFF ROUTES
+            ============================================================ */}
         <Route path="/" element={
           <ProtectedRoute>
             <Layout />
@@ -149,11 +153,17 @@ function App() {
           <Route path="system-status" element={<SystemStatus />} />
           <Route path="wallet" element={<WalletDashboard />} />
           <Route path="service-config" element={<ServiceConfig />} />
+          <Route path="labor-delivery" element={<LaborDeliveryPage />} /> 
+          <Route path="dental" element={<DentalDashboard />} />
+          <Route path="optometry" element={<OptometryDashboard />} />
+          <Route path="paediatric" element={<PaediatricDashboard />} />
+          <Route path="surgery" element={<SurgeryDashboard />} />
+          <Route path="psychiatry" element={<PsychiatryDashboard />} />
         </Route>
         
         {/* ============================================================
-                CATCH-ALL
-                ============================================================ */}
+            CATCH-ALL
+            ============================================================ */}
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </AuthContext.Provider>

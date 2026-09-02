@@ -1,4 +1,4 @@
-// src/pages/WalletDashboard.jsx - COMPLETE MODERN REDESIGN
+// src/pages/WalletDashboard.jsx - FIXED SEARCH INPUT
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -9,7 +9,7 @@ import { useSearch } from '../components/Layout';
 
 const WalletDashboard = () => {
   const { token, user } = useAuth();
-  const { searchTerm } = useSearch();
+  const { searchTerm, setSearchTerm } = useSearch(); // ✅ Get setSearchTerm too
   const [patients, setPatients] = useState([]);
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [walletData, setWalletData] = useState(null);
@@ -22,6 +22,7 @@ const WalletDashboard = () => {
   const [payDescription, setPayDescription] = useState('');
   const [payCategory, setPayCategory] = useState('General');
   const [paymentMethod, setPaymentMethod] = useState('Cash');
+  const [localSearchTerm, setLocalSearchTerm] = useState(''); // ✅ Local state for search input
 
   const isFinance = ['Admin', 'Accountant', 'BillingOfficer'].includes(user?.role);
   const isClinical = ['Doctor', 'Nurse', 'Pharmacist', 'LabTechnician', 'Radiologist'].includes(user?.role);
@@ -131,8 +132,9 @@ const WalletDashboard = () => {
     }
   };
 
+  // ✅ Use localSearchTerm for filtering, not the global searchTerm
   const filteredPatients = patients.filter(p =>
-    `${p.firstName} ${p.lastName} ${p.hospitalId}`.toLowerCase().includes(searchTerm.toLowerCase())
+    `${p.firstName} ${p.lastName} ${p.hospitalId}`.toLowerCase().includes(localSearchTerm.toLowerCase())
   );
 
   const formatCurrency = (amount) => `₦${(amount || 0).toLocaleString()}`;
@@ -206,10 +208,13 @@ const WalletDashboard = () => {
           </div>
         </div>
         
+        {/* ✅ FIXED: Use localSearchTerm with proper onChange handler */}
         <input
           type="text"
           placeholder="🔍 Search by name or Hospital ID..."
           className="form-control"
+          value={localSearchTerm}
+          onChange={(e) => setLocalSearchTerm(e.target.value)}
           style={{
             width: '100%',
             padding: '12px 16px',
@@ -219,8 +224,8 @@ const WalletDashboard = () => {
             marginBottom: '16px',
             transition: 'border-color 0.2s'
           }}
-          value={searchTerm}
-          onChange={(e) => {}}
+          onFocus={(e) => e.target.style.borderColor = '#0f3460'}
+          onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
         />
         
         <div style={{ 
@@ -255,14 +260,20 @@ const WalletDashboard = () => {
               <span>{p.firstName} {p.lastName}</span>
             </button>
           ))}
-          {filteredPatients.length === 0 && (
+          {filteredPatients.length === 0 && localSearchTerm && (
             <div style={{ color: '#6b7280', fontSize: '14px', padding: '8px 0' }}>
-              No patients found matching your search.
+              No patients found matching "{localSearchTerm}".
+            </div>
+          )}
+          {filteredPatients.length === 0 && !localSearchTerm && (
+            <div style={{ color: '#6b7280', fontSize: '14px', padding: '8px 0' }}>
+              Start typing to search for patients...
             </div>
           )}
         </div>
       </div>
 
+      {/* The rest of the component remains the same */}
       {selectedPatient && (
         <>
           {/* Wallet Summary - Modern Cards */}
@@ -596,9 +607,8 @@ const WalletDashboard = () => {
         </>
       )}
 
-      {/* ============================================================
-          DEPOSIT MODAL - MODERN
-          ============================================================ */}
+      {/* Rest of the modals remain the same */}
+      {/* Deposit Modal */}
       {showDepositModal && selectedPatient && (
         <div className="modal-overlay" onClick={() => setShowDepositModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px', borderRadius: '16px', padding: '0' }}>
@@ -742,9 +752,7 @@ const WalletDashboard = () => {
         </div>
       )}
 
-      {/* ============================================================
-          PAY FROM WALLET MODAL - MODERN
-          ============================================================ */}
+      {/* Pay from Wallet Modal */}
       {showPayModal && selectedPatient && (
         <div className="modal-overlay" onClick={() => setShowPayModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px', borderRadius: '16px', padding: '0' }}>

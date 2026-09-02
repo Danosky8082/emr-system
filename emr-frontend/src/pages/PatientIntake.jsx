@@ -1,10 +1,12 @@
-// src/pages/PatientIntake.jsx - COMPLETE WITH WALLET SUPPORT
+// src/pages/PatientIntake.jsx - COMPLETE WITH FIXED ACTION BUTTON LOGIC
+
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
 import PatientCard from '../components/PatientCard';
+import { Link } from 'react-router-dom';
 
 const PatientIntake = () => {
   const { token } = useAuth();
@@ -22,17 +24,25 @@ const PatientIntake = () => {
   const [showReturnModal, setShowReturnModal] = useState(false);
   const [returnToStage, setReturnToStage] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
-  
+
+  // ✅ DESTINATION MODAL STATE
+  const [showDestinationModal, setShowDestinationModal] = useState(false);
+  const [destinationForm, setDestinationForm] = useState({
+    destinationType: 'CLINIC',
+    clinicId: '',
+    wardId: ''
+  });
+
   // Wallet state
   const [walletBalances, setWalletBalances] = useState({});
   const [showWalletInfo, setShowWalletInfo] = useState({});
   const [loadingWallet, setLoadingWallet] = useState({});
 
-  const [newJourney, setNewJourney] = useState({ 
-    patientId: '', 
-    destinationType: 'CLINIC', 
-    clinicId: '', 
-    wardId: '' 
+  const [newJourney, setNewJourney] = useState({
+    patientId: '',
+    destinationType: 'CLINIC',
+    clinicId: '',
+    wardId: ''
   });
 
   // Get category info
@@ -48,7 +58,7 @@ const PatientIntake = () => {
   // Fetch wallet balance for a patient
   const fetchWalletBalance = async (patientId) => {
     if (loadingWallet[patientId]) return;
-    
+
     setLoadingWallet(prev => ({ ...prev, [patientId]: true }));
     try {
       const res = await axios.get(`http://localhost:3000/api/patients/${patientId}/wallet`, {
@@ -66,9 +76,9 @@ const PatientIntake = () => {
 
   // Toggle wallet info display
   const toggleWalletInfo = (patientId) => {
-    setShowWalletInfo(prev => ({ 
-      ...prev, 
-      [patientId]: !prev[patientId] 
+    setShowWalletInfo(prev => ({
+      ...prev,
+      [patientId]: !prev[patientId]
     }));
     if (!walletBalances[patientId]) {
       fetchWalletBalance(patientId);
@@ -82,13 +92,19 @@ const PatientIntake = () => {
       today.setHours(0, 0, 0, 0);
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
-      
+
       const res = await axios.get(
         `http://localhost:3000/api/appointments?dateFrom=${today.toISOString()}&dateTo=${tomorrow.toISOString()}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      
-      setTodayAppointments(res.data.filter(a => a.status !== 'Cancelled'));
+
+      // Only show Scheduled appointments
+      const filtered = res.data.filter(a =>
+        a.status === 'Scheduled' && a.status !== 'Cancelled'
+      );
+
+      filtered.sort((a, b) => new Date(a.dateTime) - new Date(b.dateTime));
+      setTodayAppointments(filtered);
     } catch (error) {
       console.error('Error fetching appointments:', error);
     }
@@ -98,17 +114,17 @@ const PatientIntake = () => {
     setLoading(true);
     try {
       const [journeyRes, clinicRes, wardRes] = await Promise.all([
-        axios.get('http://localhost:3000/api/patient-journeys', { 
-          headers: { Authorization: `Bearer ${token}` } 
+        axios.get('http://localhost:3000/api/patient-journeys', {
+          headers: { Authorization: `Bearer ${token}` }
         }),
-        axios.get('http://localhost:3000/api/clinics', { 
-          headers: { Authorization: `Bearer ${token}` } 
+        axios.get('http://localhost:3000/api/clinics', {
+          headers: { Authorization: `Bearer ${token}` }
         }),
-        axios.get('http://localhost:3000/api/wards', { 
-          headers: { Authorization: `Bearer ${token}` } 
+        axios.get('http://localhost:3000/api/wards', {
+          headers: { Authorization: `Bearer ${token}` }
         })
       ]);
-      
+
       const journeysWithDetails = journeyRes.data.map((journey) => {
         return {
           ...journey,
@@ -122,25 +138,25 @@ const PatientIntake = () => {
           }
         };
       });
-      
+
       setJourneys(journeysWithDetails);
       setClinics(clinicRes.data);
       setWards(wardRes.data);
-      
+
       // ✅ Fetch appointments
       await fetchTodayAppointments();
-      
-    } catch (error) { 
+
+    } catch (error) {
       console.error('Fetch error:', error);
-      toast.error('Failed to load intake data'); 
-    } finally { 
-      setLoading(false); 
+      toast.error('Failed to load intake data');
+    } finally {
+      setLoading(false);
     }
   };
 
-  useEffect(() => { 
+  useEffect(() => {
     if (token) {
-      fetchData(); 
+      fetchData();
     }
   }, [token, refreshKey]);
 
@@ -194,25 +210,45 @@ const PatientIntake = () => {
       await axios.post('http://localhost:3000/api/patient-journeys', payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      
+
       toast.success('Patient intake started successfully!');
       setShowModal(false);
       setNewJourney({ patientId: '', destinationType: 'CLINIC', clinicId: '', wardId: '' });
       setRefreshKey(prev => prev + 1);
-    } catch (error) { 
-      toast.error(error.response?.data?.error || 'Failed to start intake'); 
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to start intake');
     }
   };
 
   const handleStatusUpdate = async (journeyId, status) => {
+    if (!journeyId) {
+      toast.error('Invalid journey ID');
+      return;
+    }
+    
     try {
-      await axios.patch(`http://localhost:3000/api/patient-journeys/${journeyId}/status`, { status }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      console.log(`📤 Updating journey ${journeyId} to status: ${status}`);
+      
+      const response = await axios.patch(
+        `http://localhost:3000/api/patient-journeys/${journeyId}/status`,
+        { status },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      console.log('✅ Status update response:', response.data);
       toast.success(`Status updated to ${status.replace(/_/g, ' ')}`);
       setRefreshKey(prev => prev + 1);
-    } catch (error) { 
-      toast.error('Failed to update status'); 
+    } catch (error) {
+      console.error('❌ Status update error:', error);
+      console.error('❌ Error response:', error.response?.data);
+      
+      if (error.response?.status === 404) {
+        toast.error('Journey not found. Please refresh the page.');
+      } else if (error.response?.status === 403) {
+        toast.error('You do not have permission to update this journey.');
+      } else {
+        toast.error(error.response?.data?.error || 'Failed to update status');
+      }
     }
   };
 
@@ -224,7 +260,7 @@ const PatientIntake = () => {
     }
 
     try {
-      await axios.patch(`http://localhost:3000/api/patient-journeys/${selectedJourney.id}/reverse`, 
+      await axios.patch(`http://localhost:3000/api/patient-journeys/${selectedJourney.id}/reverse`,
         { reason: reverseReason },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -248,7 +284,7 @@ const PatientIntake = () => {
     if (!reason) return;
 
     try {
-      await axios.patch(`http://localhost:3000/api/patient-journeys/${selectedJourney.id}/return-to-stage`, 
+      await axios.patch(`http://localhost:3000/api/patient-journeys/${selectedJourney.id}/return-to-stage`,
         { targetStatus: returnToStage, reason },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -262,6 +298,36 @@ const PatientIntake = () => {
     }
   };
 
+  // ✅ HANDLE UPDATE DESTINATION
+  const handleUpdateDestination = async (e) => {
+    e.preventDefault();
+    if (!selectedJourney) return;
+    
+    try {
+      await axios.patch(
+        `http://localhost:3000/api/patient-journeys/${selectedJourney.id}`,
+        {
+          destinationType: destinationForm.destinationType,
+          clinicId: destinationForm.destinationType === 'CLINIC' ? destinationForm.clinicId : null,
+          wardId: destinationForm.destinationType === 'WARD' ? destinationForm.wardId : null
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      toast.success('Destination updated successfully!');
+      setShowDestinationModal(false);
+      setSelectedJourney(null);
+      setDestinationForm({
+        destinationType: 'CLINIC',
+        clinicId: '',
+        wardId: ''
+      });
+      setRefreshKey(prev => prev + 1);
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to update destination');
+    }
+  };
+
   const handleArchivePatient = async (patient) => {
     if (!patient || !patient.id) {
       toast.error('Patient data is incomplete. Please refresh the page and try again.');
@@ -270,9 +336,9 @@ const PatientIntake = () => {
     }
 
     const reason = prompt(`Reason for archiving ${patient.firstName} ${patient.lastName} (optional):`);
-    
+
     try {
-      await axios.post(`http://localhost:3000/api/patients/${patient.id}/archive`, 
+      await axios.post(`http://localhost:3000/api/patients/${patient.id}/archive`,
         { reason: reason || 'Manual archive' },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -291,9 +357,9 @@ const PatientIntake = () => {
     }
 
     if (!window.confirm(`Are you sure you want to unarchive ${patient.firstName} ${patient.lastName}?`)) return;
-    
+
     try {
-      await axios.post(`http://localhost:3000/api/patients/${patient.id}/unarchive`, 
+      await axios.post(`http://localhost:3000/api/patients/${patient.id}/unarchive`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -306,7 +372,7 @@ const PatientIntake = () => {
 
   const handleReprintCard = async (journey) => {
     try {
-      const res = await axios.post(`http://localhost:3000/api/patient-journeys/${journey.id}/reprint-card`, 
+      const res = await axios.post(`http://localhost:3000/api/patient-journeys/${journey.id}/reprint-card`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -350,14 +416,14 @@ const PatientIntake = () => {
       <div className="page-header">
         <h2>Patient Intake Pipeline</h2>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          <button 
-            className="btn btn-secondary" 
+          <button
+            className="btn btn-secondary"
             onClick={() => {
               toast.success('Refreshing data...');
               setRefreshKey(prev => prev + 1);
             }}
-            style={{ 
-              background: '#0f3460', 
+            style={{
+              background: '#0f3460',
               color: 'white',
               border: 'none',
               padding: '8px 16px',
@@ -429,7 +495,7 @@ const PatientIntake = () => {
           </div>
         </div>
       )}
-      
+
       <div className="table-container">
         <table>
           <thead>
@@ -446,6 +512,7 @@ const PatientIntake = () => {
           </thead>
           <tbody>
             {journeys.map(j => {
+              // ✅ DEFINE ACTION BASED ON STATUS
               let action = null;
               const isCompleted = j.status === 'COMPLETED';
               const patient = j.patient;
@@ -455,7 +522,8 @@ const PatientIntake = () => {
               const isLoadingWallet = loadingWallet[patient?.id];
               const hasAppt = hasAppointmentToday(patient?.id);
               const appt = getAppointmentForPatient(patient?.id);
-              
+
+              // ✅ Define actions based on status
               if (j.status === 'REGISTERED') {
                 action = { label: '💰 Send to Billing', status: 'PENDING_BILLING' };
               } else if (j.status === 'BILLING_CLEARED') {
@@ -466,8 +534,8 @@ const PatientIntake = () => {
                 action = { label: '🎉 Mark Completed', status: 'COMPLETED' };
               }
 
-              const destinationName = j.destinationType === 'WARD' 
-                ? j.ward?.name 
+              const destinationName = j.destinationType === 'WARD'
+                ? j.ward?.name
                 : j.clinic?.name;
 
               const showCardButton = ['BILLING_CLEARED', 'CARD_PRINTED', 'SENT_TO_DESTINATION', 'COMPLETED'].includes(j.status);
@@ -495,7 +563,7 @@ const PatientIntake = () => {
                     )}
                   </td>
                   <td>
-                    <span 
+                    <span
                       className={`category-badge ${categoryInfo.className}`}
                       title={categoryInfo.tooltip}
                       style={{
@@ -536,20 +604,20 @@ const PatientIntake = () => {
                   </td>
                   <td>
                     {destinationName || '—'}
-                    <span style={{fontSize: '0.75rem', color: '#ccc', marginLeft: '5px'}}>
+                    <span style={{ fontSize: '0.75rem', color: '#ccc', marginLeft: '5px' }}>
                       ({j.destinationType})
                     </span>
                   </td>
                   <td>
-                    <span 
-                      className="role-badge" 
+                    <span
+                      className="role-badge"
                       style={{ backgroundColor: getStatusColor(j.status), color: '#ffffff', fontWeight: 600, border: 'none' }}
                     >
                       {getStatusLabel(j.status)}
                     </span>
                   </td>
                   <td>
-                    <button 
+                    <button
                       className="btn btn-sm"
                       onClick={() => toggleWalletInfo(patient?.id)}
                       style={{
@@ -570,7 +638,7 @@ const PatientIntake = () => {
                     >
                       {isLoadingWallet ? '⏳' : `💳 ₦${(walletBalance || 0).toLocaleString()}`}
                     </button>
-                    
+
                     {showWallet && patient && walletBalance !== undefined && (
                       <div style={{
                         position: 'absolute',
@@ -584,7 +652,7 @@ const PatientIntake = () => {
                         maxWidth: '280px',
                         boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
                       }}
-                      onMouseLeave={() => toggleWalletInfo(patient?.id)}
+                        onMouseLeave={() => toggleWalletInfo(patient?.id)}
                       >
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                           <strong>💰 Wallet Balance</strong>
@@ -604,11 +672,11 @@ const PatientIntake = () => {
                   </td>
                   <td style={{ minWidth: '450px', display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center' }}>
                     {showCardButton && (
-                      <button 
-                        className="btn btn-sm" 
-                        style={{ 
-                          marginRight: '4px', 
-                          background: '#0f3460', 
+                      <button
+                        className="btn btn-sm"
+                        style={{
+                          marginRight: '4px',
+                          background: '#0f3460',
                           color: 'white',
                           border: 'none',
                           borderRadius: '4px',
@@ -625,11 +693,11 @@ const PatientIntake = () => {
                     )}
 
                     {showReprintButton && (
-                      <button 
-                        className="btn btn-sm" 
-                        style={{ 
-                          marginRight: '4px', 
-                          background: '#f59e0b', 
+                      <button
+                        className="btn btn-sm"
+                        style={{
+                          marginRight: '4px',
+                          background: '#f59e0b',
                           color: 'white',
                           border: 'none',
                           borderRadius: '4px',
@@ -646,11 +714,11 @@ const PatientIntake = () => {
                     )}
 
                     {showReverseButton && (
-                      <button 
-                        className="btn btn-sm" 
-                        style={{ 
-                          marginRight: '4px', 
-                          background: '#ef4444', 
+                      <button
+                        className="btn btn-sm"
+                        style={{
+                          marginRight: '4px',
+                          background: '#ef4444',
                           color: 'white',
                           border: 'none',
                           borderRadius: '4px',
@@ -670,11 +738,11 @@ const PatientIntake = () => {
                     )}
 
                     {showReturnButton && !isCompleted && (
-                      <button 
-                        className="btn btn-sm" 
-                        style={{ 
-                          marginRight: '4px', 
-                          background: '#f59e0b', 
+                      <button
+                        className="btn btn-sm"
+                        style={{
+                          marginRight: '4px',
+                          background: '#f59e0b',
                           color: 'white',
                           border: 'none',
                           borderRadius: '4px',
@@ -695,11 +763,11 @@ const PatientIntake = () => {
                     )}
 
                     {isCompleted && patient && patient.id ? (
-                      <button 
-                        className="btn btn-sm" 
-                        style={{ 
-                          marginRight: '4px', 
-                          background: '#6b7280', 
+                      <button
+                        className="btn btn-sm"
+                        style={{
+                          marginRight: '4px',
+                          background: '#6b7280',
                           color: 'white',
                           border: 'none',
                           borderRadius: '4px',
@@ -719,26 +787,95 @@ const PatientIntake = () => {
                       </span>
                     )}
 
+                    {/* ✅ UPDATED ACTION BUTTON WITH DESTINATION VALIDATION */}
                     {action ? (
-                      <button 
-                        className="btn btn-sm" 
-                        style={{ 
-                          background: '#0f3460', 
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '4px',
-                          padding: '4px 10px',
-                          cursor: 'pointer',
-                          fontSize: '11px',
-                          fontWeight: '600',
-                          whiteSpace: 'nowrap'
-                        }}
-                        onClick={() => handleStatusUpdate(j.id, action.status)}
-                      >
-                        {action.label}
-                      </button>
+                      action.status === 'PENDING_BILLING' ? (
+                        // ✅ Check if destination exists before allowing billing
+                        (() => {
+                          const hasDestination = j.destinationType === 'CLINIC' 
+                            ? j.clinicId 
+                            : j.destinationType === 'WARD' 
+                              ? j.wardId 
+                              : false;
+                          
+                          return hasDestination ? (
+                            <button
+                              className="btn btn-sm"
+                              style={{
+                                background: '#0f3460',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                padding: '4px 10px',
+                                cursor: 'pointer',
+                                fontSize: '11px',
+                                fontWeight: '600',
+                                whiteSpace: 'nowrap'
+                              }}
+                              onClick={() => {
+                                console.log(`🔄 Updating journey ${j.id} to ${action.status}`);
+                                handleStatusUpdate(j.id, action.status);
+                              }}
+                            >
+                              {action.label}
+                            </button>
+                          ) : (
+                            <button
+                              className="btn btn-sm"
+                              style={{
+                                background: '#f59e0b',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                padding: '4px 10px',
+                                cursor: 'pointer',
+                                fontSize: '11px',
+                                fontWeight: '600',
+                                whiteSpace: 'nowrap'
+                              }}
+                              onClick={() => {
+                                toast.error(
+                                  '⚠️ Please set a Clinic or Ward first before sending to billing.',
+                                  { duration: 5000 }
+                                );
+                                setShowDestinationModal(true);
+                                setSelectedJourney(j);
+                                setDestinationForm({
+                                  destinationType: j.destinationType || 'CLINIC',
+                                  clinicId: j.clinicId || '',
+                                  wardId: j.wardId || ''
+                                });
+                              }}
+                              title="Click to set destination"
+                            >
+                              ⚠️ Set Destination First
+                            </button>
+                          );
+                        })()
+                      ) : (
+                        <button
+                          className="btn btn-sm"
+                          style={{
+                            background: '#0f3460',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            padding: '4px 10px',
+                            cursor: 'pointer',
+                            fontSize: '11px',
+                            fontWeight: '600',
+                            whiteSpace: 'nowrap'
+                          }}
+                          onClick={() => {
+                            console.log(`🔄 Updating journey ${j.id} to ${action.status}`);
+                            handleStatusUpdate(j.id, action.status);
+                          }}
+                        >
+                          {action.label}
+                        </button>
+                      )
                     ) : (
-                      <span style={{opacity: 0.6, fontSize: '12px', color: '#6b7280'}}>End of process</span>
+                      <span style={{ opacity: 0.6, fontSize: '12px', color: '#6b7280' }}>End of process</span>
                     )}
                   </td>
                 </tr>
@@ -761,9 +898,9 @@ const PatientIntake = () => {
               <p><strong>Patient:</strong> {selectedJourney.patient?.firstName} {selectedJourney.patient?.lastName}</p>
               <p><strong>Current Status:</strong> {getStatusLabel(selectedJourney.status)}</p>
               <p><strong>Destination:</strong> {selectedJourney.clinic?.name || selectedJourney.ward?.name || 'N/A'}</p>
-              
+
               <div className="form-group">
-                <label>Reason for Reversing <span style={{color: 'red'}}>*</span></label>
+                <label>Reason for Reversing <span style={{ color: 'red' }}>*</span></label>
                 <textarea
                   value={reverseReason}
                   onChange={(e) => setReverseReason(e.target.value)}
@@ -772,7 +909,7 @@ const PatientIntake = () => {
                   placeholder="Please explain why this journey needs to be reversed..."
                   required
                 />
-                <small style={{color: '#ef4444'}}>
+                <small style={{ color: '#ef4444' }}>
                   ⚠️ This will undo the completion and move the patient back to SENT_TO_DESTINATION.
                 </small>
               </div>
@@ -796,9 +933,9 @@ const PatientIntake = () => {
             <div className="modal-body">
               <p><strong>Patient:</strong> {selectedJourney.patient?.firstName} {selectedJourney.patient?.lastName}</p>
               <p><strong>Current Status:</strong> {getStatusLabel(selectedJourney.status)}</p>
-              
+
               <div className="form-group">
-                <label>Return to Stage <span style={{color: 'red'}}>*</span></label>
+                <label>Return to Stage <span style={{ color: 'red' }}>*</span></label>
                 <select
                   value={returnToStage}
                   onChange={(e) => setReturnToStage(e.target.value)}
@@ -810,7 +947,7 @@ const PatientIntake = () => {
                     <option key={stage} value={stage}>{getStatusLabel(stage)}</option>
                   ))}
                 </select>
-                <small style={{color: '#ef4444'}}>
+                <small style={{ color: '#ef4444' }}>
                   ⚠️ This will move the patient backward in the pipeline. Some data may be cleared.
                 </small>
               </div>
@@ -823,6 +960,135 @@ const PatientIntake = () => {
         </div>
       )}
 
+      {/* ✅ DESTINATION MODAL */}
+      {showDestinationModal && selectedJourney && (
+        <div className="modal-overlay" onClick={() => setShowDestinationModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+            <div className="modal-header">
+              <h3>📍 Set Destination</h3>
+              <button className="modal-close" onClick={() => setShowDestinationModal(false)}>×</button>
+            </div>
+            <form onSubmit={handleUpdateDestination}>
+              <div className="modal-body">
+                <div style={{
+                  background: '#fef3c7',
+                  padding: '12px 16px',
+                  borderRadius: '8px',
+                  marginBottom: '16px'
+                }}>
+                  <p style={{ margin: 0, color: '#92400e' }}>
+                    ⚠️ A destination (Clinic or Ward) is required before sending to billing.
+                  </p>
+                </div>
+                
+                <div style={{
+                  background: '#f8fafc',
+                  padding: '12px 16px',
+                  borderRadius: '8px',
+                  marginBottom: '16px'
+                }}>
+                  <p style={{ margin: 0 }}>
+                    <strong>Patient:</strong> {selectedJourney.patient?.firstName} {selectedJourney.patient?.lastName}
+                  </p>
+                  <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: '#6b7280' }}>
+                    ID: {selectedJourney.patient?.hospitalId}
+                  </p>
+                </div>
+                
+                <div className="form-group">
+                  <label>Destination Type *</label>
+                  <select
+                    value={destinationForm.destinationType}
+                    onChange={(e) => setDestinationForm({
+                      ...destinationForm,
+                      destinationType: e.target.value,
+                      clinicId: '',
+                      wardId: ''
+                    })}
+                    required
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      border: '1px solid #ddd',
+                      borderRadius: '8px',
+                      fontSize: '14px'
+                    }}
+                  >
+                    <option value="CLINIC">🏥 Clinic (Outpatient)</option>
+                    <option value="WARD">🛏️ Ward (Inpatient)</option>
+                  </select>
+                </div>
+                
+                {destinationForm.destinationType === 'CLINIC' && (
+                  <div className="form-group">
+                    <label>Select Clinic *</label>
+                    <select
+                      value={destinationForm.clinicId}
+                      onChange={(e) => setDestinationForm({...destinationForm, clinicId: e.target.value})}
+                      required
+                      style={{
+                        width: '100%',
+                        padding: '10px 14px',
+                        border: '1px solid #ddd',
+                        borderRadius: '8px',
+                        fontSize: '14px'
+                      }}
+                    >
+                      <option value="">Select Clinic...</option>
+                      {clinics.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                
+                {destinationForm.destinationType === 'WARD' && (
+                  <div className="form-group">
+                    <label>Select Ward *</label>
+                    <select
+                      value={destinationForm.wardId}
+                      onChange={(e) => setDestinationForm({...destinationForm, wardId: e.target.value})}
+                      required
+                      style={{
+                        width: '100%',
+                        padding: '10px 14px',
+                        border: '1px solid #ddd',
+                        borderRadius: '8px',
+                        fontSize: '14px'
+                      }}
+                    >
+                      <option value="">Select Ward...</option>
+                      {wards.map(w => (
+                        <option key={w.id} value={w.id}>{w.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                
+                <div style={{
+                  background: '#eff6ff',
+                  padding: '12px 16px',
+                  borderRadius: '8px',
+                  marginTop: '16px'
+                }}>
+                  <p style={{ margin: 0, fontSize: '13px', color: '#1e3a5f' }}>
+                    💡 The billing amount may vary based on the selected destination.
+                  </p>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={() => setShowDestinationModal(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  ✅ Set Destination
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Patient Card Modal */}
       {showCardModal && cardPatient && (
         <div className="modal-overlay" onClick={() => setShowCardModal(false)}>
@@ -831,7 +1097,7 @@ const PatientIntake = () => {
               <h3>🖨️ Print Patient Card</h3>
               <button className="modal-close" onClick={() => setShowCardModal(false)}>×</button>
             </div>
-            
+
             <div style={{ display: 'flex', justifyContent: 'center', padding: '20px 0' }}>
               <PatientCard patient={cardPatient} />
             </div>
@@ -856,26 +1122,26 @@ const PatientIntake = () => {
               <div className="modal-body">
                 <div className="form-group">
                   <label>Patient Hospital ID</label>
-                  <input 
-                    type="text" 
-                    required 
-                    placeholder="e.g. 000007" 
-                    value={newJourney.patientId} 
-                    onChange={e => setNewJourney({...newJourney, patientId: e.target.value})} 
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. 000007"
+                    value={newJourney.patientId}
+                    onChange={e => setNewJourney({ ...newJourney, patientId: e.target.value })}
                   />
                   <small>Ensure the patient is already registered in the system.</small>
                 </div>
                 <div className="form-group">
                   <label>Destination Type *</label>
-                  <select 
-                    required 
-                    value={newJourney.destinationType} 
+                  <select
+                    required
+                    value={newJourney.destinationType}
                     onChange={e => {
-                      setNewJourney({ 
-                        ...newJourney, 
+                      setNewJourney({
+                        ...newJourney,
                         destinationType: e.target.value,
-                        clinicId: '', 
-                        wardId: '' 
+                        clinicId: '',
+                        wardId: ''
                       });
                     }}
                   >
@@ -886,10 +1152,10 @@ const PatientIntake = () => {
                 {newJourney.destinationType === 'CLINIC' && (
                   <div className="form-group">
                     <label>Select Clinic *</label>
-                    <select 
-                      required 
-                      value={newJourney.clinicId} 
-                      onChange={e => setNewJourney({...newJourney, clinicId: e.target.value})}
+                    <select
+                      required
+                      value={newJourney.clinicId}
+                      onChange={e => setNewJourney({ ...newJourney, clinicId: e.target.value })}
                     >
                       <option value="">-- Choose a Clinic --</option>
                       {clinics.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -899,10 +1165,10 @@ const PatientIntake = () => {
                 {newJourney.destinationType === 'WARD' && (
                   <div className="form-group">
                     <label>Select Ward *</label>
-                    <select 
-                      required 
-                      value={newJourney.wardId} 
-                      onChange={e => setNewJourney({...newJourney, wardId: e.target.value})}
+                    <select
+                      required
+                      value={newJourney.wardId}
+                      onChange={e => setNewJourney({ ...newJourney, wardId: e.target.value })}
                     >
                       <option value="">-- Choose a Ward --</option>
                       {wards.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}

@@ -1,4 +1,5 @@
-// src/pages/Dashboard.jsx
+// src/pages/Dashboard.jsx - COMPLETE WITH PAEDIATRICIAN SUPPORT
+
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
@@ -286,9 +287,160 @@ const Dashboard = () => {
     );
   };
 
+  // ✅ Render Paediatrician Dashboard
+  const renderPaediatricianDashboard = () => {
+    if (!stats) return null;
+    
+    return (
+      <div className="dashboard-content">
+        {/* Stats Cards */}
+        <div className="stats-grid">
+          <div className="stat-card" style={{ borderLeft: '4px solid #3b82f6' }}>
+            <div className="stat-icon">👶</div>
+            <div className="stat-info">
+              <div className="stat-value">{stats.childPatients || 0}</div>
+              <div className="stat-label">Total Children</div>
+            </div>
+          </div>
+          <div className="stat-card" style={{ borderLeft: '4px solid #f59e0b' }}>
+            <div className="stat-icon">📅</div>
+            <div className="stat-info">
+              <div className="stat-value" style={{ color: '#f59e0b' }}>{stats.todayAppointments || 0}</div>
+              <div className="stat-label">Today's Appointments</div>
+            </div>
+          </div>
+          <div className="stat-card" style={{ borderLeft: '4px solid #10b981' }}>
+            <div className="stat-icon">📊</div>
+            <div className="stat-info">
+              <div className="stat-value" style={{ color: '#10b981' }}>{stats.growthRecords || 0}</div>
+              <div className="stat-label">Growth Records</div>
+            </div>
+          </div>
+          <div className="stat-card" style={{ borderLeft: '4px solid #8b5cf6' }}>
+            <div className="stat-icon">💉</div>
+            <div className="stat-info">
+              <div className="stat-value" style={{ color: '#8b5cf6' }}>{stats.vaccinationCompliance || 0}</div>
+              <div className="stat-label">Vaccinations Due</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Quick Actions */}
+        <div style={{ textAlign: 'center', marginTop: '20px' }}>
+          <Link to="/patients" className="btn btn-primary" style={{ marginRight: '10px' }}>
+            👶 View All Children
+          </Link>
+          <Link to="/appointments" className="btn btn-secondary">
+            📅 Manage Appointments
+          </Link>
+        </div>
+
+        {/* Charts Section */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '20px' }}>
+          {/* Gender Distribution for Children */}
+          <div className="section" style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+            <h3>👶 Child Gender Distribution</h3>
+            <ResponsiveContainer width="100%" height={250}>
+              <PieChart>
+                <Pie 
+                  data={stats.genderData?.map(g => ({ name: g.gender, value: g._count })) || []} 
+                  cx="50%" 
+                  cy="50%" 
+                  outerRadius={80} 
+                  fill="#8884d8" 
+                  dataKey="value" 
+                  label
+                >
+                  {(stats.genderData || []).map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Monthly Child Registrations */}
+          <div className="section" style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+            <h3>📈 Child Registrations (Last 6 Months)</h3>
+            <ResponsiveContainer width="100%" height={250}>
+              <BarChart data={stats.monthlyRegistrations?.map(m => ({ month: m.month, Registrations: Number(m.count) })) || []} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="month" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="Registrations" fill="#8884d8" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Recent Appointments Table */}
+        {stats.recentAppointments && stats.recentAppointments.length > 0 && (
+          <div style={{ marginTop: '20px', background: 'white', padding: '20px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+            <h4 style={{ margin: '0 0 16px 0', color: '#1e293b' }}>📋 Recent Child Appointments</h4>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc' }}>
+                    <th style={{ padding: '10px 12px', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>Patient</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>Doctor</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>Date/Time</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stats.recentAppointments.map((appt, index) => (
+                    <tr key={appt.id} style={{ borderBottom: index < stats.recentAppointments.length - 1 ? '1px solid #e2e8f0' : 'none' }}>
+                      <td style={{ padding: '10px 12px' }}>
+                        {appt.Patient?.firstName} {appt.Patient?.lastName}
+                      </td>
+                      <td style={{ padding: '10px 12px' }}>
+                        Dr. {appt.Staff?.firstName} {appt.Staff?.lastName}
+                      </td>
+                      <td style={{ padding: '10px 12px', color: '#6b7280' }}>
+                        {new Date(appt.dateTime).toLocaleString()}
+                      </td>
+                      <td style={{ padding: '10px 12px' }}>
+                        <span style={{
+                          padding: '2px 10px',
+                          borderRadius: '12px',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          background: appt.status === 'Completed' ? '#10b981' : 
+                                    appt.status === 'Scheduled' ? '#3b82f6' :
+                                    appt.status === 'Cancelled' ? '#ef4444' : '#f59e0b',
+                          color: 'white'
+                        }}>
+                          {appt.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderStatCards = () => {
     const role = user?.role;
     if (!stats) return [];
+
+    // ✅ Paediatrician Dashboard Stats
+    if (role === 'Paediatrician') {
+      return [
+        { icon: '👶', label: 'Total Children', value: stats.childPatients || 0 },
+        { icon: '📅', label: "Today's Appointments", value: stats.todayAppointments || 0 },
+        { icon: '📊', label: 'Growth Records', value: stats.growthRecords || 0 },
+        { icon: '💉', label: 'Vaccinations Due', value: stats.vaccinationCompliance || 0 },
+      ];
+    }
 
     // ✅ Lab Scientist Dashboard Stats
     if (role === 'LabScientist' || role === 'LabTechnician') {
@@ -377,6 +529,24 @@ const Dashboard = () => {
       ];
     }
 
+    // Dentist Dashboard
+    if (role === 'Dentist') {
+      return [
+        { icon: '🦷', label: 'Total Dental Patients', value: stats.totalDentalPatients || 0 },
+        { icon: '📅', label: "Today's Appointments", value: stats.todayAppointments || 0 },
+        { icon: '📋', label: 'Recent Procedures', value: stats.recentProcedures?.length || 0 },
+      ];
+    }
+
+    // Optometrist Dashboard
+    if (role === 'Optometrist') {
+      return [
+        { icon: '👁️', label: 'Total Eye Patients', value: stats.totalOptometryPatients || 0 },
+        { icon: '📅', label: "Today's Appointments", value: stats.todayAppointments || 0 },
+        { icon: '📋', label: 'Recent Exams', value: stats.recentExams?.length || 0 },
+      ];
+    }
+
     return [];
   };
 
@@ -384,13 +554,16 @@ const Dashboard = () => {
 
   const genderChartData = stats?.genderData?.map(g => ({ name: g.gender, value: g._count })) || [];
   const monthlyChartData = stats?.monthlyRegistrations?.map(m => ({ month: m.month, Registrations: Number(m.count) })) || [];
-  const showPatientCharts = ['Admin', 'Records', 'ITAdmin', 'Doctor', 'Nurse', 'Obstetrician', 'Midwife'].includes(user?.role);
+  const showPatientCharts = ['Admin', 'Records', 'ITAdmin', 'Doctor', 'Nurse', 'Obstetrician', 'Midwife', 'Paediatrician'].includes(user?.role);
 
   const revenueChartData = stats?.revenueTrend?.map(m => ({ month: m.month, Revenue: m.revenue })) || [];
   const showRevenueChart = ['Accountant', 'BillingOfficer'].includes(user?.role);
 
   // ✅ Check if this is a Lab role
   const isLabRole = ['LabTechnician', 'LabScientist'].includes(user?.role);
+  
+  // ✅ Check if this is a Paediatrician role
+  const isPaediatrician = user?.role === 'Paediatrician';
 
   return (
     <div className="dashboard">
@@ -399,8 +572,10 @@ const Dashboard = () => {
         <p>Welcome back, {user?.firstName} {user?.lastName}!</p>
       </div>
 
-      {/* ✅ Render Lab Dashboard for Lab roles */}
-      {isLabRole && stats?.summary ? (
+      {/* ✅ Render Paediatrician Dashboard */}
+      {isPaediatrician && stats ? (
+        renderPaediatricianDashboard()
+      ) : isLabRole && stats?.summary ? (
         renderLabDashboard()
       ) : (
         <>
@@ -429,6 +604,18 @@ const Dashboard = () => {
                 className="btn btn-primary"
               >
                 👨‍⚕️ View My Full Patient List
+              </Link>
+            </div>
+          )}
+
+          {/* Quick Action Button for Paediatrician */}
+          {user?.role === 'Paediatrician' && (
+            <div style={{ textAlign: 'center', marginTop: '20px' }}>
+              <Link to="/patients" className="btn btn-primary" style={{ marginRight: '10px' }}>
+                👶 View All Children
+              </Link>
+              <Link to="/appointments" className="btn btn-secondary">
+                📅 Manage Appointments
               </Link>
             </div>
           )}

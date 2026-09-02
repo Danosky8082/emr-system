@@ -1,4 +1,4 @@
-// src/pages/NurseDashboard.jsx - COMPLETE WITH APPOINTMENTS
+// src/pages/NurseDashboard.jsx - COMPLETE FIXED VERSION
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -26,56 +26,86 @@ const NurseDashboard = () => {
   });
   const [showVitalModal, setShowVitalModal] = useState(false);
 
+  // ✅ FETCH PATIENTS
   const fetchPatients = async () => {
     try {
-      const res = await axios.get('http://localhost:3000/api/nurse/patients', { 
+      const res = await axios.get('http://localhost:3000/api/nurse/patients', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setPatients(res.data);
-      
-      // ✅ After patients load, fetch appointments
-      await fetchTodayAppointments(res.data);
     } catch (error) {
+      console.error('Error fetching patients:', error);
       toast.error('Failed to load patients');
-    } finally {
-      setLoading(false);
     }
   };
 
-  // ✅ FETCH TODAY'S APPOINTMENTS
-  const fetchTodayAppointments = async (patientsData) => {
+  // ✅ FETCH TODAY'S APPOINTMENTS - IMPROVED
+  const fetchTodayAppointments = async () => {
     try {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
-      
+
+      console.log('📅 Fetching appointments from:', today.toISOString(), 'to:', tomorrow.toISOString());
+
+      // ✅ Get ALL appointments for today (not filtered by nurse yet)
       const res = await axios.get(
         `http://localhost:3000/api/appointments?dateFrom=${today.toISOString()}&dateTo=${tomorrow.toISOString()}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      
-      // ✅ Filter appointments for patients in nurse's care
-      const nursePatientIds = patientsData ? 
-        patientsData.map(j => j.patient?.id).filter(Boolean) : 
-        [];
-      
+
+      console.log('📅 All appointments today:', res.data.length);
+
+      // ✅ Get nurse's assigned patient IDs
+      const nursePatientIds = patients.map(j => j.patient?.id).filter(Boolean);
+      console.log('👩‍⚕️ Nurse patient IDs:', nursePatientIds);
+
+      // ✅ Filter appointments for nurse's patients
       const filtered = res.data.filter(a => 
         nursePatientIds.includes(a.patientId) && 
-        a.status !== 'Cancelled'
+        a.status !== 'Cancelled' &&
+        a.status !== 'Completed'
       );
-      
+
+      console.log('📅 Filtered appointments for nurse:', filtered.length);
+
+      // Sort by time
+      filtered.sort((a, b) => new Date(a.dateTime) - new Date(b.dateTime));
       setTodayAppointments(filtered);
     } catch (error) {
       console.error('Error fetching appointments:', error);
     }
   };
 
+  // ✅ LOAD ALL DATA
+  const loadAllData = async () => {
+    setLoading(true);
+    try {
+      await fetchPatients();
+      // Wait for patients to load before fetching appointments
+      // But we need to fetch appointments after patients are loaded
+    } catch (error) {
+      console.error('Error loading data:', error);
+      toast.error('Failed to load dashboard data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ✅ Fetch patients on mount
   useEffect(() => {
     if (token) {
-      fetchPatients();
+      loadAllData();
     }
   }, [token]);
+
+  // ✅ Fetch appointments when patients change
+  useEffect(() => {
+    if (patients.length > 0) {
+      fetchTodayAppointments();
+    }
+  }, [patients]);
 
   const handleVitalSubmit = async (e) => {
     e.preventDefault();
@@ -90,17 +120,15 @@ const NurseDashboard = () => {
       toast.success('Vitals recorded successfully!');
       setShowVitalModal(false);
       setVitalsForm({
-        bloodPressureSystolic: '',
-        bloodPressureDiastolic: '',
-        heartRate: '',
-        temperature: '',
-        respiratoryRate: '',
-        oxygenSaturation: '',
-        weight: '',
-        height: '',
-        notes: '',
+        bloodPressureSystolic: '', bloodPressureDiastolic: '', heartRate: '', temperature: '',
+        respiratoryRate: '', oxygenSaturation: '', weight: '', height: '', notes: '',
       });
+      // Refresh patients
+      await fetchPatients();
+      // Refresh appointments
+      await fetchTodayAppointments();
     } catch (error) {
+      console.error('Error recording vitals:', error);
       toast.error('Failed to record vitals');
     }
   };
@@ -117,11 +145,12 @@ const NurseDashboard = () => {
     return age;
   };
 
-  const formatTime = (date) => {
-    return new Date(date).toLocaleTimeString('en-NG', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+  // ✅ Refresh handler
+  const handleRefresh = async () => {
+    toast.info('Refreshing data...');
+    await fetchPatients();
+    await fetchTodayAppointments();
+    toast.success('Data refreshed!');
   };
 
   if (loading) return <div className="spinner" />;
@@ -129,25 +158,21 @@ const NurseDashboard = () => {
   return (
     <div className="dashboard">
       <div className="page-header">
-        <div>
-          <h2>👩‍⚕️ Nurse Dashboard – Patients in Your Care</h2>
-          <p style={{ color: '#6b7280', fontSize: '14px', margin: '4px 0 0 0' }}>
-            {patients.length} patients assigned • {todayAppointments.length} appointments today
-          </p>
+        <h2>👩‍⚕️ Nurse Dashboard</h2>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '14px', color: '#6b7280' }}>
+            📅 Today's Appointments: <strong>{todayAppointments.length}</strong>
+          </span>
+          <span style={{ fontSize: '14px', color: '#6b7280' }}>
+            👤 My Patients: <strong>{patients.length}</strong>
+          </span>
+          <button className="btn btn-secondary" onClick={handleRefresh}>
+            🔄 Refresh
+          </button>
         </div>
-        <button className="btn btn-secondary" onClick={fetchPatients} style={{
-          background: '#0f3460',
-          color: 'white',
-          border: 'none',
-          padding: '8px 16px',
-          borderRadius: '6px',
-          cursor: 'pointer'
-        }}>
-          🔄 Refresh
-        </button>
       </div>
 
-      {/* ✅ TODAY'S APPOINTMENTS SECTION */}
+      {/* ✅ APPOINTMENTS SECTION */}
       <div style={{
         background: 'white',
         borderRadius: '12px',
@@ -157,88 +182,75 @@ const NurseDashboard = () => {
         border: '1px solid #e5e7eb'
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '600' }}>
-            📅 Today's Appointments ({todayAppointments.length})
-          </h4>
-          <span style={{ fontSize: '12px', color: '#6b7280' }}>
-            {new Date().toLocaleDateString('en-NG', { 
-              weekday: 'long', 
-              year: 'numeric', 
-              month: 'long', 
-              day: 'numeric' 
-            })}
+          <h4 style={{ margin: 0 }}>📅 Today's Appointments</h4>
+          <span style={{ fontSize: '13px', color: '#6b7280' }}>
+            {todayAppointments.filter(a => a.status === 'Scheduled').length} waiting
           </span>
         </div>
-        
+
         {todayAppointments.length > 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
             {todayAppointments.map(a => {
               const patient = a.Patient || a.patient;
               const staff = a.Staff || a.staff;
               return (
                 <div key={a.id} style={{
                   display: 'flex',
-                  alignItems: 'center',
                   justifyContent: 'space-between',
-                  padding: '10px 16px',
-                  background: '#f8fafc',
-                  borderRadius: '8px',
-                  borderLeft: `4px solid ${a.status === 'Scheduled' ? '#3b82f6' : '#10b981'}`
+                  alignItems: 'center',
+                  padding: '10px 14px',
+                  borderBottom: '1px solid #f3f4f6',
+                  background: a.status === 'Scheduled' ? '#f8fafc' : '#d1fae5'
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '18px' }}>👤</span>
-                    <div>
-                      <strong>{patient?.firstName} {patient?.lastName}</strong>
-                      <div style={{ fontSize: '12px', color: '#6b7280' }}>
-                        ID: {patient?.hospitalId}
-                      </div>
+                  <div>
+                    <div style={{ fontWeight: '600' }}>
+                      {patient?.firstName} {patient?.lastName}
+                      <span style={{ fontSize: '12px', color: '#6b7280', marginLeft: '8px' }}>
+                        ({patient?.hospitalId})
+                      </span>
                     </div>
-                    <div style={{ fontSize: '13px', color: '#374151' }}>
-                      🕐 {formatTime(a.dateTime)}
+                    <div style={{ fontSize: '13px', color: '#6b7280' }}>
+                      🕐 {new Date(a.dateTime).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}
+                      <span style={{ marginLeft: '12px' }}>👨‍⚕️ Dr. {staff?.firstName} {staff?.lastName}</span>
+                      <span style={{ marginLeft: '12px' }}>
+                        <span className={`status-badge ${a.status === 'Scheduled' ? 'status-pending' : 'status-active'}`}>
+                          {a.status}
+                        </span>
+                      </span>
                     </div>
-                    <div style={{ fontSize: '13px', color: '#374151' }}>
-                      👨‍⚕️ Dr. {staff?.firstName} {staff?.lastName}
-                    </div>
-                    <span style={{
-                      padding: '2px 10px',
-                      borderRadius: '12px',
-                      fontSize: '11px',
-                      fontWeight: '600',
-                      background: a.status === 'Scheduled' ? '#dbeafe' : '#d1fae5',
-                      color: a.status === 'Scheduled' ? '#1e40af' : '#065f46'
-                    }}>
-                      {a.status || 'Scheduled'}
-                    </span>
                   </div>
-                  <Link 
-                    to={`/patient-profile/${patient?.id}`} 
-                    className="btn btn-sm btn-secondary"
-                    style={{
-                      background: '#0f3460',
-                      color: 'white',
-                      border: 'none',
-                      padding: '6px 14px',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      fontSize: '11px',
-                      fontWeight: '600',
-                      textDecoration: 'none'
-                    }}
-                  >
-                    📂 Open File
-                  </Link>
+                  <div>
+                    <Link
+                      to={`/patient-profile/${a.patientId}`}
+                      className="btn btn-sm btn-secondary"
+                      style={{
+                        background: '#0f3460',
+                        color: 'white',
+                        border: 'none',
+                        padding: '4px 12px',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        textDecoration: 'none'
+                      }}
+                    >
+                      📂 Open File
+                    </Link>
+                  </div>
                 </div>
               );
             })}
           </div>
         ) : (
-          <div style={{ textAlign: 'center', padding: '16px', color: '#6b7280' }}>
-            No appointments scheduled for today.
+          <div style={{ textAlign: 'center', padding: '20px', color: '#6b7280' }}>
+            <p>No appointments scheduled for today.</p>
+            <p style={{ fontSize: '13px' }}>Check back later or refresh the page.</p>
           </div>
         )}
       </div>
 
-      {/* ✅ PATIENTS TABLE */}
+      {/* PATIENTS TABLE */}
       <div className="table-container">
         <table>
           <thead>
@@ -257,28 +269,10 @@ const NurseDashboard = () => {
               const p = journey.patient;
               if (!p) return null;
               const destination = journey.clinic ? `Clinic: ${journey.clinic.name}` : (journey.ward ? `Ward: ${journey.ward.name}` : 'N/A');
-              // ✅ Check if patient has an appointment today
-              const hasAppointment = todayAppointments.some(a => a.patientId === p.id);
-              
               return (
-                <tr key={journey.id} style={hasAppointment ? { background: '#eff6ff' } : {}}>
+                <tr key={journey.id}>
                   <td><strong>{p.hospitalId}</strong></td>
-                  <td>
-                    {p.firstName} {p.lastName}
-                    {hasAppointment && (
-                      <span style={{
-                        marginLeft: '8px',
-                        padding: '2px 8px',
-                        background: '#3b82f6',
-                        color: 'white',
-                        fontSize: '10px',
-                        borderRadius: '10px',
-                        fontWeight: '600'
-                      }}>
-                        📅 Appt
-                      </span>
-                    )}
-                  </td>
+                  <td>{p.firstName} {p.lastName}</td>
                   <td>{p.gender}</td>
                   <td>{calculateAge(p.dateOfBirth)}</td>
                   <td>{destination}</td>

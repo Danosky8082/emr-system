@@ -1,4 +1,4 @@
-// src/pages/StaffManagement.jsx - COMPLETE FIXED VERSION
+// src/pages/StaffManagement.jsx - COMPLETE WITH ALL SPECIALIST ROLES
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -34,21 +34,166 @@ const StaffManagement = () => {
   const [assignedClinicIds, setAssignedClinicIds] = useState([]);
   const [assignedWardIds, setAssignedWardIds] = useState([]);
 
+  // ✅ COMPLETE ROLES LIST WITH ALL SPECIALISTS
   const roles = [
-    'Admin', 'ITAdmin', 'ITSupport', 'Doctor', 'Nurse',
-    'Pharmacist', 'Accountant', 'Records', 'LabTechnician',
-    'LabScientist', 'Receptionist', 'BillingOfficer',
-    'Obstetrician', 'Midwife', 'Radiologist', 'HR'
+    // ===== ADMIN ROLES =====
+    'Admin', 'ITAdmin', 'ITSupport',
+    
+    // ===== CLINICAL ROLES =====
+    'Doctor', 'Nurse',
+    
+    // ===== SPECIALIST ROLES =====
+    'Obstetrician', 'Midwife', 
+    'Radiologist', 'Dentist', 'Optometrist', 
+    'Paediatrician', 'Surgeon', 'Psychiatrist',
+    'Ophthalmologist', 'Dermatologist', 'Cardiologist',
+    'Neurologist', 'Orthopedic', 'ENT', 'Urologist',
+    'Anaesthesiologist', 'Pathologist',
+    
+    // ===== PHARMACY ROLES =====
+    'Pharmacist',
+    
+    // ===== LAB ROLES =====
+    'LabTechnician', 'LabScientist',
+    
+    // ===== FINANCE ROLES =====
+    'Accountant', 'BillingOfficer',
+    
+    // ===== ADMINISTRATIVE ROLES =====
+    'Records', 'Receptionist', 'HR',
   ];
 
+  // ✅ DEPARTMENT LIST WITH SPECIALIST DEPARTMENTS
   const departments = [
-    'Administration', 'Internal Medicine', 'Surgery', 'Paediatrics',
-    'Obstetrics & Gynaecology', 'Pharmacy', 'Laboratory', 'Medical Records',
-    'Accounts', 'Radiology', 'Outpatient', 'Inpatient', 'ICT',
-    'Information Technology', 'Health Informatics', 'LabScientist'
+    'Administration', 'ICT', 'Information Technology', 'Health Informatics',
+    'Internal Medicine', 'Surgery', 'Paediatrics', 'Obstetrics & Gynaecology',
+    'Pharmacy', 'Laboratory', 'Medical Records', 'Accounts', 'Radiology',
+    'Outpatient', 'Inpatient', 'Dental', 'Optometry', 'Ophthalmology',
+    'Cardiology', 'Neurology', 'Orthopedics', 'ENT', 'Urology',
+    'Anaesthesiology', 'Pathology', 'Psychiatry', 'Dermatology',
+    'Emergency Medicine', 'Family Medicine', 'Geriatrics', 'Oncology',
+    'Pulmonology', 'Rheumatology', 'Nephrology', 'Endocrinology',
+    'Gastroenterology', 'Infectious Diseases', 'Sports Medicine'
   ];
 
-  const rolesRequiringAssignment = ['Doctor', 'Nurse', 'Obstetrician', 'Midwife'];
+  // ✅ ROLES THAT REQUIRE CLINIC/WARD ASSIGNMENT
+  const rolesRequiringAssignment = [
+    'Doctor', 'Nurse', 'Obstetrician', 'Midwife',
+    'Paediatrician', 'Surgeon', 'Psychiatrist',
+    'Cardiologist', 'Neurologist', 'Orthopedic',
+    'ENT', 'Urologist', 'Anaesthesiologist',
+    'Dermatologist', 'Ophthalmologist', 'Pathologist'
+  ];
+
+  // ✅ ROLES THAT ARE SPECIALISTS (shown with badge)
+  const specialistRoles = [
+    'Obstetrician', 'Midwife', 'Radiologist', 'Dentist', 'Optometrist',
+    'Paediatrician', 'Surgeon', 'Psychiatrist', 'Ophthalmologist',
+    'Dermatologist', 'Cardiologist', 'Neurologist', 'Orthopedic',
+    'ENT', 'Urologist', 'Anaesthesiologist', 'Pathologist'
+  ];
+
+  // ✅ ROLE ICON MAPPING
+  const getRoleIcon = (role) => {
+    const icons = {
+      'Admin': '🔐',
+      'ITAdmin': '💻',
+      'ITSupport': '🛠️',
+      'Doctor': '👨‍⚕️',
+      'Nurse': '👩‍⚕️',
+      'Obstetrician': '🤱',
+      'Midwife': '👩‍🍼',
+      'Radiologist': '📷',
+      'Dentist': '🦷',
+      'Optometrist': '👁️',
+      'Paediatrician': '👶',
+      'Surgeon': '🔪',
+      'Psychiatrist': '🧠',
+      'Ophthalmologist': '👁️',
+      'Dermatologist': '🧴',
+      'Cardiologist': '❤️',
+      'Neurologist': '🧬',
+      'Orthopedic': '🦴',
+      'ENT': '👂',
+      'Urologist': '🫘',
+      'Anaesthesiologist': '💉',
+      'Pathologist': '🔬',
+      'Pharmacist': '💊',
+      'LabTechnician': '🧪',
+      'LabScientist': '🔬',
+      'Accountant': '💰',
+      'BillingOfficer': '💳',
+      'Records': '📋',
+      'Receptionist': '📞',
+      'HR': '👔'
+    };
+    return icons[role] || '👤';
+  };
+
+  // ✅ GET ROLE COLOR
+  const getRoleColor = (role) => {
+    const colors = {
+      'Admin': '#ef4444',
+      'ITAdmin': '#8b5cf6',
+      'ITSupport': '#6b7280',
+      'Doctor': '#3b82f6',
+      'Nurse': '#10b981',
+      'Obstetrician': '#ec4899',
+      'Midwife': '#f59e0b',
+      'Radiologist': '#8b5cf6',
+      'Dentist': '#0f3460',
+      'Optometrist': '#06b6d4',
+      'Paediatrician': '#f472b6',
+      'Surgeon': '#dc2626',
+      'Psychiatrist': '#7c3aed',
+      'Pharmacist': '#f59e0b',
+      'LabTechnician': '#3b82f6',
+      'LabScientist': '#8b5cf6',
+      'Accountant': '#10b981',
+      'BillingOfficer': '#14b8a6',
+      'Records': '#6366f1',
+      'Receptionist': '#f472b6',
+      'HR': '#8b5cf6'
+    };
+    return colors[role] || '#6b7280';
+  };
+
+  // ✅ GET ROLE GROUP
+  const getRoleGroup = (role) => {
+    const groups = {
+      'Admin': 'Admin',
+      'ITAdmin': 'Admin',
+      'ITSupport': 'Admin',
+      'Doctor': 'Clinical',
+      'Nurse': 'Clinical',
+      'Obstetrician': 'Maternity',
+      'Midwife': 'Maternity',
+      'Radiologist': 'Imaging',
+      'Dentist': 'Dental',
+      'Optometrist': 'Eye Care',
+      'Paediatrician': 'Paediatrics',
+      'Surgeon': 'Surgery',
+      'Psychiatrist': 'Mental Health',
+      'Ophthalmologist': 'Eye Care',
+      'Dermatologist': 'Dermatology',
+      'Cardiologist': 'Cardiology',
+      'Neurologist': 'Neurology',
+      'Orthopedic': 'Orthopedics',
+      'ENT': 'ENT',
+      'Urologist': 'Urology',
+      'Anaesthesiologist': 'Anaesthesiology',
+      'Pathologist': 'Pathology',
+      'Pharmacist': 'Pharmacy',
+      'LabTechnician': 'Laboratory',
+      'LabScientist': 'Laboratory',
+      'Accountant': 'Finance',
+      'BillingOfficer': 'Finance',
+      'Records': 'Records',
+      'Receptionist': 'Administrative',
+      'HR': 'HR'
+    };
+    return groups[role] || 'Other';
+  };
 
   // ✅ FETCH STAFF WITH ASSIGNMENTS
   const fetchStaff = async () => {
@@ -69,7 +214,6 @@ const StaffManagement = () => {
             
             return {
               ...staffMember,
-              // ✅ The API returns direct clinic/ward objects
               StaffClinic: assignRes.data.clinics || [],
               StaffWard: assignRes.data.wards || []
             };
@@ -129,12 +273,11 @@ const StaffManagement = () => {
     }
   };
 
-  // ✅ GET ASSIGNMENT DISPLAY - FIXED: Use direct 'name' property
+  // ✅ GET ASSIGNMENT DISPLAY
   const getAssignmentDisplay = (staffMember) => {
     const assignedClinics = staffMember?.StaffClinic || [];
     const assignedWards = staffMember?.StaffWard || [];
     
-    // ✅ FIX: Use direct 'name' property (not Clinic.name or Ward.name)
     const clinicNames = assignedClinics
       .map(clinic => clinic?.name)
       .filter(Boolean);
@@ -403,23 +546,67 @@ const StaffManagement = () => {
       )}
 
       <div className="page-header">
-        <h2>Staff Management</h2>
-        <button
-          className="btn btn-primary"
-          onClick={() => {
-            setEditingStaff(null);
-            setFormData({
-              employeeId: '', firstName: '', lastName: '', username: '', email: '',
-              role: 'Records', department: '', password: ''
-            });
-            setAssignedClinicIds([]);
-            setAssignedWardIds([]);
-            setShowAssignmentAlert(false);
-            setShowModal(true);
-          }}
-        >
-          + Add Staff
-        </button>
+        <h2>👥 Staff Management</h2>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button
+            className="btn btn-primary"
+            onClick={() => {
+              setEditingStaff(null);
+              setFormData({
+                employeeId: '', firstName: '', lastName: '', username: '', email: '',
+                role: 'Records', department: '', password: ''
+              });
+              setAssignedClinicIds([]);
+              setAssignedWardIds([]);
+              setShowAssignmentAlert(false);
+              setShowModal(true);
+            }}
+          >
+            + Add Staff
+          </button>
+          <button className="btn btn-secondary" onClick={fetchStaff}>
+            🔄 Refresh
+          </button>
+        </div>
+      </div>
+
+      {/* Stats Row */}
+      <div className="stats-grid" style={{ marginBottom: '16px' }}>
+        <div className="stat-card" style={{ borderLeft: '4px solid #3b82f6' }}>
+          <div className="stat-icon">👥</div>
+          <div className="stat-info">
+            <div className="stat-value">{staff.length}</div>
+            <div className="stat-label">Total Staff</div>
+          </div>
+        </div>
+        <div className="stat-card" style={{ borderLeft: '4px solid #10b981' }}>
+          <div className="stat-icon">✅</div>
+          <div className="stat-info">
+            <div className="stat-value">{staff.filter(s => s.isActive).length}</div>
+            <div className="stat-label">Active</div>
+          </div>
+        </div>
+        <div className="stat-card" style={{ borderLeft: '4px solid #f59e0b' }}>
+          <div className="stat-icon">🦷</div>
+          <div className="stat-info">
+            <div className="stat-value">{staff.filter(s => s.role === 'Dentist').length}</div>
+            <div className="stat-label">Dentists</div>
+          </div>
+        </div>
+        <div className="stat-card" style={{ borderLeft: '4px solid #06b6d4' }}>
+          <div className="stat-icon">👁️</div>
+          <div className="stat-info">
+            <div className="stat-value">{staff.filter(s => s.role === 'Optometrist' || s.role === 'Ophthalmologist').length}</div>
+            <div className="stat-label">Eye Specialists</div>
+          </div>
+        </div>
+        <div className="stat-card" style={{ borderLeft: '4px solid #ec4899' }}>
+          <div className="stat-icon">🤱</div>
+          <div className="stat-info">
+            <div className="stat-value">{staff.filter(s => s.role === 'Obstetrician' || s.role === 'Midwife').length}</div>
+            <div className="stat-label">Maternity Team</div>
+          </div>
+        </div>
       </div>
 
       {/* Info Banner */}
@@ -436,9 +623,8 @@ const StaffManagement = () => {
       }}>
         <span style={{ fontSize: '18px' }}>💡</span>
         <span style={{ fontSize: '14px', color: '#1e3a5f' }}>
-          <strong>Tip:</strong> After creating a <strong>Doctor</strong>, <strong>Nurse</strong>, <strong>Obstetrician</strong>, or <strong>Midwife</strong>,
-          remember to <strong>Edit</strong> them and assign to a <strong>Clinic</strong> or <strong>Ward</strong>
-          so they can see patients.
+          <strong>Specialist Roles:</strong> Dentist 🦷, Optometrist 👁️, Paediatrician 👶, Surgeon 🔪, 
+          Psychiatrist 🧠, and many more. Each specialist gets their own module in the system.
         </span>
       </div>
 
@@ -459,17 +645,56 @@ const StaffManagement = () => {
           <tbody>
             {filteredStaff.map((s) => {
               const needsAssignment = rolesRequiringAssignment.includes(s.role);
+              const isSpecialist = specialistRoles.includes(s.role);
+              const roleIcon = getRoleIcon(s.role);
+              const roleColor = getRoleColor(s.role);
+              const roleGroup = getRoleGroup(s.role);
               
               return (
-                <tr key={s.id}>
+                <tr key={s.id} style={!s.isActive ? { opacity: 0.6 } : {}}>
                   <td><strong>{s.employeeId}</strong></td>
                   <td><code>{s.username || '—'}</code></td>
                   <td>
-                    {s.firstName} {s.lastName}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span>{s.firstName} {s.lastName}</span>
+                      {isSpecialist && (
+                        <span style={{
+                          fontSize: '9px',
+                          background: '#dbeafe',
+                          color: '#1e40af',
+                          padding: '1px 8px',
+                          borderRadius: '10px',
+                          fontWeight: '600'
+                        }}>
+                          SPECIALIST
+                        </span>
+                      )}
+                    </div>
                     {needsAssignment && getAssignmentDisplay(s)}
                   </td>
                   <td>{s.email}</td>
-                  <td><span className="role-badge">{s.role}</span></td>
+                  <td>
+                    <span className="role-badge" style={{
+                      background: roleColor,
+                      color: 'white',
+                      padding: '4px 10px',
+                      borderRadius: '12px',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}>
+                      {roleIcon} {s.role}
+                      <span style={{
+                        fontSize: '8px',
+                        opacity: 0.7,
+                        marginLeft: '2px'
+                      }}>
+                        ({roleGroup})
+                      </span>
+                    </span>
+                  </td>
                   <td>{s.department || '-'}</td>
                   <td>
                     <span className={`status-badge ${s.isActive ? 'status-active' : 'status-inactive'}`}>
@@ -477,13 +702,73 @@ const StaffManagement = () => {
                     </span>
                   </td>
                   <td>
-                    <div className="action-buttons">
-                      <button className="btn btn-sm btn-secondary" onClick={() => handleEdit(s)}>Edit</button>
-                      <button className="btn btn-sm btn-primary" onClick={() => handleResetPassword(s)}>Reset PW</button>
+                    <div className="action-buttons" style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                      <button 
+                        className="btn btn-sm btn-secondary" 
+                        onClick={() => handleEdit(s)}
+                        style={{
+                          background: '#0f3460',
+                          color: 'white',
+                          border: 'none',
+                          padding: '4px 10px',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontSize: '11px',
+                          fontWeight: '600'
+                        }}
+                      >
+                        ✏️ Edit
+                      </button>
+                      <button 
+                        className="btn btn-sm btn-primary" 
+                        onClick={() => handleResetPassword(s)}
+                        style={{
+                          background: '#f59e0b',
+                          color: 'white',
+                          border: 'none',
+                          padding: '4px 10px',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontSize: '11px',
+                          fontWeight: '600'
+                        }}
+                      >
+                        🔑 Reset PW
+                      </button>
                       {s.isActive ? (
-                        <button className="btn btn-sm btn-danger" onClick={() => handleDeactivate(s)}>Deactivate</button>
+                        <button 
+                          className="btn btn-sm btn-danger" 
+                          onClick={() => handleDeactivate(s)}
+                          style={{
+                            background: '#ef4444',
+                            color: 'white',
+                            border: 'none',
+                            padding: '4px 10px',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '11px',
+                            fontWeight: '600'
+                          }}
+                        >
+                          🚫 Deactivate
+                        </button>
                       ) : (
-                        <button className="btn btn-sm btn-success" onClick={() => handleReactivate(s)}>Reactivate</button>
+                        <button 
+                          className="btn btn-sm btn-success" 
+                          onClick={() => handleReactivate(s)}
+                          style={{
+                            background: '#10b981',
+                            color: 'white',
+                            border: 'none',
+                            padding: '4px 10px',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '11px',
+                            fontWeight: '600'
+                          }}
+                        >
+                          ✅ Reactivate
+                        </button>
                       )}
                     </div>
                   </td>
@@ -502,11 +787,12 @@ const StaffManagement = () => {
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>{editingStaff ? 'Edit Staff' : 'Add New Staff'}</h3>
+              <h3>{editingStaff ? '✏️ Edit Staff' : '➕ Add New Staff'}</h3>
               <button className="modal-close" onClick={() => setShowModal(false)}>×</button>
             </div>
             <form onSubmit={handleSubmit}>
               <div className="modal-body">
+                {/* Basic Info */}
                 <div className="form-row">
                   <div className="form-group">
                     <label>Employee ID *</label>
@@ -517,6 +803,7 @@ const StaffManagement = () => {
                     <input type="text" name="username" value={formData.username} onChange={handleInputChange} required />
                   </div>
                 </div>
+
                 <div className="form-row">
                   <div className="form-group">
                     <label>First Name *</label>
@@ -527,6 +814,7 @@ const StaffManagement = () => {
                     <input type="text" name="lastName" value={formData.lastName} onChange={handleInputChange} required />
                   </div>
                 </div>
+
                 <div className="form-row">
                   <div className="form-group">
                     <label>Email *</label>
@@ -535,10 +823,59 @@ const StaffManagement = () => {
                   <div className="form-group">
                     <label>Role *</label>
                     <select name="role" value={formData.role} onChange={handleInputChange} required>
-                      {roles.map(role => <option key={role} value={role}>{role}</option>)}
+                      <optgroup label="🔐 Admin Roles">
+                        {['Admin', 'ITAdmin', 'ITSupport'].map(role => (
+                          <option key={role} value={role}>{getRoleIcon(role)} {role}</option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="👨‍⚕️ Clinical Roles">
+                        {['Doctor', 'Nurse'].map(role => (
+                          <option key={role} value={role}>{getRoleIcon(role)} {role}</option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="🤱 Maternity Roles">
+                        {['Obstetrician', 'Midwife'].map(role => (
+                          <option key={role} value={role}>{getRoleIcon(role)} {role}</option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="🦷 Specialist Roles">
+                        {['Dentist', 'Optometrist', 'Ophthalmologist', 'Paediatrician', 'Surgeon', 'Psychiatrist'].map(role => (
+                          <option key={role} value={role}>{getRoleIcon(role)} {role}</option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="❤️ Medical Specialists">
+                        {['Cardiologist', 'Neurologist', 'Orthopedic', 'ENT', 'Urologist', 'Anaesthesiologist', 'Pathologist', 'Dermatologist'].map(role => (
+                          <option key={role} value={role}>{getRoleIcon(role)} {role}</option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="📷 Imaging & Lab">
+                        {['Radiologist', 'LabTechnician', 'LabScientist'].map(role => (
+                          <option key={role} value={role}>{getRoleIcon(role)} {role}</option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="💊 Pharmacy">
+                        {['Pharmacist'].map(role => (
+                          <option key={role} value={role}>{getRoleIcon(role)} {role}</option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="💰 Finance">
+                        {['Accountant', 'BillingOfficer'].map(role => (
+                          <option key={role} value={role}>{getRoleIcon(role)} {role}</option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="📋 Administrative">
+                        {['Records', 'Receptionist', 'HR'].map(role => (
+                          <option key={role} value={role}>{getRoleIcon(role)} {role}</option>
+                        ))}
+                      </optgroup>
                     </select>
+                    <small style={{ color: '#6b7280' }}>
+                      {formData.role && `Group: ${getRoleGroup(formData.role)}`}
+                      {specialistRoles.includes(formData.role) && ' ⭐ Specialist Role'}
+                    </small>
                   </div>
                 </div>
+
                 <div className="form-row">
                   <div className="form-group">
                     <label>Department</label>
@@ -548,6 +885,7 @@ const StaffManagement = () => {
                     </select>
                   </div>
                 </div>
+
                 {!editingStaff && (
                   <div className="form-group">
                     <label>Password *</label>
@@ -652,6 +990,7 @@ const StaffManagement = () => {
                   }}>
                     <p style={{ margin: 0, fontSize: '14px', color: '#065f46' }}>
                       ✅ {formData.role} does not require clinic/ward assignment.
+                      {specialistRoles.includes(formData.role) && ' This is a specialist role with its own module.'}
                     </p>
                   </div>
                 )}
