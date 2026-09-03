@@ -1,4 +1,4 @@
-// src/pages/ArchivedPatientsView.jsx - Enhanced with View-Only Support
+// src/pages/ArchivedPatientsView.jsx - Enhanced with View-Only Support & Proper Endpoints
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -31,31 +31,49 @@ const ArchivedPatientsView = () => {
   const canRequestReactivation = ['Doctor', 'Obstetrician'].includes(user?.role);
   const isClinicalStaff = ['Doctor', 'Nurse', 'Obstetrician', 'Midwife'].includes(user?.role);
 
-  // Fetch with the correct endpoint
+  // ✅ FETCH ARCHIVED PATIENTS - Using the correct endpoint
   const fetchArchivedPatients = async () => {
     setLoading(true);
     try {
-      let endpoint = 'http://localhost:3000/api/patients/archived-view';
+      let endpoint = 'http://localhost:3000/api/patients/archived';
       
       // Admin and Records get full access
       if (['Admin', 'Records'].includes(user?.role)) {
         endpoint = 'http://localhost:3000/api/patients/archived';
         setIsViewOnly(false);
       } else {
+        // For Doctors, Nurses, etc. use view-only endpoint
+        endpoint = 'http://localhost:3000/api/patients/archived-view';
         setIsViewOnly(true);
       }
+      
+      console.log(`📡 Fetching archived patients from: ${endpoint}`);
       
       const res = await axios.get(endpoint, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
-      const data = Array.isArray(res.data) ? res.data : res.data.data || [];
+      // Handle different response formats
+      let data = [];
+      if (Array.isArray(res.data)) {
+        data = res.data;
+      } else if (res.data.data && Array.isArray(res.data.data)) {
+        data = res.data.data;
+      } else if (res.data.patients && Array.isArray(res.data.patients)) {
+        data = res.data.patients;
+      } else {
+        data = [];
+      }
+      
+      console.log(`✅ Found ${data.length} archived patients`);
       setPatients(data);
       setTotal(data.length);
     } catch (error) {
-      console.error('Fetch archived error:', error);
+      console.error('❌ Fetch archived error:', error);
       if (error.response?.status === 403) {
         toast.error('You do not have permission to view archived patients.');
+      } else if (error.response?.status === 404) {
+        toast.error('Archived patients endpoint not found. Please contact administrator.');
       } else {
         toast.error('Failed to load archived patients');
       }
@@ -65,6 +83,7 @@ const ArchivedPatientsView = () => {
     }
   };
 
+  // ✅ FETCH CLINICS AND WARDS for reactivation modal
   const fetchClinicsAndWards = async () => {
     try {
       const [clinicRes, wardRes] = await Promise.all([
@@ -75,8 +94,8 @@ const ArchivedPatientsView = () => {
           headers: { Authorization: `Bearer ${token}` }
         })
       ]);
-      setClinics(clinicRes.data);
-      setWards(wardRes.data);
+      setClinics(clinicRes.data || []);
+      setWards(wardRes.data || []);
     } catch (error) {
       console.error('Error fetching clinics/wards:', error);
     }
@@ -91,7 +110,7 @@ const ArchivedPatientsView = () => {
     }
   }, [token]);
 
-  // Handle Reactivate (for Admin & Records)
+  // ✅ HANDLE REACTIVATE (for Admin & Records)
   const handleReactivate = async (e) => {
     e.preventDefault();
     if (!selectedPatient) return;
@@ -104,13 +123,15 @@ const ArchivedPatientsView = () => {
         wardId: reactivationData.destinationType === 'WARD' ? reactivationData.wardId : null
       };
       
+      console.log('📤 Reactivating patient:', selectedPatient.id, payload);
+      
       const res = await axios.post(
         `http://localhost:3000/api/patients/${selectedPatient.id}/activate`,
         payload,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       
-      toast.success(res.data.message || 'File reactivated successfully!');
+      toast.success(res.data.message || '✅ File reactivated successfully!');
       setShowReactivateModal(false);
       setSelectedPatient(null);
       setReactivationData({
@@ -121,17 +142,17 @@ const ArchivedPatientsView = () => {
       });
       fetchArchivedPatients();
     } catch (error) {
+      console.error('❌ Reactivate error:', error);
       toast.error(error.response?.data?.error || 'Failed to reactivate file');
     }
   };
 
-  // Handle Request Reactivation (for Doctors)
+  // ✅ HANDLE REQUEST REACTIVATION (for Doctors)
   const handleRequestReactivation = async (patient) => {
     const reason = prompt(`Reason for requesting reactivation of ${patient.firstName} ${patient.lastName}:`);
     if (!reason) return;
 
     try {
-      // Send notification to Records department
       await axios.post(`http://localhost:3000/api/patients/${patient.id}/request-reactivation`, {
         reason: reason,
         requestedBy: user?.id
@@ -145,11 +166,29 @@ const ArchivedPatientsView = () => {
     }
   };
 
-  const filteredPatients = patients.filter(p => 
-    `${p.firstName} ${p.lastName} ${p.hospitalId}`
-      .toLowerCase()
-      .includes(searchTerm.toLowerCase())
-  );
+  // ✅ HANDLE UNARCHIVE (for Admin & Records)
+  const handleUnarchive = async (patient) => {
+    if (!window.confirm(`Unarchive ${patient.firstName} ${patient.lastName}? This will restore them to active patients.`)) return;
+    
+    try {
+      await axios.post(
+        `http://localhost:3000/api/patients/${patient.id}/unarchive`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast.success(`${patient.firstName} ${patient.lastName} unarchived successfully!`);
+      fetchArchivedPatients();
+    } catch (error) {
+      console.error('Unarchive error:', error);
+      toast.error(error.response?.data?.error || 'Failed to unarchive patient');
+    }
+  };
+
+  // ✅ FILTER PATIENTS
+  const filteredPatients = patients.filter(p => {
+    const searchString = `${p.firstName || ''} ${p.lastName || ''} ${p.hospitalId || ''}`.toLowerCase();
+    return searchString.includes(searchTerm.toLowerCase());
+  });
 
   const calculateAge = (dob) => {
     if (!dob) return 'N/A';
@@ -381,6 +420,26 @@ const ArchivedPatientsView = () => {
                           }}
                         >
                           🔄 Reactivate
+                        </button>
+                      )}
+                      
+                      {/* Unarchive Button - Admin & Records only */}
+                      {canReactivate && !isViewOnly && (
+                        <button 
+                          className="btn btn-sm" 
+                          style={{ 
+                            background: '#f59e0b', 
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            padding: '6px 14px',
+                            cursor: 'pointer',
+                            fontSize: '12px',
+                            fontWeight: '600'
+                          }}
+                          onClick={() => handleUnarchive(p)}
+                        >
+                          📂 Unarchive
                         </button>
                       )}
                       
