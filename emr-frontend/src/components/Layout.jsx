@@ -147,6 +147,7 @@ const Layout = () => {
         if (rolePerm) {
           setPermissions(rolePerm);
         } else {
+          // Create default permissions for the role
           setPermissions(null);
         }
       } catch (error) {
@@ -354,6 +355,9 @@ const Layout = () => {
       } else if (user?.role === 'Psychiatrist' && location.pathname === '/') {
         sessionStorage.setItem('hasRedirected', 'true');
         navigate('/psychiatry');
+      } else if (user?.role === 'Receptionist' && location.pathname === '/') {
+        sessionStorage.setItem('hasRedirected', 'true');
+        navigate('/patients');
       }
     }
   }, [user, location.pathname, navigate]);
@@ -704,6 +708,30 @@ const Layout = () => {
     }
 
     // ============================================================
+    // RECEPTIONIST NAVIGATION
+    // ============================================================
+    if (user?.role === 'Receptionist') {
+      return (
+        <>
+          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            📊 Dashboard
+          </NavLink>
+          <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            👤 Patients
+          </NavLink>
+          <div className="nav-dropdown">
+            <button className="nav-dropdown-header">📋 Records ▼</button>
+            <div className="dropdown-content">
+              <NavLink to="/patient-intake" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🔄 Patient Intake</NavLink>
+              <NavLink to="/appointments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📅 Appointments</NavLink>
+              <NavLink to="/queue" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🏥 Queue</NavLink>
+            </div>
+          </div>
+        </>
+      );
+    }
+
+    // ============================================================
     // PHARMACIST NAVIGATION
     // ============================================================
     if (user?.role === 'Pharmacist') {
@@ -818,6 +846,49 @@ const Layout = () => {
     }
 
     // ============================================================
+    // ACCOUNTANT NAVIGATION
+    // ============================================================
+    if (user?.role === 'Accountant') {
+      return (
+        <>
+          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            📊 Dashboard
+          </NavLink>
+          <div className="nav-dropdown">
+            <button className="nav-dropdown-header">💰 Finance ▼</button>
+            <div className="dropdown-content">
+              <NavLink to="/billing" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💰 Billing</NavLink>
+              <NavLink to="/pricing" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💲 Service Pricing</NavLink>
+              <NavLink to="/wallet" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💳 Patient Wallet</NavLink>
+              <NavLink to="/billing-officer" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💳 Billing Desk</NavLink>
+            </div>
+          </div>
+        </>
+      );
+    }
+
+    // ============================================================
+    // BILLING OFFICER NAVIGATION
+    // ============================================================
+    if (user?.role === 'BillingOfficer') {
+      return (
+        <>
+          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            📊 Dashboard
+          </NavLink>
+          <div className="nav-dropdown">
+            <button className="nav-dropdown-header">💰 Finance ▼</button>
+            <div className="dropdown-content">
+              <NavLink to="/billing" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💰 Billing</NavLink>
+              <NavLink to="/billing-officer" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💳 Billing Desk</NavLink>
+              <NavLink to="/wallet" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💳 Patient Wallet</NavLink>
+            </div>
+          </div>
+        </>
+      );
+    }
+
+    // ============================================================
     // ADMIN AND ITADMIN - Full menu with all dropdowns
     // ============================================================
     if (['Admin', 'ITAdmin'].includes(user?.role)) {
@@ -878,7 +949,7 @@ const Layout = () => {
     }
 
     // ============================================================
-    // OTHER ROLES (Accountant, BillingOfficer, etc.)
+    // OTHER ROLES (Default fallback)
     // ============================================================
     return (
       <>

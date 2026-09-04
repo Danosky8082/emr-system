@@ -1197,10 +1197,16 @@ app.post('/api/patients', authenticate, authorize('Admin', 'Records', 'ITAdmin')
     }
     // Auto-generate billing
     const category = patient.patientCategory || 'FPP';
-    let multiplier = 1;
-    let categoryLabel = 'FPP';
-    if (category === 'NHIS') { multiplier = 0.1; categoryLabel = 'NHIS (10%)'; }
-    else if (category === 'CORPORATE') { multiplier = 2; categoryLabel = 'Corporate (200%)'; }
+let multiplier = 1;
+let categoryLabel = 'FPP';
+if (category === 'NHIS') { 
+  multiplier = 0.1; 
+  categoryLabel = 'NHIS (10%)'; 
+} else if (category === 'RETAINER') { 
+  multiplier = 2; 
+  categoryLabel = 'Retainer (200%)'; 
+}
+
     const regFee = 2000, cardFee = 1000, consultFee = 5000;
     const registrationAmount = Math.round(regFee * multiplier);
     const cardAmount = Math.round(cardFee * multiplier);
@@ -7925,13 +7931,28 @@ app.get('/api/dashboard/stats', authenticate, async (req, res) => {
     // SURGEON
     // ============================================================
     else if (role === 'Surgeon') {
-      let todayAppointments = 0, scheduledSurgeries = 0;
+      let surgeryPatients = 0, todayAppointments = 0, pendingLabOrders = 0;
       
       try {
+        // Get patients in surgery clinic
+        const surgeryClinic = await prisma.clinic.findFirst({
+          where: { name: { contains: 'Surgery', mode: 'insensitive' } }
+        });
+        
+        if (surgeryClinic) {
+          surgeryPatients = await prisma.patientJourney.count({
+            where: {
+              clinicId: surgeryClinic.id,
+              status: { in: ['SENT_TO_DESTINATION', 'COMPLETED'] }
+            }
+          });
+        }
+        
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const tomorrow = new Date(today);
         tomorrow.setDate(tomorrow.getDate() + 1);
+        
         todayAppointments = await prisma.appointment.count({
           where: {
             staffId: req.user.id,
@@ -7939,19 +7960,20 @@ app.get('/api/dashboard/stats', authenticate, async (req, res) => {
             status: 'Scheduled'
           }
         });
-        scheduledSurgeries = await prisma.appointment.count({
+        
+        pendingLabOrders = await prisma.labOrder.count({
           where: {
-            staffId: req.user.id,
-            type: 'Surgery',
-            status: 'Scheduled'
+            orderingStaffId: req.user.id,
+            status: { in: ['Ordered', 'In Progress'] }
           }
         });
       } catch (e) { console.log('⚠️ Surgeon stats error:', e.message); }
       
       responseData = {
         role: 'Surgeon',
-        todayAppointments: todayAppointments,
-        scheduledSurgeries: scheduledSurgeries,
+        surgeryPatients,
+        todayAppointments,
+        pendingLabOrders,
         genderData: genderData,
         monthlyRegistrations: monthlyRegistrations
       };
@@ -7961,13 +7983,27 @@ app.get('/api/dashboard/stats', authenticate, async (req, res) => {
     // PSYCHIATRIST
     // ============================================================
     else if (role === 'Psychiatrist') {
-      let todayAppointments = 0, mentalHealthNotes = 0;
+      let psychiatryPatients = 0, todayAppointments = 0, mentalHealthNotes = 0;
       
       try {
+        const psychiatryClinic = await prisma.clinic.findFirst({
+          where: { name: { contains: 'Psychiatry', mode: 'insensitive' } }
+        });
+        
+        if (psychiatryClinic) {
+          psychiatryPatients = await prisma.patientJourney.count({
+            where: {
+              clinicId: psychiatryClinic.id,
+              status: { in: ['SENT_TO_DESTINATION', 'COMPLETED'] }
+            }
+          });
+        }
+        
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const tomorrow = new Date(today);
         tomorrow.setDate(tomorrow.getDate() + 1);
+        
         todayAppointments = await prisma.appointment.count({
           where: {
             staffId: req.user.id,
@@ -7975,8 +8011,10 @@ app.get('/api/dashboard/stats', authenticate, async (req, res) => {
             status: 'Scheduled'
           }
         });
+        
         mentalHealthNotes = await prisma.clinicalNote.count({
           where: {
+            authorId: req.user.id,
             OR: [
               { type: { contains: 'Psychiatric', mode: 'insensitive' } },
               { fullContent: { contains: 'mental', mode: 'insensitive' } }
@@ -7987,40 +8025,140 @@ app.get('/api/dashboard/stats', authenticate, async (req, res) => {
       
       responseData = {
         role: 'Psychiatrist',
-        todayAppointments: todayAppointments,
-        mentalHealthNotes: mentalHealthNotes,
+        psychiatryPatients,
+        todayAppointments,
+        mentalHealthNotes,
         genderData: genderData,
         monthlyRegistrations: monthlyRegistrations
       };
     }
 
     // ============================================================
-    // HR DASHBOARD (KEEP THIS - IT'S FOR THE MAIN DASHBOARD)
+    // DENTIST
     // ============================================================
-    else if (role === 'HR') {
-      let totalEmployees = 0, activeEmployees = 0, departments = 0, pendingLeaves = 0;
+    else if (role === 'Dentist') {
+      let dentalPatients = 0, todayAppointments = 0, completedProcedures = 0;
       
       try {
-        totalEmployees = await prisma.staff.count();
-        activeEmployees = await prisma.staff.count({ where: { isActive: true } });
-        departments = await prisma.department.count({ where: { isActive: true } });
-        pendingLeaves = await prisma.leaveRequest.count({ where: { status: 'Pending' } });
-      } catch (e) { console.log('⚠️ HR stats error:', e.message); }
+        const dentalRecords = await prisma.dentalRecord.groupBy({
+          by: ['patientId'],
+          _count: { patientId: true }
+        });
+        dentalPatients = dentalRecords.length;
+        
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        
+        todayAppointments = await prisma.appointment.count({
+          where: {
+            staffId: req.user.id,
+            dateTime: { gte: today, lt: tomorrow },
+            status: 'Scheduled'
+          }
+        });
+        
+        completedProcedures = await prisma.dentalRecord.count({
+          where: {
+            staffId: req.user.id,
+            condition: { not: 'Cavity' }
+          }
+        });
+      } catch (e) { console.log('⚠️ Dentist stats error:', e.message); }
       
       responseData = {
-        statistics: {
-          totalEmployees,
-          activeEmployees,
-          departments,
-          pendingLeaves,
-          employeesOnLeave: 0,
-          clockedInToday: 0,
-          totalTrainings: 0
-        },
+        role: 'Dentist',
+        dentalPatients: dentalPatients || 0,
+        todayAppointments,
+        completedProcedures,
         genderData: genderData,
         monthlyRegistrations: monthlyRegistrations
       };
     }
+
+    // ============================================================
+    // OPTOMETRIST
+    // ============================================================
+    else if (role === 'Optometrist') {
+      let optometryPatients = 0, todayAppointments = 0, completedExams = 0;
+      
+      try {
+        const optometryRecords = await prisma.optometryRecord.groupBy({
+          by: ['patientId'],
+          _count: { patientId: true }
+        });
+        optometryPatients = optometryRecords.length;
+        
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        
+        todayAppointments = await prisma.appointment.count({
+          where: {
+            staffId: req.user.id,
+            dateTime: { gte: today, lt: tomorrow },
+            status: 'Scheduled'
+          }
+        });
+        
+        completedExams = await prisma.optometryRecord.count({
+          where: {
+            staffId: req.user.id,
+            prescription: { not: null }
+          }
+        });
+      } catch (e) { console.log('⚠️ Optometrist stats error:', e.message); }
+      
+      responseData = {
+        role: 'Optometrist',
+        optometryPatients: optometryPatients || 0,
+        todayAppointments,
+        completedExams,
+        genderData: genderData,
+        monthlyRegistrations: monthlyRegistrations
+      };
+    }
+
+    // ============================================================
+    // RECEPTIONIST
+    // ============================================================
+    else if (role === 'Receptionist') {
+      let totalPatients = 0, todayAppointments = 0, pendingIntake = 0;
+      
+      try {
+        totalPatients = await prisma.patient.count();
+        
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        
+        todayAppointments = await prisma.appointment.count({
+          where: {
+            dateTime: { gte: today, lt: tomorrow },
+            status: 'Scheduled'
+          }
+        });
+        
+        pendingIntake = await prisma.patientJourney.count({
+          where: {
+            status: 'REGISTERED'
+          }
+        });
+      } catch (e) { console.log('⚠️ Receptionist stats error:', e.message); }
+      
+      responseData = {
+        role: 'Receptionist',
+        totalPatients,
+        todayAppointments,
+        pendingIntake,
+        genderData: genderData,
+        monthlyRegistrations: monthlyRegistrations
+      };
+    }
+
 
     // ============================================================
     // DEFAULT FALLBACK - Return basic stats for any role

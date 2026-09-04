@@ -46,7 +46,7 @@ console.error = function(...args) {
 // ✅ WRAP APP WITH BrowserRouter
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <BrowserRouter>  {/* ✅ THIS IS THE FIX */}
+    <BrowserRouter>  {}
       <App />
     </BrowserRouter>
   </React.StrictMode>

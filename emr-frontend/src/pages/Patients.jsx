@@ -23,18 +23,14 @@ const Patients = () => {
     patientCategory: 'FPP',
     insuranceProvider: '',
     insuranceId: '',
-    corporateCompany: '',
+    retainerCompany: '', // Changed from corporateCompany to retainerCompany
   });
 
   // ✅ FIXED: Define permission checks at the top
   const canManage = ['Admin', 'Records', 'ITAdmin'].includes(user?.role);
+  const canViewProfile = ['Admin', 'Records', 'ITAdmin', 'Nurse', 'Doctor', 'Obstetrician', 'Midwife', 'Paediatrician', 'Dentist', 'Optometrist', 'Surgeon', 'Psychiatrist', 'Receptionist'].includes(user?.role);
+  const canViewPatients = ['Admin', 'Records', 'ITAdmin', 'Doctor', 'Nurse', 'Obstetrician', 'Midwife', 'Paediatrician', 'Dentist', 'Optometrist', 'Radiologist', 'LabTechnician', 'LabScientist', 'BillingOfficer', 'Receptionist', 'Surgeon', 'Psychiatrist'].includes(user?.role);
   
-  // ✅ FIXED: Added Paediatrician to canViewProfile
-  const canViewProfile = ['Admin', 'Records', 'ITAdmin', 'Nurse', 'Doctor', 'Obstetrician', 'Midwife', 'Paediatrician', 'Dentist', 'Optometrist'].includes(user?.role);
-  
-  // ✅ FIXED: Check if user can view patients at all
-  const canViewPatients = ['Admin', 'Records', 'ITAdmin', 'Doctor', 'Nurse', 'Obstetrician', 'Midwife', 'Paediatrician', 'Dentist', 'Optometrist', 'Radiologist', 'LabTechnician', 'LabScientist', 'BillingOfficer'].includes(user?.role);
-
   // ✅ FIXED: Redirect if user cannot view patients
   if (!canViewPatients && !loading) {
     return <Navigate to="/dashboard" replace />;
@@ -94,7 +90,7 @@ const Patients = () => {
       const categoryMessages = {
         'FPP': '💰 Patient will pay full amount for all services.',
         'NHIS': '🏥 Patient will pay only 10% of service costs.',
-        'CORPORATE': '🏢 Patient\'s company will pay double the standard rate.'
+        'RETAINER': '🏢 Retainer patient - Company pays double the standard rate.'
       };
       toast.success(categoryMessages[value] || 'Category updated');
     }
@@ -133,7 +129,7 @@ const Patients = () => {
         patientCategory: 'FPP',
         insuranceProvider: '',
         insuranceId: '',
-        corporateCompany: '',
+        retainerCompany: '',
       });
       
       setRefreshKey(prev => prev + 1);
@@ -165,7 +161,7 @@ const Patients = () => {
       patientCategory: patient.patientCategory || 'FPP',
       insuranceProvider: patient.insuranceProvider || '',
       insuranceId: patient.insuranceId || '',
-      corporateCompany: patient.corporateCompany || '',
+      retainerCompany: patient.retainerCompany || patient.corporateCompany || '', // Handle both old and new field names
     });
     setShowModal(true);
   };
@@ -285,11 +281,12 @@ const Patients = () => {
     }
   };
 
+  // ✅ UPDATED: Get Category Info with Retainer
   const getCategoryInfo = (category) => {
     const map = {
       'FPP': { label: '💰 FPP', className: 'category-fpp', tooltip: 'Free Paying Patient - Full Payment' },
       'NHIS': { label: '🏥 NHIS', className: 'category-nhis', tooltip: 'National Health Insurance - 10% Payment' },
-      'CORPORATE': { label: '🏢 Corporate', className: 'category-corporate', tooltip: 'Corporate/Company - Double Rate' },
+      'RETAINER': { label: '🏢 Retainer', className: 'category-retainer', tooltip: 'Corporate Retainer - Double Rate' },
     };
     return map[category] || map['FPP'];
   };
@@ -329,7 +326,7 @@ const Patients = () => {
                 patientCategory: 'FPP',
                 insuranceProvider: '',
                 insuranceId: '',
-                corporateCompany: '',
+                retainerCompany: '',
               }); 
               setShowModal(true); 
             }}
@@ -363,7 +360,7 @@ const Patients = () => {
           <option value="ALL">All Categories</option>
           <option value="FPP">💰 FPP</option>
           <option value="NHIS">🏥 NHIS</option>
-          <option value="CORPORATE">🏢 Corporate</option>
+          <option value="RETAINER">🏢 Retainer</option>
         </select>
         {categoryFilter !== 'ALL' && (
           <button 
@@ -442,9 +439,9 @@ const Patients = () => {
                           {p.insuranceProvider}
                         </div>
                       )}
-                      {p.patientCategory === 'CORPORATE' && p.corporateCompany && (
+                      {p.patientCategory === 'RETAINER' && p.retainerCompany && (
                         <div style={{ fontSize: '10px', color: '#6b7280', marginTop: '2px' }}>
-                          {p.corporateCompany}
+                          {p.retainerCompany}
                         </div>
                       )}
                     </td>
@@ -662,12 +659,12 @@ const Patients = () => {
                     >
                       <option value="FPP">💰 FPP - Free Paying Patient (Full Payment)</option>
                       <option value="NHIS">🏥 NHIS - National Health Insurance (10% Payment)</option>
-                      <option value="CORPORATE">🏢 Corporate/Company (Double Rate)</option>
+                      <option value="RETAINER">🏢 Retainer - Corporate/Company (Double Rate)</option>
                     </select>
                     <small style={{ display: 'block', color: '#6b7280', marginTop: '4px' }}>
                       {formData.patientCategory === 'FPP' && 'Patient pays the full amount for all services.'}
                       {formData.patientCategory === 'NHIS' && 'Patient pays only 10% of the service cost (NHIS covers the rest).'}
-                      {formData.patientCategory === 'CORPORATE' && 'Patient\'s company pays double the standard rate.'}
+                      {formData.patientCategory === 'RETAINER' && 'Patient\'s company pays double the standard rate.'}
                     </small>
                   </div>
 
@@ -685,16 +682,29 @@ const Patients = () => {
                     </div>
                   )}
 
-                  {/* Conditional fields for Corporate */}
-                  {formData.patientCategory === 'CORPORATE' && (
+                  {/* Conditional fields for Retainer */}
+                  {formData.patientCategory === 'RETAINER' && (
                     <div className="form-row" style={{ marginTop: '12px' }}>
                       <div className="form-group">
                         <label>Company Name *</label>
-                        <input type="text" name="corporateCompany" value={formData.corporateCompany} onChange={handleInputChange} placeholder="e.g., MTN Nigeria" required />
+                        <input 
+                          type="text" 
+                          name="retainerCompany" 
+                          value={formData.retainerCompany} 
+                          onChange={handleInputChange} 
+                          placeholder="e.g., MTN Nigeria" 
+                          required 
+                        />
                       </div>
                       <div className="form-group">
                         <label>Employee ID / Policy Number</label>
-                        <input type="text" name="insuranceId" value={formData.insuranceId} onChange={handleInputChange} placeholder="e.g., EMP-001234" />
+                        <input 
+                          type="text" 
+                          name="insuranceId" 
+                          value={formData.insuranceId} 
+                          onChange={handleInputChange} 
+                          placeholder="e.g., EMP-001234" 
+                        />
                       </div>
                     </div>
                   )}

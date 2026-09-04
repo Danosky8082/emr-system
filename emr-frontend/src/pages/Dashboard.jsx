@@ -1,4 +1,4 @@
-// src/pages/Dashboard.jsx - COMPLETE WITH PAEDIATRICIAN SUPPORT
+// src/pages/Dashboard.jsx - COMPLETE WITH ALL SPECIALIST SUPPORT
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -337,19 +337,13 @@ const Dashboard = () => {
 
         {/* Charts Section */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '20px' }}>
-          {/* Gender Distribution for Children */}
           <div className="section" style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
             <h3>👶 Child Gender Distribution</h3>
             <ResponsiveContainer width="100%" height={250}>
               <PieChart>
                 <Pie 
                   data={stats.genderData?.map(g => ({ name: g.gender, value: g._count })) || []} 
-                  cx="50%" 
-                  cy="50%" 
-                  outerRadius={80} 
-                  fill="#8884d8" 
-                  dataKey="value" 
-                  label
+                  cx="50%" cy="50%" outerRadius={80} fill="#8884d8" dataKey="value" label
                 >
                   {(stats.genderData || []).map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -360,8 +354,6 @@ const Dashboard = () => {
               </PieChart>
             </ResponsiveContainer>
           </div>
-
-          {/* Monthly Child Registrations */}
           <div className="section" style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
             <h3>📈 Child Registrations (Last 6 Months)</h3>
             <ResponsiveContainer width="100%" height={250}>
@@ -377,7 +369,6 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Recent Appointments Table */}
         {stats.recentAppointments && stats.recentAppointments.length > 0 && (
           <div style={{ marginTop: '20px', background: 'white', padding: '20px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
             <h4 style={{ margin: '0 0 16px 0', color: '#1e293b' }}>📋 Recent Child Appointments</h4>
@@ -394,15 +385,9 @@ const Dashboard = () => {
                 <tbody>
                   {stats.recentAppointments.map((appt, index) => (
                     <tr key={appt.id} style={{ borderBottom: index < stats.recentAppointments.length - 1 ? '1px solid #e2e8f0' : 'none' }}>
-                      <td style={{ padding: '10px 12px' }}>
-                        {appt.Patient?.firstName} {appt.Patient?.lastName}
-                      </td>
-                      <td style={{ padding: '10px 12px' }}>
-                        Dr. {appt.Staff?.firstName} {appt.Staff?.lastName}
-                      </td>
-                      <td style={{ padding: '10px 12px', color: '#6b7280' }}>
-                        {new Date(appt.dateTime).toLocaleString()}
-                      </td>
+                      <td style={{ padding: '10px 12px' }}>{appt.Patient?.firstName} {appt.Patient?.lastName}</td>
+                      <td style={{ padding: '10px 12px' }}>Dr. {appt.Staff?.firstName} {appt.Staff?.lastName}</td>
+                      <td style={{ padding: '10px 12px', color: '#6b7280' }}>{new Date(appt.dateTime).toLocaleString()}</td>
                       <td style={{ padding: '10px 12px' }}>
                         <span style={{
                           padding: '2px 10px',
@@ -428,6 +413,170 @@ const Dashboard = () => {
     );
   };
 
+  // ✅ Render Surgeon Dashboard
+  const renderSurgeonDashboard = () => {
+    if (!stats) return null;
+    
+    return (
+      <div className="dashboard-content">
+        <div className="stats-grid">
+          <div className="stat-card" style={{ borderLeft: '4px solid #dc2626' }}>
+            <div className="stat-icon">🏥</div>
+            <div className="stat-info">
+              <div className="stat-value">{stats.surgeryPatients || 0}</div>
+              <div className="stat-label">Surgery Patients</div>
+            </div>
+          </div>
+          <div className="stat-card" style={{ borderLeft: '4px solid #f59e0b' }}>
+            <div className="stat-icon">📅</div>
+            <div className="stat-info">
+              <div className="stat-value" style={{ color: '#f59e0b' }}>{stats.todayAppointments || 0}</div>
+              <div className="stat-label">Today's Appointments</div>
+            </div>
+          </div>
+          <div className="stat-card" style={{ borderLeft: '4px solid #8b5cf6' }}>
+            <div className="stat-icon">🔬</div>
+            <div className="stat-info">
+              <div className="stat-value" style={{ color: '#8b5cf6' }}>{stats.pendingLabOrders || 0}</div>
+              <div className="stat-label">Pending Lab Orders</div>
+            </div>
+          </div>
+        </div>
+        <div style={{ textAlign: 'center', marginTop: '20px' }}>
+          <Link to="/surgery" className="btn btn-primary" style={{ marginRight: '10px' }}>
+            🏥 View Surgery Patients
+          </Link>
+          <Link to="/appointments" className="btn btn-secondary">
+            📅 Manage Appointments
+          </Link>
+        </div>
+      </div>
+    );
+  };
+
+  // ✅ Render Psychiatrist Dashboard
+  const renderPsychiatristDashboard = () => {
+    if (!stats) return null;
+    
+    return (
+      <div className="dashboard-content">
+        <div className="stats-grid">
+          <div className="stat-card" style={{ borderLeft: '4px solid #7c3aed' }}>
+            <div className="stat-icon">🧠</div>
+            <div className="stat-info">
+              <div className="stat-value">{stats.psychiatryPatients || 0}</div>
+              <div className="stat-label">Psychiatry Patients</div>
+            </div>
+          </div>
+          <div className="stat-card" style={{ borderLeft: '4px solid #f59e0b' }}>
+            <div className="stat-icon">📅</div>
+            <div className="stat-info">
+              <div className="stat-value" style={{ color: '#f59e0b' }}>{stats.todayAppointments || 0}</div>
+              <div className="stat-label">Today's Appointments</div>
+            </div>
+          </div>
+          <div className="stat-card" style={{ borderLeft: '4px solid #8b5cf6' }}>
+            <div className="stat-icon">📝</div>
+            <div className="stat-info">
+              <div className="stat-value" style={{ color: '#8b5cf6' }}>{stats.mentalHealthNotes || 0}</div>
+              <div className="stat-label">Clinical Notes</div>
+            </div>
+          </div>
+        </div>
+        <div style={{ textAlign: 'center', marginTop: '20px' }}>
+          <Link to="/psychiatry" className="btn btn-primary" style={{ marginRight: '10px' }}>
+            🧠 View Psychiatry Patients
+          </Link>
+          <Link to="/appointments" className="btn btn-secondary">
+            📅 Manage Appointments
+          </Link>
+        </div>
+      </div>
+    );
+  };
+
+  // ✅ Render Dentist Dashboard
+  const renderDentistDashboard = () => {
+    if (!stats) return null;
+    
+    return (
+      <div className="dashboard-content">
+        <div className="stats-grid">
+          <div className="stat-card" style={{ borderLeft: '4px solid #0f3460' }}>
+            <div className="stat-icon">🦷</div>
+            <div className="stat-info">
+              <div className="stat-value">{stats.dentalPatients || 0}</div>
+              <div className="stat-label">Dental Patients</div>
+            </div>
+          </div>
+          <div className="stat-card" style={{ borderLeft: '4px solid #f59e0b' }}>
+            <div className="stat-icon">📅</div>
+            <div className="stat-info">
+              <div className="stat-value" style={{ color: '#f59e0b' }}>{stats.todayAppointments || 0}</div>
+              <div className="stat-label">Today's Appointments</div>
+            </div>
+          </div>
+          <div className="stat-card" style={{ borderLeft: '4px solid #10b981' }}>
+            <div className="stat-icon">✅</div>
+            <div className="stat-info">
+              <div className="stat-value" style={{ color: '#10b981' }}>{stats.completedProcedures || 0}</div>
+              <div className="stat-label">Completed Procedures</div>
+            </div>
+          </div>
+        </div>
+        <div style={{ textAlign: 'center', marginTop: '20px' }}>
+          <Link to="/dental" className="btn btn-primary" style={{ marginRight: '10px' }}>
+            🦷 View Dental Patients
+          </Link>
+          <Link to="/appointments" className="btn btn-secondary">
+            📅 Manage Appointments
+          </Link>
+        </div>
+      </div>
+    );
+  };
+
+  // ✅ Render Optometrist Dashboard
+  const renderOptometristDashboard = () => {
+    if (!stats) return null;
+    
+    return (
+      <div className="dashboard-content">
+        <div className="stats-grid">
+          <div className="stat-card" style={{ borderLeft: '4px solid #06b6d4' }}>
+            <div className="stat-icon">👁️</div>
+            <div className="stat-info">
+              <div className="stat-value">{stats.optometryPatients || 0}</div>
+              <div className="stat-label">Eye Patients</div>
+            </div>
+          </div>
+          <div className="stat-card" style={{ borderLeft: '4px solid #f59e0b' }}>
+            <div className="stat-icon">📅</div>
+            <div className="stat-info">
+              <div className="stat-value" style={{ color: '#f59e0b' }}>{stats.todayAppointments || 0}</div>
+              <div className="stat-label">Today's Appointments</div>
+            </div>
+          </div>
+          <div className="stat-card" style={{ borderLeft: '4px solid #10b981' }}>
+            <div className="stat-icon">✅</div>
+            <div className="stat-info">
+              <div className="stat-value" style={{ color: '#10b981' }}>{stats.completedExams || 0}</div>
+              <div className="stat-label">Completed Exams</div>
+            </div>
+          </div>
+        </div>
+        <div style={{ textAlign: 'center', marginTop: '20px' }}>
+          <Link to="/optometry" className="btn btn-primary" style={{ marginRight: '10px' }}>
+            👁️ View Eye Patients
+          </Link>
+          <Link to="/appointments" className="btn btn-secondary">
+            📅 Manage Appointments
+          </Link>
+        </div>
+      </div>
+    );
+  };
+
   const renderStatCards = () => {
     const role = user?.role;
     if (!stats) return [];
@@ -439,6 +588,42 @@ const Dashboard = () => {
         { icon: '📅', label: "Today's Appointments", value: stats.todayAppointments || 0 },
         { icon: '📊', label: 'Growth Records', value: stats.growthRecords || 0 },
         { icon: '💉', label: 'Vaccinations Due', value: stats.vaccinationCompliance || 0 },
+      ];
+    }
+
+    // ✅ Surgeon Dashboard Stats
+    if (role === 'Surgeon') {
+      return [
+        { icon: '🏥', label: 'Surgery Patients', value: stats.surgeryPatients || 0 },
+        { icon: '📅', label: "Today's Appointments", value: stats.todayAppointments || 0 },
+        { icon: '🔬', label: 'Pending Lab Orders', value: stats.pendingLabOrders || 0 },
+      ];
+    }
+
+    // ✅ Psychiatrist Dashboard Stats
+    if (role === 'Psychiatrist') {
+      return [
+        { icon: '🧠', label: 'Psychiatry Patients', value: stats.psychiatryPatients || 0 },
+        { icon: '📅', label: "Today's Appointments", value: stats.todayAppointments || 0 },
+        { icon: '📝', label: 'Clinical Notes', value: stats.mentalHealthNotes || 0 },
+      ];
+    }
+
+    // ✅ Dentist Dashboard Stats
+    if (role === 'Dentist') {
+      return [
+        { icon: '🦷', label: 'Dental Patients', value: stats.dentalPatients || 0 },
+        { icon: '📅', label: "Today's Appointments", value: stats.todayAppointments || 0 },
+        { icon: '✅', label: 'Completed Procedures', value: stats.completedProcedures || 0 },
+      ];
+    }
+
+    // ✅ Optometrist Dashboard Stats
+    if (role === 'Optometrist') {
+      return [
+        { icon: '👁️', label: 'Eye Patients', value: stats.optometryPatients || 0 },
+        { icon: '📅', label: "Today's Appointments", value: stats.todayAppointments || 0 },
+        { icon: '✅', label: 'Completed Exams', value: stats.completedExams || 0 },
       ];
     }
 
@@ -529,21 +714,12 @@ const Dashboard = () => {
       ];
     }
 
-    // Dentist Dashboard
-    if (role === 'Dentist') {
+    // Receptionist Dashboard
+    if (role === 'Receptionist') {
       return [
-        { icon: '🦷', label: 'Total Dental Patients', value: stats.totalDentalPatients || 0 },
+        { icon: '👤', label: 'Total Patients', value: stats.totalPatients || 0 },
         { icon: '📅', label: "Today's Appointments", value: stats.todayAppointments || 0 },
-        { icon: '📋', label: 'Recent Procedures', value: stats.recentProcedures?.length || 0 },
-      ];
-    }
-
-    // Optometrist Dashboard
-    if (role === 'Optometrist') {
-      return [
-        { icon: '👁️', label: 'Total Eye Patients', value: stats.totalOptometryPatients || 0 },
-        { icon: '📅', label: "Today's Appointments", value: stats.todayAppointments || 0 },
-        { icon: '📋', label: 'Recent Exams', value: stats.recentExams?.length || 0 },
+        { icon: '📋', label: 'Pending Intake', value: stats.pendingIntake || 0 },
       ];
     }
 
@@ -559,11 +735,13 @@ const Dashboard = () => {
   const revenueChartData = stats?.revenueTrend?.map(m => ({ month: m.month, Revenue: m.revenue })) || [];
   const showRevenueChart = ['Accountant', 'BillingOfficer'].includes(user?.role);
 
-  // ✅ Check if this is a Lab role
+  // ✅ Check roles
   const isLabRole = ['LabTechnician', 'LabScientist'].includes(user?.role);
-  
-  // ✅ Check if this is a Paediatrician role
   const isPaediatrician = user?.role === 'Paediatrician';
+  const isSurgeon = user?.role === 'Surgeon';
+  const isPsychiatrist = user?.role === 'Psychiatrist';
+  const isDentist = user?.role === 'Dentist';
+  const isOptometrist = user?.role === 'Optometrist';
 
   return (
     <div className="dashboard">
@@ -572,9 +750,17 @@ const Dashboard = () => {
         <p>Welcome back, {user?.firstName} {user?.lastName}!</p>
       </div>
 
-      {/* ✅ Render Paediatrician Dashboard */}
+      {/* ✅ Render Specialist Dashboards */}
       {isPaediatrician && stats ? (
         renderPaediatricianDashboard()
+      ) : isSurgeon && stats ? (
+        renderSurgeonDashboard()
+      ) : isPsychiatrist && stats ? (
+        renderPsychiatristDashboard()
+      ) : isDentist && stats ? (
+        renderDentistDashboard()
+      ) : isOptometrist && stats ? (
+        renderOptometristDashboard()
       ) : isLabRole && stats?.summary ? (
         renderLabDashboard()
       ) : (
@@ -608,11 +794,44 @@ const Dashboard = () => {
             </div>
           )}
 
-          {/* Quick Action Button for Paediatrician */}
-          {user?.role === 'Paediatrician' && (
+          {/* Quick Action Button for Specialist Roles */}
+          {isSurgeon && (
             <div style={{ textAlign: 'center', marginTop: '20px' }}>
-              <Link to="/patients" className="btn btn-primary" style={{ marginRight: '10px' }}>
-                👶 View All Children
+              <Link to="/surgery" className="btn btn-primary" style={{ marginRight: '10px' }}>
+                🏥 View Surgery Patients
+              </Link>
+              <Link to="/appointments" className="btn btn-secondary">
+                📅 Manage Appointments
+              </Link>
+            </div>
+          )}
+
+          {isPsychiatrist && (
+            <div style={{ textAlign: 'center', marginTop: '20px' }}>
+              <Link to="/psychiatry" className="btn btn-primary" style={{ marginRight: '10px' }}>
+                🧠 View Psychiatry Patients
+              </Link>
+              <Link to="/appointments" className="btn btn-secondary">
+                📅 Manage Appointments
+              </Link>
+            </div>
+          )}
+
+          {isDentist && (
+            <div style={{ textAlign: 'center', marginTop: '20px' }}>
+              <Link to="/dental" className="btn btn-primary" style={{ marginRight: '10px' }}>
+                🦷 View Dental Patients
+              </Link>
+              <Link to="/appointments" className="btn btn-secondary">
+                📅 Manage Appointments
+              </Link>
+            </div>
+          )}
+
+          {isOptometrist && (
+            <div style={{ textAlign: 'center', marginTop: '20px' }}>
+              <Link to="/optometry" className="btn btn-primary" style={{ marginRight: '10px' }}>
+                👁️ View Eye Patients
               </Link>
               <Link to="/appointments" className="btn btn-secondary">
                 📅 Manage Appointments

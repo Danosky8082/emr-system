@@ -138,13 +138,13 @@ const ManagePricing = () => {
 
   // ✅ Get category label
   const getCategoryLabel = (category) => {
-    const map = {
-      'FPP': '💰 FPP (100%)',
-      'NHIS': '🏥 NHIS (10%)',
-      'CORPORATE': '🏢 Corporate (200%)',
-    };
-    return map[category] || category;
+  const map = {
+    'FPP': '💰 FPP (100%)',
+    'NHIS': '🏥 NHIS (10%)',
+    'RETAINER': '🏢 Retainer (200%)',
   };
+  return map[category] || category;
+};
 
   if (loading) return <div className="spinner" />;
 
@@ -270,15 +270,16 @@ const ManagePricing = () => {
                   <div className="form-group">
                     <label>Category *</label>
                     <select
-                      name="category"
-                      value={formData.category}
-                      onChange={handleInputChange}
-                      required
-                    >
-                      <option value="FPP">💰 FPP - Free Paying Patient</option>
-                      <option value="NHIS">🏥 NHIS - National Health Insurance</option>
-                      <option value="CORPORATE">🏢 Corporate/Company</option>
-                    </select>
+  name="category"
+  value={formData.category}
+  onChange={handleInputChange}
+  required
+>
+  <option value="FPP">💰 FPP - Free Paying Patient</option>
+  <option value="NHIS">🏥 NHIS - National Health Insurance</option>
+  <option value="RETAINER">🏢 Retainer - Corporate/Company</option>
+</select>
+
                   </div>
                 </div>
 
@@ -364,7 +365,7 @@ const ManagePricing = () => {
                         disabled
                         style={{ background: '#f1f5f9' }}
                       />
-                      <small style={{ color: '#92400e' }}>🏢 200% of base price (auto-calculated)</small>
+                      <small style={{ color: '#92400e' }}>🏢 Retainer patients pay 200% of base price</small>
                     </div>
                   </div>
                 </div>

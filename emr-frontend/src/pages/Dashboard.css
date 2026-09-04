@@ -825,3 +825,21 @@
   justify-content: flex-end;
   gap: 12px;
 }
+
+.category-retainer {
+    background: linear-gradient(135deg, #7c3aed, #6d28d9);
+    color: white;
+    border: 1px solid #6d28d9;
+}
+
+.category-fpp {
+    background: linear-gradient(135deg, #0f3460, #1a4a7a);
+    color: white;
+    border: 1px solid #1a4a7a;
+}
+
+.category-nhis {
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: white;
+    border: 1px solid #059669;
+}

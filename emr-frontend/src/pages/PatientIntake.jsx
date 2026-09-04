@@ -47,13 +47,13 @@ const PatientIntake = () => {
 
   // Get category info
   const getCategoryInfo = (category) => {
-    const map = {
-      'FPP': { label: '💰 FPP', className: 'category-fpp', tooltip: 'Free Paying Patient - Full Payment' },
-      'NHIS': { label: '🏥 NHIS', className: 'category-nhis', tooltip: 'National Health Insurance - 10% Payment' },
-      'CORPORATE': { label: '🏢 Corporate', className: 'category-corporate', tooltip: 'Corporate/Company - Double Rate' },
-    };
-    return map[category] || map['FPP'];
+  const map = {
+    'FPP': { label: '💰 FPP', className: 'category-fpp', tooltip: 'Free Paying Patient - Full Payment' },
+    'NHIS': { label: '🏥 NHIS', className: 'category-nhis', tooltip: 'National Health Insurance - 10% Payment' },
+    'RETAINER': { label: '🏢 Retainer', className: 'category-retainer', tooltip: 'Corporate Retainer - Double Rate' },
   };
+  return map[category] || map['FPP'];
+};
 
   // Fetch wallet balance for a patient
   const fetchWalletBalance = async (patientId) => {

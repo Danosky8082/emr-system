@@ -24,20 +24,30 @@ const DoctorDashboard = () => {
   });
   const [showVitalModal, setShowVitalModal] = useState(false);
 
-  const fetchPatients = async () => {
-    try {
-      const res = await axios.get('http://localhost:3000/api/doctor/patients', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      // Filter out any journeys that don't have a patient
-      const validJourneys = res.data.filter(j => j.patient != null);
-      setPatients(validJourneys);
-    } catch (error) {
-      toast.error('Failed to load patients');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // src/pages/DoctorDashboard.jsx - Update the fetch function
+
+const fetchPatients = async () => {
+  try {
+    // Use different endpoints based on role
+    let endpoint = 'http://localhost:3000/api/doctor/patients';
+    
+    // Surgeons and Psychiatrists can also use this endpoint
+    // Or they can use their own endpoints if created
+    
+    const res = await axios.get(endpoint, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    
+    // Filter out any journeys that don't have a patient
+    const validJourneys = (res.data || []).filter(j => j.patient != null);
+    setPatients(validJourneys);
+  } catch (error) {
+    console.error('❌ Failed to load patients:', error);
+    toast.error('Failed to load patients');
+  } finally {
+    setLoading(false);
+  }
+};
 
   useEffect(() => {
     if (token) fetchPatients();

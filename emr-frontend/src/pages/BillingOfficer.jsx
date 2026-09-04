@@ -1,4 +1,4 @@
-// src/pages/BillingOfficer.jsx - COMPLETE WITH TRANSACTIONS HISTORY
+// src/pages/BillingOfficer.jsx - COMPLETE WITH TRANSACTIONS HISTORY & RETAINER SUPPORT
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -22,6 +22,16 @@ const BillingOfficer = () => {
   const [walletBalances, setWalletBalances] = useState({});
   const [searchTerm, setSearchTerm] = useState('');
   const [dateFilter, setDateFilter] = useState('');
+
+  // ✅ GET CATEGORY INFO WITH RETAINER SUPPORT
+  const getCategoryInfo = (category) => {
+    const map = {
+      'FPP': { label: '💰 FPP', className: 'category-fpp' },
+      'NHIS': { label: '🏥 NHIS', className: 'category-nhis' },
+      'RETAINER': { label: '🏢 Retainer', className: 'category-retainer' },
+    };
+    return map[category] || map['FPP'];
+  };
 
   // ✅ FETCH PENDING BILLS
   const fetchPendingBills = async () => {
@@ -321,6 +331,7 @@ const BillingOfficer = () => {
                 {pendingBills.length > 0 ? (
                   pendingBills.map(bill => {
                     const patient = bill.patient || bill.Patient;
+                    const categoryInfo = getCategoryInfo(patient?.patientCategory);
                     const items = bill.items || [];
                     const pendingItems = items.filter(i => i.status === 'Pending');
                     const totalPending = pendingItems.reduce((sum, i) => sum + i.amount, 0);
@@ -336,9 +347,19 @@ const BillingOfficer = () => {
                           </div>
                         </td>
                         <td>
-                          <span className={`category-badge ${patient?.patientCategory === 'NHIS' ? 'category-nhis' : patient?.patientCategory === 'CORPORATE' ? 'category-corporate' : 'category-fpp'}`}>
-                            {patient?.patientCategory || 'FPP'}
+                          <span className={`category-badge ${categoryInfo.className}`}>
+                            {categoryInfo.label}
                           </span>
+                          {patient?.patientCategory === 'RETAINER' && patient?.retainerCompany && (
+                            <div style={{ fontSize: '10px', color: '#6b7280', marginTop: '2px' }}>
+                              {patient.retainerCompany}
+                            </div>
+                          )}
+                          {patient?.patientCategory === 'NHIS' && patient?.insuranceProvider && (
+                            <div style={{ fontSize: '10px', color: '#6b7280', marginTop: '2px' }}>
+                              {patient.insuranceProvider}
+                            </div>
+                          )}
                         </td>
                         <td>
                           <div style={{ fontSize: '12px' }}>
@@ -489,6 +510,7 @@ const BillingOfficer = () => {
                   <th>Date</th>
                   <th>Invoice #</th>
                   <th>Patient</th>
+                  <th>Category</th>
                   <th>Items</th>
                   <th>Total (₦)</th>
                   <th>Paid (₦)</th>
@@ -501,6 +523,7 @@ const BillingOfficer = () => {
                 {filteredHistory.length > 0 ? (
                   filteredHistory.map(bill => {
                     const patient = bill.patient || bill.Patient;
+                    const categoryInfo = getCategoryInfo(patient?.patientCategory);
                     const items = bill.items || [];
                     const paidItems = items.filter(i => i.status === 'Paid');
                     
@@ -513,6 +536,11 @@ const BillingOfficer = () => {
                           <div style={{ fontSize: '11px', color: '#6b7280' }}>
                             {patient?.hospitalId}
                           </div>
+                        </td>
+                        <td>
+                          <span className={`category-badge ${categoryInfo.className}`}>
+                            {categoryInfo.label}
+                          </span>
                         </td>
                         <td>
                           <div style={{ fontSize: '11px' }}>
@@ -561,7 +589,7 @@ const BillingOfficer = () => {
                     );
                   })
                 ) : (
-                  <tr><td colSpan="9" className="text-center">
+                  <tr><td colSpan="10" className="text-center">
                     {searchTerm || dateFilter ? 'No transactions match your filters.' : 'No transaction history yet. Process some payments to see them here.'}
                   </td></tr>
                 )}
@@ -790,10 +818,10 @@ const BillingOfficer = () => {
                 <br /> This is a computer-generated receipt.
                 <br /> Issued by: {receiptData.issuedBy || 'Unknown Staff'}
                 {receiptData.regenerated && (
-  <div style={{ marginTop: '4px', color: '#6b7280' }}>
-    <span style={{ fontSize: '14px' }}>🔄 This receipt was regenerated on {new Date().toLocaleString()}</span>
-  </div>
-)}
+                  <div style={{ marginTop: '4px', color: '#6b7280' }}>
+                    <span style={{ fontSize: '14px' }}>🔄 This receipt was regenerated on {new Date().toLocaleString()}</span>
+                  </div>
+                )}
               </div>
             </div>
 

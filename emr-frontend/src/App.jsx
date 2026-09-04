@@ -1,4 +1,4 @@
-// src/App.jsx - Complete with all module routes
+// src/App.jsx - COMPLETE WITH ALL ROUTES
 
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
@@ -50,7 +50,8 @@ import OptometryDashboard from './pages/OptometryDashboard';
 import PaediatricDashboard from './pages/PaediatricDashboard';
 import SurgeryDashboard from './pages/SurgeryDashboard';
 import PsychiatryDashboard from './pages/PsychiatryDashboard';
-import ModulePatientList from './pages/ModulePatientList'; // ✅ ADD THIS IMPORT
+import ModulePatientList from './pages/ModulePatientList';
+import ServiceConfig from './pages/ServiceConfig';
 
 // ============ PATIENT PORTAL IMPORTS ============
 import PatientLogin from './pages/PatientLogin';
@@ -59,7 +60,6 @@ import PatientChangeCredentials from './pages/PatientChangeCredentials';
 
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
-import ServiceConfig from './pages/ServiceConfig';
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('emr_token'));
@@ -141,7 +141,7 @@ function App() {
           <Route path="doctor-queue" element={<DoctorQueue />} />
           <Route path="queue" element={<QueueDashboard />} />
           
-          {/* ✅ MODULE PATIENT LISTS - ADD THESE */}
+          {/* Module Patient Lists */}
           <Route path="pharmacy-patients" element={<ModulePatientList moduleType="pharmacy" />} />
           <Route path="lab-patients" element={<ModulePatientList moduleType="lab" />} />
           <Route path="radiology-patients" element={<ModulePatientList moduleType="radiology" />} />
@@ -154,19 +154,11 @@ function App() {
           {/* Radiology */}
           <Route path="radiology-dashboard" element={<RadiologyDashboard />} />
           
-          {/* Dental */}
+          {/* Specialist Modules */}
           <Route path="dental" element={<DentalDashboard />} />
-          
-          {/* Optometry */}
           <Route path="optometry" element={<OptometryDashboard />} />
-          
-          {/* Paediatrics */}
           <Route path="paediatric" element={<PaediatricDashboard />} />
-          
-          {/* Surgery */}
           <Route path="surgery" element={<SurgeryDashboard />} />
-          
-          {/* Psychiatry */}
           <Route path="psychiatry" element={<PsychiatryDashboard />} />
           
           {/* Finance */}
