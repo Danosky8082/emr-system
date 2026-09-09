@@ -1,21 +1,27 @@
-// src/pages/PharmacyDashboard.jsx
+// src/pages/PharmacyDashboard.jsx - WITH STOCK ALERTS
+
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
+import { Link } from 'react-router-dom';
 
 const PharmacyDashboard = () => {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [stats, setStats] = useState({
     totalMedications: 0,
     lowStock: 0,
+    outOfStock: 0,
     totalTransactions: 0,
     pendingAuthorizations: 0
   });
   const [recentTransactions, setRecentTransactions] = useState([]);
   const [pendingAuths, setPendingAuths] = useState([]);
+  const [lowStockItems, setLowStockItems] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const isPharmacist = user?.role === 'Pharmacist' || user?.role === 'Admin' || user?.role === 'ITAdmin';
 
   useEffect(() => {
     fetchDashboardData();
@@ -24,14 +30,26 @@ const PharmacyDashboard = () => {
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
+      // Fetch medications for stock analysis
+      const medRes = await axios.get('http://localhost:3000/api/medications', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      const medications = medRes.data || [];
+      const lowStock = medications.filter(m => m.stockQuantity > 0 && m.stockQuantity <= m.reorderLevel);
+      const outOfStock = medications.filter(m => m.stockQuantity <= 0);
+
+      setLowStockItems(lowStock);
+
+      // Fetch dashboard stats
       const res = await axios.get('http://localhost:3000/api/pharmacy/dashboard', {
         headers: { Authorization: `Bearer ${token}` }
       });
       
-      // ✅ Safely set data with fallbacks
       setStats({
-        totalMedications: res.data.statistics?.totalMedications || 0,
-        lowStock: res.data.statistics?.lowStock || 0,
+        totalMedications: medications.length || 0,
+        lowStock: lowStock.length || 0,
+        outOfStock: outOfStock.length || 0,
         totalTransactions: res.data.statistics?.totalTransactions || 0,
         pendingAuthorizations: res.data.statistics?.pendingAuthorizations || 0
       });
@@ -39,13 +57,7 @@ const PharmacyDashboard = () => {
       setPendingAuths(res.data.pendingAuths || []);
     } catch (error) {
       console.error('Dashboard error:', error);
-      if (error.response?.status === 404) {
-        toast.error('Pharmacy dashboard endpoint not found. Please check server configuration.');
-      } else if (error.response?.status === 403) {
-        toast.error('You do not have permission to view the pharmacy dashboard.');
-      } else {
-        toast.error('Failed to load dashboard data');
-      }
+      toast.error('Failed to load dashboard data');
     } finally {
       setLoading(false);
     }
@@ -57,9 +69,16 @@ const PharmacyDashboard = () => {
     <div className="dashboard">
       <div className="page-header">
         <h2>💊 Pharmacy Dashboard</h2>
-        <button className="btn btn-primary" onClick={fetchDashboardData}>
-          🔄 Refresh
-        </button>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button className="btn btn-primary" onClick={fetchDashboardData}>
+            🔄 Refresh
+          </button>
+          {isPharmacist && (
+            <Link to="/pharmacy" className="btn btn-secondary">
+              📦 Manage Inventory
+            </Link>
+          )}
+        </div>
       </div>
 
       <div className="stats-grid">
@@ -79,6 +98,14 @@ const PharmacyDashboard = () => {
           </div>
         </div>
 
+        <div className="stat-card" style={{ borderLeft: '4px solid #dc2626' }}>
+          <div className="stat-icon">❌</div>
+          <div className="stat-info">
+            <div className="stat-value" style={{ color: '#dc2626' }}>{stats.outOfStock || 0}</div>
+            <div className="stat-label">Out of Stock</div>
+          </div>
+        </div>
+
         <div className="stat-card">
           <div className="stat-icon">📋</div>
           <div className="stat-info">
@@ -95,6 +122,53 @@ const PharmacyDashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* Low Stock Alert */}
+      {lowStockItems.length > 0 && (
+        <div style={{
+          background: '#fef3c7',
+          border: '2px solid #f59e0b',
+          borderRadius: '12px',
+          padding: '16px 20px',
+          marginBottom: '20px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '24px' }}>⚠️</span>
+            <div>
+              <strong style={{ color: '#92400e' }}>Low Stock Alert</strong>
+              <p style={{ margin: '4px 0 0 0', color: '#78350f', fontSize: '14px' }}>
+                The following medications are running low and need to be reordered:
+              </p>
+            </div>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {lowStockItems.slice(0, 5).map(m => (
+                <span key={m.id} style={{
+                  padding: '4px 12px',
+                  borderRadius: '16px',
+                  background: 'white',
+                  fontSize: '12px',
+                  fontWeight: '600',
+                  color: '#92400e',
+                  border: '1px solid #f59e0b'
+                }}>
+                  {m.name} ({m.stockQuantity} left)
+                </span>
+              ))}
+              {lowStockItems.length > 5 && (
+                <span style={{
+                  padding: '4px 12px',
+                  borderRadius: '16px',
+                  background: '#f3f4f6',
+                  fontSize: '12px',
+                  color: '#6b7280'
+                }}>
+                  +{lowStockItems.length - 5} more
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Recent Transactions */}
       <div className="section">

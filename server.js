@@ -135,7 +135,7 @@ const authenticate = async (req, res, next) => {
 };
 
 // ============================================================
-// FIXED AUTHORIZE MIDDLEWARE - Case insensitive with better logging
+// AUTHORIZE MIDDLEWARE - CASE INSENSITIVE WITH BETTER LOGGING
 // ============================================================
 
 const authorize = (...roles) => {
@@ -217,17 +217,17 @@ const checkPermission = (permissionKey) => {
         }
       }
       if (permissionKey === 'antenatal') {
-        const allowedRoles = ['Obstetrician', 'Midwife', 'Nurse', 'Doctor', 'Records'];
-        if (allowedRoles.includes(userRole)) {
-          return next();
-        }
-      }
+  const allowedRoles = ['Obstetrician', 'Midwife', 'Nurse', 'Doctor', 'Records', 'Paediatrician'];
+  if (allowedRoles.includes(userRole)) {
+    return next();
+  }
+}
       if (permissionKey === 'laborAndDelivery') {
-        const allowedRoles = ['Obstetrician', 'Midwife', 'Nurse', 'Doctor'];
-        if (allowedRoles.includes(userRole)) {
-          return next();
-        }
-      }
+  const allowedRoles = ['Obstetrician', 'Midwife', 'Nurse', 'Doctor', 'Paediatrician'];
+  if (allowedRoles.includes(userRole)) {
+    return next();
+  }
+}
       if (permissionKey === 'dental') {
         if (['Dentist'].includes(userRole)) {
           return next();
@@ -2316,7 +2316,7 @@ app.get('/api/doctor/patients', authenticate, async (req, res) => {
   try {
     console.log('👨‍⚕️ Doctor patients request by:', req.user?.role, 'ID:', req.user?.id);
     
-    // ✅ Allow Admin and ITAdmin users to access this endpoint
+    // ✅ Allow: Admin, ITAdmin, Doctor, Obstetrician, Paediatrician
     const userRole = req.user?.role || '';
     const isAdmin = ['Admin', 'ITAdmin'].includes(userRole);
     const isDoctor = ['Doctor', 'Obstetrician', 'Paediatrician'].includes(userRole);
@@ -2329,8 +2329,6 @@ app.get('/api/doctor/patients', authenticate, async (req, res) => {
       });
     }
     
-    // If user is Admin, we need to fetch their assigned clinics/wards
-    // If user is Admin but has no assignments, return all patients
     const staff = await prisma.staff.findUnique({
       where: { id: req.user.id },
       include: { 
@@ -2347,12 +2345,10 @@ app.get('/api/doctor/patients', authenticate, async (req, res) => {
     const clinicIds = staff.StaffClinic?.map(c => c.clinicId) || [];
     const wardIds = staff.StaffWard?.map(w => w.wardId) || [];
     
-    // For Admin users, if no assignments, return all patients
     let whereClause = {};
     if (isAdmin) {
       if (clinicIds.length === 0 && wardIds.length === 0) {
         console.log('🔄 Admin with no assignments - returning ALL patients');
-        // Admin can see all patients
         whereClause = {
           status: { in: ['SENT_TO_DESTINATION', 'COMPLETED'] }
         };
@@ -2366,7 +2362,6 @@ app.get('/api/doctor/patients', authenticate, async (req, res) => {
         };
       }
     } else {
-      // For Doctors, only show assigned patients
       if (clinicIds.length === 0 && wardIds.length === 0) {
         console.log('⚠️ No clinics or wards assigned to this doctor');
         return res.json([]);
@@ -2379,8 +2374,6 @@ app.get('/api/doctor/patients', authenticate, async (req, res) => {
         ]
       };
     }
-    
-    console.log('🔍 Where clause:', JSON.stringify(whereClause, null, 2));
     
     const journeys = await prisma.patientJourney.findMany({
       where: whereClause,
@@ -2416,7 +2409,6 @@ app.get('/api/doctor/patients', authenticate, async (req, res) => {
   }
 });
 
-
 // ============================================================
 // NURSE PATIENTS ENDPOINT - Allow Admin users
 // ============================================================
@@ -2425,15 +2417,16 @@ app.get('/api/nurse/patients', authenticate, async (req, res) => {
   try {
     console.log('👩‍⚕️ Nurse patients request by:', req.user?.role, 'ID:', req.user?.id);
     
-    // ✅ Allow Admin and ITAdmin users to access this endpoint
+    // ✅ Allow: Admin, ITAdmin, Nurse, Midwife, Doctor, Obstetrician, Paediatrician
     const userRole = req.user?.role || '';
     const isAdmin = ['Admin', 'ITAdmin'].includes(userRole);
-    const isNurse = ['Nurse', 'Admin', 'Midwife'].includes(userRole);
+    const isNurse = ['Nurse', 'Midwife'].includes(userRole);
+    const isDoctor = ['Doctor', 'Obstetrician', 'Paediatrician'].includes(userRole);
     
-    if (!isAdmin && !isNurse) {
+    if (!isAdmin && !isNurse && !isDoctor) {
       console.log(`❌ User ${userRole} does not have access to nurse patients endpoint`);
       return res.status(403).json({ 
-        error: 'Access denied. Only Nurses, Midwives, and Admins can view this page.',
+        error: 'Access denied. Only Nurses, Midwives, Doctors, Paediatricians, and Admins can view this page.',
         userRole: userRole 
       });
     }
@@ -2472,7 +2465,7 @@ app.get('/api/nurse/patients', authenticate, async (req, res) => {
       }
     } else {
       if (clinicIds.length === 0 && wardIds.length === 0) {
-        console.log('⚠️ No clinics or wards assigned to this nurse');
+        console.log('⚠️ No clinics or wards assigned to this staff');
         return res.json([]);
       }
       whereClause = {
@@ -2517,6 +2510,8 @@ app.get('/api/nurse/patients', authenticate, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+
 
 // ============================================================
 // PAEDIATRICIAN ENDPOINTS
@@ -2836,7 +2831,7 @@ app.patch('/api/prescriptions/:id/dispense', authenticate, authorize('Pharmacist
 // LAB ORDER ENDPOINTS
 // ============================================================
 
-app.get('/api/lab-orders', authenticate, authorize('Doctor', 'Nurse', 'Obstetrician', 'Midwife', 'Admin', 'LabTechnician', 'LabScientist'), async (req, res) => {
+app.get('/api/lab-orders', authenticate, authorize('Doctor', 'Nurse', 'Obstetrician', 'Midwife', 'Admin', 'LabTechnician', 'LabScientist', 'Paediatrician'), async (req, res) => {
   try {
     let where = {};
     const userRole = req.user.role;
@@ -2902,7 +2897,7 @@ app.post('/api/lab-orders', authenticate, authorize('Doctor', 'Nurse', 'Obstetri
   }
 });
 
-app.patch('/api/lab-orders/:id/results', authenticate, authorize('Doctor', 'Nurse', 'LabTechnician', 'LabScientist', 'Admin'), async (req, res) => {
+app.patch('/api/lab-orders/:id/results', authenticate, authorize('Doctor', 'Nurse', 'LabTechnician', 'LabScientist', 'Admin', 'Paediatrician'), async (req, res) => {
   try {
     const { id } = req.params;
     const { result, status } = req.body;
@@ -2939,7 +2934,7 @@ app.patch('/api/lab-orders/:id/results', authenticate, authorize('Doctor', 'Nurs
   }
 });
 
-app.patch('/api/lab-orders/:id/status', authenticate, authorize('Doctor', 'Nurse', 'LabTechnician', 'LabScientist', 'Admin'), async (req, res) => {
+app.patch('/api/lab-orders/:id/status', authenticate, authorize('Doctor', 'Nurse', 'LabTechnician', 'LabScientist', 'Admin', 'Paediatrician'), async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
@@ -3994,6 +3989,148 @@ app.get('/api/pharmacy/transactions', authenticate, authorize('Admin', 'ITAdmin'
     res.json(formattedTransactions);
   } catch (error) {
     console.error('Get transactions error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================================
+// PHARMACY STOCK MANAGEMENT
+// ============================================================
+
+// ✅ GET medication by name (for stock lookup)
+app.get('/api/medications/search/:name', authenticate, authorize('Admin', 'ITAdmin', 'Pharmacist'), async (req, res) => {
+  try {
+    const { name } = req.params;
+    const medications = await prisma.medication.findMany({
+      where: {
+        name: { contains: name, mode: 'insensitive' }
+      },
+      orderBy: { name: 'asc' }
+    });
+    res.json(medications);
+  } catch (error) {
+    console.error('Search medications error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ✅ UPDATE stock with transaction logging
+app.patch('/api/medications/:id/stock', authenticate, authorize('Admin', 'ITAdmin', 'Pharmacist'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { quantity, transactionType, note, patientId } = req.body;
+    
+    if (!quantity || !transactionType) {
+      return res.status(400).json({ error: 'Missing required fields: quantity, transactionType' });
+    }
+    
+    const medication = await prisma.medication.findUnique({ where: { id } });
+    if (!medication) {
+      return res.status(404).json({ error: 'Medication not found' });
+    }
+    
+    let newStock = medication.stockQuantity;
+    const validTypes = ['Purchase', 'Dispensed', 'Returned', 'Adjusted', 'Damaged', 'Expired'];
+    if (!validTypes.includes(transactionType)) {
+      return res.status(400).json({ error: `Invalid transaction type. Valid: ${validTypes.join(', ')}` });
+    }
+    
+    if (transactionType === 'Purchase' || transactionType === 'Returned') {
+      newStock += quantity;
+    } else if (transactionType === 'Dispensed' || transactionType === 'Adjusted' || 
+               transactionType === 'Damaged' || transactionType === 'Expired') {
+      if (medication.stockQuantity < quantity) {
+        return res.status(400).json({ 
+          error: `Insufficient stock. Available: ${medication.stockQuantity}, Required: ${quantity}`,
+          available: medication.stockQuantity,
+          required: quantity
+        });
+      }
+      newStock -= quantity;
+    }
+    
+    const result = await prisma.$transaction(async (tx) => {
+      // Update medication stock
+      const updatedMedication = await tx.medication.update({
+        where: { id },
+        data: { 
+          stockQuantity: newStock,
+          updatedAt: new Date()
+        }
+      });
+      
+      // Create transaction record
+      const transaction = await tx.medicationTransaction.create({
+        data: {
+          medicationId: id,
+          transactionType,
+          quantity: parseInt(quantity) || 0,
+          unitPrice: medication.unitPrice,
+          totalPrice: (parseInt(quantity) || 0) * medication.unitPrice,
+          note: note || `Stock ${transactionType}`,
+          staffId: req.user.id,
+          reference: `${transactionType.toUpperCase()}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+          patientId: patientId || null,
+          createdAt: new Date()
+        }
+      });
+      
+      // Audit log
+      await tx.auditLog.create({
+        data: {
+          staffId: req.user.id,
+          action: 'UPDATE_STOCK',
+          module: 'Pharmacy',
+          details: `Updated stock for ${medication.name}: ${transactionType} ${quantity} units. New stock: ${newStock}`
+        }
+      });
+      
+      return { updatedMedication, transaction };
+    });
+    
+    res.json({
+      message: `Stock updated successfully: ${transactionType} ${quantity} units`,
+      medication: result.updatedMedication,
+      transaction: result.transaction,
+      newStock: result.updatedMedication.stockQuantity,
+      isLowStock: result.updatedMedication.stockQuantity <= result.updatedMedication.reorderLevel
+    });
+  } catch (error) {
+    console.error('Update stock error:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// ✅ GET medication stock by name (for quick lookup)
+app.get('/api/medications/stock/:name', authenticate, authorize('Admin', 'ITAdmin', 'Pharmacist', 'Doctor'), async (req, res) => {
+  try {
+    const { name } = req.params;
+    const medication = await prisma.medication.findFirst({
+      where: {
+        name: { contains: name, mode: 'insensitive' }
+      },
+      select: {
+        id: true,
+        name: true,
+        genericName: true,
+        stockQuantity: true,
+        reorderLevel: true,
+        unitPrice: true,
+        expiryDate: true
+      }
+    });
+    
+    if (!medication) {
+      return res.status(404).json({ error: 'Medication not found' });
+    }
+    
+    res.json({
+      ...medication,
+      isLowStock: medication.stockQuantity <= medication.reorderLevel,
+      isOutOfStock: medication.stockQuantity <= 0
+    });
+  } catch (error) {
+    console.error('Get stock error:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -5218,7 +5355,7 @@ app.get('/api/patients/:patientId/vitals', authenticate, async (req, res) => {
   }
 });
 
-app.post('/api/vitals', authenticate, authorize('Nurse', 'Midwife', 'Doctor', 'Obstetrician', 'Admin'), async (req, res) => {
+app.post('/api/vitals', authenticate, authorize('Nurse', 'Midwife', 'Doctor', 'Obstetrician', 'Admin', 'Paediatrician'), async (req, res) => {
   try {
     const { patientId, bloodPressureSystolic, bloodPressureDiastolic, heartRate, temperature, respiratoryRate, oxygenSaturation, weight, height, notes } = req.body;
     if (!patientId) {
@@ -5257,106 +5394,7 @@ app.post('/api/vitals', authenticate, authorize('Nurse', 'Midwife', 'Doctor', 'O
 // ANTENATAL MODULE ENDPOINTS
 // ============================================================
 
-app.get('/api/pregnancies', authenticate, checkPermission('antenatal'), async (req, res) => {
-  try {
-    const role = req.user.role;
-    console.log(`🔍 Fetching pregnancies for role: ${role}`);
-    
-    let where = {};
-    
-    if (['Nurse', 'Midwife'].includes(role)) {
-      const staff = await prisma.staff.findUnique({
-        where: { id: req.user.id },
-        include: {
-          StaffClinic: { select: { clinicId: true } },
-          StaffWard: { select: { wardId: true } }
-        }
-      });
-      
-      const clinicIds = staff?.StaffClinic?.map(c => c.clinicId) || [];
-      const wardIds = staff?.StaffWard?.map(w => w.wardId) || [];
-      
-      if (clinicIds.length === 0 && wardIds.length === 0) {
-        return res.json([]);
-      }
-      
-      const patientJourneys = await prisma.patientJourney.findMany({
-        where: {
-          status: { in: ['SENT_TO_DESTINATION', 'COMPLETED'] },
-          OR: [
-            { clinicId: { in: clinicIds } },
-            { wardId: { in: wardIds } }
-          ]
-        },
-        select: { patientId: true }
-      });
-      
-      const patientIds = patientJourneys.map(j => j.patientId);
-      if (patientIds.length === 0) {
-        return res.json([]);
-      }
-      where = { patientId: { in: patientIds } };
-    }
-    
-    const pregnancies = await prisma.pregnancy.findMany({
-      where,
-      include: {
-        Patient: {
-          select: {
-            id: true,
-            hospitalId: true,
-            firstName: true,
-            lastName: true,
-            gender: true,
-            dateOfBirth: true,
-            phone: true,
-            email: true
-          }
-        },
-        AntenatalVisit: {
-          orderBy: { visitDate: 'desc' },
-          take: 1,
-          select: {
-            id: true,
-            visitDate: true,
-            gestationalWeeks: true,
-            bloodPressure: true,
-            heartRate: true,
-            weight: true,
-            fundalHeight: true,
-            notes: true
-          }
-        },
-        Delivery: {
-          select: {
-            id: true,
-            deliveryDate: true,
-            type: true,
-            babyGender: true,
-            babyWeight: true,
-            babyApgar: true,
-            outcome: true
-          }
-        }
-      },
-      orderBy: { createdAt: 'desc' }
-    });
-    
-    const formattedPregnancies = pregnancies.map(p => ({
-      ...p,
-      patient: p.Patient,
-      visits: p.AntenatalVisit || [],
-      delivery: p.Delivery
-    }));
-    
-    console.log(`✅ Found ${formattedPregnancies.length} pregnancies`);
-    res.json(formattedPregnancies);
-  } catch (error) {
-    console.error('Get pregnancies error:', error);
-    res.status(500).json({ error: error.message || 'Failed to fetch pregnancies' });
-  }
-});
-
+// GET single pregnancy by ID
 app.get('/api/pregnancies/:id', authenticate, checkPermission('antenatal'), async (req, res) => {
   try {
     const { id } = req.params;
@@ -5422,47 +5460,193 @@ app.get('/api/pregnancies/:id', authenticate, checkPermission('antenatal'), asyn
   }
 });
 
+// ============================================================
+// PREGNANCY ENDPOINTS - COMPLETE FIXED
+// ============================================================
+
+// GET all pregnancies (FIXED - only one version, with correct Delivery fields)
+app.get('/api/pregnancies', authenticate, checkPermission('antenatal'), async (req, res) => {
+  try {
+    const role = req.user.role;
+    console.log(`🔍 Fetching pregnancies for role: ${role}`);
+    
+    let where = {};
+    
+    if (['Nurse', 'Midwife'].includes(role)) {
+      const staff = await prisma.staff.findUnique({
+        where: { id: req.user.id },
+        include: {
+          StaffClinic: { select: { clinicId: true } },
+          StaffWard: { select: { wardId: true } }
+        }
+      });
+      
+      const clinicIds = staff?.StaffClinic?.map(c => c.clinicId) || [];
+      const wardIds = staff?.StaffWard?.map(w => w.wardId) || [];
+      
+      if (clinicIds.length === 0 && wardIds.length === 0) {
+        return res.json([]);
+      }
+      
+      const patientJourneys = await prisma.patientJourney.findMany({
+        where: {
+          status: { in: ['SENT_TO_DESTINATION', 'COMPLETED'] },
+          OR: [
+            { clinicId: { in: clinicIds } },
+            { wardId: { in: wardIds } }
+          ]
+        },
+        select: { patientId: true }
+      });
+      
+      const patientIds = patientJourneys.map(j => j.patientId);
+      if (patientIds.length === 0) {
+        return res.json([]);
+      }
+      where = { patientId: { in: patientIds } };
+    }
+    
+    const pregnancies = await prisma.pregnancy.findMany({
+      where,
+      include: {
+        Patient: {  // ✅ MUST BE CAPITAL "P" - matches your schema!
+          select: {
+            id: true,
+            hospitalId: true,
+            firstName: true,
+            lastName: true,
+            gender: true,
+            dateOfBirth: true,
+            phone: true,
+            email: true
+          }
+        },
+        AntenatalVisit: {
+          orderBy: { visitDate: 'desc' },
+          take: 1,
+          select: {
+            id: true,
+            visitDate: true,
+            gestationalWeeks: true,
+            bloodPressure: true,
+            heartRate: true,
+            weight: true,
+            fundalHeight: true,
+            notes: true
+          }
+        },
+        Delivery: {
+          select: {
+            id: true,
+            deliveryDate: true,
+            type: true,
+            babyGender: true,
+            babyWeight: true,
+            // ✅ Use individual Apgar scores
+            babyApgar1min: true,
+            babyApgar5min: true,
+            babyApgar10min: true,
+            babyLength: true,
+            babyHeadCircumference: true,
+            maternalCondition: true,
+            outcome: true,
+            notes: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    
+    const formattedPregnancies = pregnancies.map(p => ({
+      ...p,
+      patient: p.Patient,  // ✅ Capital "P"
+      visits: p.AntenatalVisit || [],
+      delivery: p.Delivery
+    }));
+    
+    console.log(`✅ Found ${formattedPregnancies.length} pregnancies`);
+    res.json(formattedPregnancies);
+  } catch (error) {
+    console.error('Get pregnancies error:', error);
+    res.status(500).json({ error: error.message || 'Failed to fetch pregnancies' });
+  }
+});
+
+// CREATE pregnancy - FIXED
 app.post('/api/pregnancies', authenticate, checkPermission('antenatal'), async (req, res) => {
   try {
     const { patientId, expectedDelivery, gravida, para, lastMenstrualPeriod, estimatedDueDate, riskLevel, notes } = req.body;
+    
     if (!patientId || !expectedDelivery) {
       return res.status(400).json({ error: 'Patient and expected delivery date are required.' });
     }
-    const patient = await prisma.patient.findUnique({ where: { hospitalId: patientId } });
+    
+    // Find patient by hospitalId
+    const patient = await prisma.patient.findUnique({ 
+      where: { hospitalId: patientId } 
+    });
+    
     if (!patient) {
       return res.status(404).json({ error: 'Patient not found. Please register the patient first.' });
     }
+    
+    // Check for existing active pregnancy
     const existingPregnancy = await prisma.pregnancy.findFirst({
-      where: { patientId: patient.id, status: 'Active' }
+      where: { 
+        patientId: patient.id, 
+        status: 'Active' 
+      }
     });
+    
     if (existingPregnancy) {
       return res.status(400).json({ error: 'This patient already has an active pregnancy.' });
     }
+    
+    // ✅ FIXED: Use "Patient" (capitalized) in include
     const pregnancy = await prisma.pregnancy.create({
       data: {
-        patientId: patient.id, expectedDelivery: new Date(expectedDelivery),
-        gravida: parseInt(gravida) || 0, para: parseInt(para) || 0,
+        patientId: patient.id,
+        expectedDelivery: new Date(expectedDelivery),
+        gravida: parseInt(gravida) || 0,
+        para: parseInt(para) || 0,
         lastMenstrualPeriod: lastMenstrualPeriod ? new Date(lastMenstrualPeriod) : null,
         estimatedDueDate: estimatedDueDate ? new Date(estimatedDueDate) : null,
-        riskLevel: riskLevel || 'Low', notes, status: 'Active'
+        riskLevel: riskLevel || 'Low',
+        notes: notes || null,
+        status: 'Active'
       },
-      include: { patient: true }
+      include: {
+        Patient: true,  // ✅ Capital "P" - FIXED
+        AntenatalVisit: true,
+        Delivery: true
+      }
     });
+    
     await prisma.auditLog.create({
       data: {
         staffId: req.user.id,
         action: 'CREATE_PREGNANCY',
         module: 'Antenatal',
-        details: `Pregnancy record created for patient ${pregnancy.patient.hospitalId}`
+        details: `Pregnancy record created for patient ${patient.hospitalId}`
       }
     });
-    res.status(201).json(pregnancy);
+    
+    // Format response
+    const formattedPregnancy = {
+      ...pregnancy,
+      patient: pregnancy.Patient,
+      visits: pregnancy.AntenatalVisit || [],
+      delivery: pregnancy.Delivery
+    };
+    
+    res.status(201).json(formattedPregnancy);
   } catch (error) {
     console.error('Create pregnancy error:', error);
     res.status(400).json({ error: error.message });
   }
 });
 
+// UPDATE pregnancy
 app.put('/api/pregnancies/:id', authenticate, checkPermission('antenatal'), async (req, res) => {
   const { id } = req.params;
   const { status, notes, riskLevel, estimatedDueDate, gravida, para } = req.body;
@@ -5476,11 +5660,16 @@ app.put('/api/pregnancies/:id', authenticate, checkPermission('antenatal'), asyn
     const updated = await prisma.pregnancy.update({
       where: { id },
       data: {
-        status: status || undefined, notes: notes || undefined,
+        status: status || undefined,
+        notes: notes || undefined,
         riskLevel: riskLevel || undefined,
         estimatedDueDate: estimatedDueDate ? new Date(estimatedDueDate) : undefined,
-        gravida: gravidaValue, para: paraValue,
+        gravida: gravidaValue,
+        para: paraValue,
       },
+      include: {
+        Patient: true  // ✅ Capital "P" - FIXED
+      }
     });
     await prisma.auditLog.create({
       data: {
@@ -5500,21 +5689,51 @@ app.put('/api/pregnancies/:id', authenticate, checkPermission('antenatal'), asyn
   }
 });
 
+// ADD VISIT to pregnancy
 app.post('/api/pregnancies/:id/visits', authenticate, checkPermission('antenatal'), async (req, res) => {
   try {
     const { id } = req.params;
     const { visitDate, gestationalWeeks, bloodPressure, heartRate, weight, fundalHeight, notes } = req.body;
+    
+    // Check if pregnancy exists
+    const pregnancy = await prisma.pregnancy.findUnique({
+      where: { id },
+      select: { id: true }
+    });
+    
+    if (!pregnancy) {
+      return res.status(404).json({ error: 'Pregnancy not found' });
+    }
+    
     const visit = await prisma.antenatalVisit.create({
       data: {
-        pregnancyId: id, staffId: req.user.id,
+        pregnancyId: id,
+        staffId: req.user.id,
         visitDate: visitDate ? new Date(visitDate) : new Date(),
         gestationalWeeks: parseInt(gestationalWeeks) || null,
-        bloodPressure, heartRate: parseInt(heartRate) || null,
-        weight: parseFloat(weight) || null, fundalHeight: parseFloat(fundalHeight) || null,
-        notes
+        bloodPressure: bloodPressure || null,
+        heartRate: heartRate ? parseInt(heartRate) : null,
+        weight: weight ? parseFloat(weight) : null,
+        fundalHeight: fundalHeight ? parseFloat(fundalHeight) : null,
+        notes: notes || null
+      },
+      include: {
+        Staff: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true
+          }
+        }
       }
     });
-    await prisma.pregnancy.update({ where: { id }, data: { updatedAt: new Date() } });
+    
+    await prisma.pregnancy.update({ 
+      where: { id }, 
+      data: { updatedAt: new Date() } 
+    });
+    
     res.status(201).json(visit);
   } catch (error) {
     console.error('Add visit error:', error);
@@ -5530,40 +5749,66 @@ app.post('/api/pregnancies/:id/start-labor', authenticate, checkPermission('ante
   try {
     const { id } = req.params;
     const { laborStartTime, contractions, dilation, effacement, bloodPressure, heartRate, notes } = req.body;
+    
+    // Check if pregnancy exists
     const pregnancy = await prisma.pregnancy.findUnique({
       where: { id },
-      include: { Patient: true, AntenatalVisit: { orderBy: { visitDate: 'desc' }, take: 1 } }
+      include: { 
+        Patient: true,
+        AntenatalVisit: { orderBy: { visitDate: 'desc' }, take: 1 }
+      }
     });
+    
     if (!pregnancy) {
       return res.status(404).json({ error: 'Pregnancy not found' });
     }
+    
+    // Check pregnancy status
     if (pregnancy.status === 'Delivered') {
       return res.status(400).json({ error: 'This pregnancy has already been delivered' });
     }
+    
     if (pregnancy.status === 'In Labor') {
       return res.status(400).json({ error: 'Patient is already in labor' });
     }
+    
+    // ✅ FIXED: Use the correct field names from your schema
     const updatedPregnancy = await prisma.pregnancy.update({
       where: { id },
       data: {
         status: 'In Labor',
         laborStartTime: laborStartTime ? new Date(laborStartTime) : new Date(),
-        contractions: contractions || null, dilation: dilation ? parseFloat(dilation) : null,
+        contractions: contractions || null,
+        dilation: dilation ? parseFloat(dilation) : null,
         effacement: effacement ? parseFloat(effacement) : null,
-        laborNotes: notes || null, updatedAt: new Date()
+        laborNotes: notes || null,
+        updatedAt: new Date()
       },
-      include: { Patient: true, AntenatalVisit: { orderBy: { visitDate: 'desc' }, take: 5 } }
+      include: {
+        Patient: true,
+        AntenatalVisit: {
+          orderBy: { visitDate: 'desc' },
+          take: 5
+        }
+      }
     });
+    
+    // Create a visit record for the labor start
     await prisma.antenatalVisit.create({
       data: {
-        pregnancyId: id, staffId: req.user.id, visitDate: new Date(),
+        pregnancyId: id,
+        staffId: req.user.id,
+        visitDate: new Date(),
         gestationalWeeks: pregnancy.estimatedDueDate
           ? Math.floor((new Date() - new Date(pregnancy.estimatedDueDate)) / (1000 * 60 * 60 * 24 * 7)) + 40
           : null,
-        notes: `🟢 LABOR STARTED: ${notes || 'Patient admitted in active labor'}. Contractions: ${contractions || 'Not specified'}. Dilation: ${dilation || 'Not checked'}cm. Effacement: ${effacement || 'Not checked'}%.`,
-        bloodPressure: bloodPressure || null, heartRate: heartRate ? parseInt(heartRate) : null,
+        bloodPressure: bloodPressure || null,
+        heartRate: heartRate ? parseInt(heartRate) : null,
+        notes: `🟢 LABOR STARTED: ${notes || 'Patient admitted in active labor'}. Contractions: ${contractions || 'Not specified'}. Dilation: ${dilation || 'Not checked'}cm. Effacement: ${effacement || 'Not checked'}%.`
       }
     });
+    
+    // Send notification to patient
     await prisma.patient_notifications.create({
       data: {
         patientId: pregnancy.patientId,
@@ -5572,6 +5817,7 @@ app.post('/api/pregnancies/:id/start-labor', authenticate, checkPermission('ante
         type: 'labor'
       }
     });
+    
     await prisma.auditLog.create({
       data: {
         staffId: req.user.id,
@@ -5580,27 +5826,52 @@ app.post('/api/pregnancies/:id/start-labor', authenticate, checkPermission('ante
         details: `Labor started for patient ${pregnancy.Patient?.hospitalId} - ${pregnancy.Patient?.firstName} ${pregnancy.Patient?.lastName}`
       }
     });
-    res.json({ message: '✅ Labor started successfully!', pregnancy: updatedPregnancy, laborStarted: true, time: updatedPregnancy.laborStartTime });
+    
+    const formattedPregnancy = {
+      ...updatedPregnancy,
+      patient: updatedPregnancy.Patient,
+      visits: updatedPregnancy.AntenatalVisit || []
+    };
+    
+    res.json({ 
+      message: '✅ Labor started successfully!', 
+      pregnancy: formattedPregnancy,
+      laborStarted: true,
+      time: updatedPregnancy.laborStartTime
+    });
   } catch (error) {
     console.error('Start labor error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
+// ============================================================
+// UPDATE LABOR PROGRESS - FIXED
+// ============================================================
+
 app.patch('/api/pregnancies/:id/labor-progress', authenticate, checkPermission('antenatal'), async (req, res) => {
   try {
     const { id } = req.params;
     const { contractions, dilation, effacement, fetalHeartRate, maternalHeartRate, bloodPressure, notes } = req.body;
-    const pregnancy = await prisma.pregnancy.findUnique({ where: { id }, include: { Patient: true } });
+    
+    const pregnancy = await prisma.pregnancy.findUnique({ 
+      where: { id }, 
+      include: { Patient: true } 
+    });
+    
     if (!pregnancy) {
       return res.status(404).json({ error: 'Pregnancy not found' });
     }
+    
     if (pregnancy.status === 'Delivered') {
       return res.status(400).json({ error: 'This pregnancy has already been delivered' });
     }
+    
     if (pregnancy.status !== 'In Labor') {
       return res.status(400).json({ error: 'Patient is not currently in labor. Please start labor first.' });
     }
+    
+    // ✅ FIXED: Use correct field names
     const updatedPregnancy = await prisma.pregnancy.update({
       where: { id },
       data: {
@@ -5612,14 +5883,21 @@ app.patch('/api/pregnancies/:id/labor-progress', authenticate, checkPermission('
       },
       include: { Patient: true }
     });
+    
+    // Create a progress visit record
     await prisma.antenatalVisit.create({
       data: {
-        pregnancyId: id, staffId: req.user.id, visitDate: new Date(), gestationalWeeks: null,
-        notes: `🟡 LABOR PROGRESS UPDATE: ${notes || 'Progress check'}. Contractions: ${contractions || 'Not specified'}. Dilation: ${dilation || 'Not checked'}cm. Effacement: ${effacement || 'Not checked'}%.`,
-        bloodPressure: bloodPressure || null, heartRate: maternalHeartRate ? parseInt(maternalHeartRate) : null,
-        fetalHeartRate: fetalHeartRate ? parseInt(fetalHeartRate) : null
+        pregnancyId: id,
+        staffId: req.user.id,
+        visitDate: new Date(),
+        gestationalWeeks: null,
+        bloodPressure: bloodPressure || null,
+        heartRate: maternalHeartRate ? parseInt(maternalHeartRate) : null,
+        fetalHeartRate: fetalHeartRate ? parseInt(fetalHeartRate) : null,
+        notes: `🟡 LABOR PROGRESS UPDATE: ${notes || 'Progress check'}. Contractions: ${contractions || 'Not specified'}. Dilation: ${dilation || 'Not checked'}cm. Effacement: ${effacement || 'Not checked'}%.`
       }
     });
+    
     await prisma.auditLog.create({
       data: {
         staffId: req.user.id,
@@ -5628,41 +5906,90 @@ app.patch('/api/pregnancies/:id/labor-progress', authenticate, checkPermission('
         details: `Labor progress updated for patient ${pregnancy.Patient?.hospitalId} - Dilation: ${dilation || 'N/A'}cm`
       }
     });
-    res.json({ message: '✅ Labor progress updated successfully!', pregnancy: updatedPregnancy, progress: { contractions, dilation, effacement, fetalHeartRate, maternalHeartRate, bloodPressure, notes } });
+    
+    const formattedPregnancy = {
+      ...updatedPregnancy,
+      patient: updatedPregnancy.Patient
+    };
+    
+    res.json({ 
+      message: '✅ Labor progress updated successfully!', 
+      pregnancy: formattedPregnancy,
+      progress: { contractions, dilation, effacement, fetalHeartRate, maternalHeartRate, bloodPressure, notes }
+    });
   } catch (error) {
     console.error('Update labor progress error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
+// ============================================================
+// GET LABOR STATUS - FIXED
+// ============================================================
+
 app.get('/api/pregnancies/:id/labor-status', authenticate, checkPermission('antenatal'), async (req, res) => {
   try {
     const { id } = req.params;
+    
     const pregnancy = await prisma.pregnancy.findUnique({
       where: { id },
       select: {
-        id: true, status: true, laborStartTime: true,
-        contractions: true, dilation: true, effacement: true,
-        laborNotes: true, deliveryDate: true,
-        Patient: { select: { id: true, hospitalId: true, firstName: true, lastName: true } },
+        id: true,
+        status: true,
+        laborStartTime: true,
+        contractions: true,
+        dilation: true,
+        effacement: true,
+        laborNotes: true,
+        deliveryDate: true,
+        Patient: {
+          select: {
+            id: true,
+            hospitalId: true,
+            firstName: true,
+            lastName: true
+          }
+        },
         AntenatalVisit: {
-          where: { OR: [{ notes: { contains: 'LABOR STARTED' } }, { notes: { contains: 'LABOR PROGRESS' } }] },
-          orderBy: { visitDate: 'desc' }, take: 10
+          where: {
+            OR: [
+              { notes: { contains: 'LABOR STARTED' } },
+              { notes: { contains: 'LABOR PROGRESS' } }
+            ]
+          },
+          orderBy: { visitDate: 'desc' },
+          take: 10,
+          include: {
+            Staff: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                role: true
+              }
+            }
+          }
         }
       }
     });
+    
     if (!pregnancy) {
       return res.status(404).json({ error: 'Pregnancy not found' });
     }
+    
+    // Calculate labor duration
     const laborDuration = pregnancy.laborStartTime
       ? Math.floor((new Date() - new Date(pregnancy.laborStartTime)) / (1000 * 60))
       : null;
+    
     res.json({
-      pregnancy, laborDuration, isInLabor: pregnancy.status === 'In Labor',
+      pregnancy,
+      isInLabor: pregnancy.status === 'In Labor',
       isDelivered: pregnancy.status === 'Delivered',
       laborStartedAt: pregnancy.laborStartTime,
       laborDurationMinutes: laborDuration,
-      laborDurationHours: laborDuration ? Math.floor(laborDuration / 60) : null
+      laborDurationHours: laborDuration ? Math.floor(laborDuration / 60) : null,
+      visits: pregnancy.AntenatalVisit || []
     });
   } catch (error) {
     console.error('Get labor status error:', error);
@@ -5674,35 +6001,67 @@ app.get('/api/pregnancies/:id/labor-status', authenticate, checkPermission('ante
 // DELIVERY ENDPOINT
 // ============================================================
 
+// ============================================================
+// RECORD DELIVERY - COMPLETE FIXED (Matches your updated schema)
+// ============================================================
+
 app.post('/api/deliveries', authenticate, checkPermission('antenatal'), async (req, res) => {
   try {
     const {
-      pregnancyId, deliveryDate, type, durationHours, babyGender,
-      babyWeight, babyLength, babyHeadCircumference,
-      babyApgar1min, babyApgar5min, babyApgar10min, babyNotes,
-      maternalCondition, complications, placentaDelivery,
-      estimatedBloodLoss, perinealCondition, outcome, notes
+      pregnancyId,
+      deliveryDate,
+      type,
+      durationHours,
+      babyGender,
+      babyWeight,
+      babyLength,
+      babyHeadCircumference,
+      babyApgar1min,
+      babyApgar5min,
+      babyApgar10min,
+      babyNotes,
+      maternalCondition,
+      complications,
+      placentaDelivery,
+      estimatedBloodLoss,
+      perinealCondition,
+      outcome,
+      notes
     } = req.body;
+    
     if (!pregnancyId || !type || !babyGender) {
       return res.status(400).json({ error: 'Pregnancy ID, delivery type, and baby gender are required.' });
     }
+    
+    // Check pregnancy exists
     const pregnancy = await prisma.pregnancy.findUnique({
       where: { id: pregnancyId },
-      include: { patient: { include: { PatientJourney: { where: { status: { not: 'COMPLETED' } }, take: 1 } } } }
+      include: {
+        Patient: true
+      }
     });
+    
     if (!pregnancy) {
       return res.status(404).json({ error: 'Pregnancy not found' });
     }
+    
     if (pregnancy.status === 'Delivered') {
       return res.status(400).json({ error: 'This pregnancy has already been delivered' });
     }
+    
+    const mother = pregnancy.Patient;
+    
     const result = await prisma.$transaction(async (tx) => {
+      // ✅ 1. Create delivery record - USE CORRECT FIELD NAMES
       const delivery = await tx.delivery.create({
         data: {
-          pregnancyId, staffId: req.user.id,
+          pregnancyId,
+          staffId: req.user.id,
           deliveryDate: deliveryDate ? new Date(deliveryDate) : new Date(),
-          type, durationHours: durationHours ? parseFloat(durationHours) : null,
-          babyGender, babyWeight: babyWeight ? parseFloat(babyWeight) : null,
+          type,
+          durationHours: durationHours ? parseFloat(durationHours) : null,
+          babyGender,
+          babyWeight: babyWeight ? parseFloat(babyWeight) : null,
           babyLength: babyLength ? parseFloat(babyLength) : null,
           babyHeadCircumference: babyHeadCircumference ? parseFloat(babyHeadCircumference) : null,
           babyApgar1min: babyApgar1min ? parseInt(babyApgar1min) : null,
@@ -5716,21 +6075,32 @@ app.post('/api/deliveries', authenticate, checkPermission('antenatal'), async (r
           perinealCondition: perinealCondition || 'Intact',
           outcome: outcome || 'Live birth',
           notes: notes || null
-        },
-        include: { pregnancy: { include: { patient: true } } }
+        }
       });
+      
+      // ✅ 2. Update pregnancy status
       await tx.pregnancy.update({
         where: { id: pregnancyId },
-        data: { status: 'Delivered', deliveryDate: deliveryDate ? new Date(deliveryDate) : new Date(), updatedAt: new Date() }
+        data: {
+          status: 'Delivered',
+          deliveryDate: deliveryDate ? new Date(deliveryDate) : new Date(),
+          updatedAt: new Date()
+        }
       });
-      const mother = delivery.pregnancy.patient;
       
-      const allPatients = await tx.patient.findMany({ select: { hospitalId: true } });
+      // ✅ 3. Create baby patient record
+      const allPatients = await tx.patient.findMany({
+        select: { hospitalId: true },
+        orderBy: { hospitalId: 'desc' },
+        take: 1
+      });
+      
       let maxNumericId = 0;
       for (const p of allPatients) {
         const num = parseInt(p.hospitalId, 10);
         if (!isNaN(num) && num > maxNumericId) maxNumericId = num;
       }
+      
       let nextIdNumber = maxNumericId + 1;
       let babyHospitalId;
       let attempts = 0;
@@ -5746,10 +6116,12 @@ app.post('/api/deliveries', authenticate, checkPermission('antenatal'), async (r
           nextIdNumber++;
         }
       }
+      
       if (!babyHospitalId) {
         throw new Error('Failed to generate unique hospital ID for baby');
       }
       
+      // Generate unique email for baby
       let babyEmail;
       const emailPrefix = `baby_${babyHospitalId}`;
       if (mother.email) {
@@ -5758,6 +6130,7 @@ app.post('/api/deliveries', authenticate, checkPermission('antenatal'), async (r
       } else {
         babyEmail = `${emailPrefix}@hospital.com`;
       }
+      
       let emailExists = await tx.patient.findUnique({ where: { email: babyEmail } });
       let counter = 1;
       while (emailExists) {
@@ -5766,6 +6139,7 @@ app.post('/api/deliveries', authenticate, checkPermission('antenatal'), async (r
         counter++;
       }
       
+      // Create baby patient
       const baby = await tx.patient.create({
         data: {
           hospitalId: babyHospitalId,
@@ -5773,7 +6147,8 @@ app.post('/api/deliveries', authenticate, checkPermission('antenatal'), async (r
           lastName: mother.lastName,
           dateOfBirth: deliveryDate ? new Date(deliveryDate) : new Date(),
           gender: babyGender,
-          phone: mother.phone || null, email: babyEmail,
+          phone: mother.phone || null,
+          email: babyEmail,
           address: mother.address || null,
           emergencyContact: mother.emergencyContact || null,
           allergies: mother.allergies || null,
@@ -5785,37 +6160,66 @@ app.post('/api/deliveries', authenticate, checkPermission('antenatal'), async (r
         }
       });
       
+      // ✅ 4. Find or create Paediatrics clinic
       let paediatricsClinic = await tx.clinic.findFirst({
         where: { name: { equals: 'Paediatrics', mode: 'insensitive' } }
       });
+      
       if (!paediatricsClinic) {
         paediatricsClinic = await tx.clinic.create({
-          data: { name: 'Paediatrics', description: 'Paediatrics Clinic for newborns and children', location: 'Main Hospital - Ground Floor', updatedAt: new Date() }
+          data: {
+            name: 'Paediatrics',
+            description: 'Paediatrics Clinic for newborns and children',
+            location: 'Main Hospital - Ground Floor',
+            updatedAt: new Date()
+          }
         });
       }
       
+      // ✅ 5. Create patient journey for baby
       await tx.patientJourney.create({
         data: {
-          patientId: baby.id, destinationType: 'CLINIC',
-          clinicId: paediatricsClinic.id, registeredById: req.user.id,
-          status: 'SENT_TO_DESTINATION', sentToDestinationAt: new Date(), updatedAt: new Date()
-        }
-      });
-      
-      await tx.clinicalNote.create({
-        data: {
-          patientId: baby.id, authorId: req.user.id, type: 'Delivery Note',
-          fullContent: `🩺 NEWBORN DELIVERY REPORT\n👶 Baby: ${baby.firstName} ${baby.lastName}\n🆔 Hospital ID: ${baby.hospitalId}\n📅 Date of Birth: ${new Date(deliveryDate || new Date()).toLocaleString()}\n👤 Gender: ${babyGender}\n⚖️ Weight: ${babyWeight || 'Not recorded'} kg\n📏 Length: ${babyLength || 'Not recorded'} cm\n📐 Head Circumference: ${babyHeadCircumference || 'Not recorded'} cm\n💉 Apgar: ${babyApgar1min || 'N/A'} / ${babyApgar5min || 'N/A'} / ${babyApgar10min || 'N/A'}\n\n👩 MOTHER INFORMATION\n👤 Name: ${mother.firstName} ${mother.lastName}\n🆔 Hospital ID: ${mother.hospitalId}\n🩺 Delivery Type: ${type}\n❤️ Maternal Condition: ${maternalCondition || 'Stable'}\n⚠️ Complications: ${complications || 'None'}\n🩸 Placenta: ${placentaDelivery || 'Complete'}\n🩸 Estimated Blood Loss: ${estimatedBloodLoss || 'Not recorded'} ml\n\n📝 NOTES:\n${notes || 'No additional notes'}\n\n🏥 Transferred to: Paediatrics Clinic\n🔄 Journey Status: SENT_TO_DESTINATION`,
+          patientId: baby.id,
+          destinationType: 'CLINIC',
+          clinicId: paediatricsClinic.id,
+          registeredById: req.user.id,
+          status: 'SENT_TO_DESTINATION',
+          sentToDestinationAt: new Date(),
           updatedAt: new Date()
         }
       });
       
-      await tx.patient_notifications.create({
-        data: { patientId: baby.id, title: '🎉 Newborn Registration', message: `Welcome to the world! ${baby.firstName} ${baby.lastName} has been registered and transferred to Paediatrics.`, type: 'registration' }
+      // ✅ 6. Create clinical note for baby
+      await tx.clinicalNote.create({
+        data: {
+          patientId: baby.id,
+          authorId: req.user.id,
+          type: 'Delivery Note',
+          fullContent: `🩺 NEWBORN DELIVERY REPORT\n\n👶 Baby: ${baby.firstName} ${baby.lastName}\n🆔 Hospital ID: ${baby.hospitalId}\n📅 Date of Birth: ${new Date(deliveryDate || new Date()).toLocaleString()}\n👤 Gender: ${babyGender}\n⚖️ Weight: ${babyWeight || 'Not recorded'} kg\n📏 Length: ${babyLength || 'Not recorded'} cm\n📐 Head Circumference: ${babyHeadCircumference || 'Not recorded'} cm\n💉 Apgar: ${babyApgar1min || 'N/A'} / ${babyApgar5min || 'N/A'} / ${babyApgar10min || 'N/A'}\n\n👩 MOTHER INFORMATION\n👤 Name: ${mother.firstName} ${mother.lastName}\n🆔 Hospital ID: ${mother.hospitalId}\n🩺 Delivery Type: ${type}\n❤️ Maternal Condition: ${maternalCondition || 'Stable'}\n⚠️ Complications: ${complications || 'None'}\n🩸 Placenta: ${placentaDelivery || 'Complete'}\n🩸 Estimated Blood Loss: ${estimatedBloodLoss || 'Not recorded'} ml\n\n📝 NOTES:\n${notes || 'No additional notes'}\n\n🏥 Transferred to: Paediatrics Clinic\n🔄 Journey Status: SENT_TO_DESTINATION`,
+          updatedAt: new Date()
+        }
       });
+      
+      // ✅ 7. Create notifications
       await tx.patient_notifications.create({
-        data: { patientId: mother.id, title: '🤱 Delivery Completed', message: `Congratulations! You have delivered a ${babyGender} baby weighing ${babyWeight || 'not recorded'} kg. Baby has been transferred to Paediatrics.`, type: 'delivery' }
+        data: {
+          patientId: baby.id,
+          title: '🎉 Newborn Registration',
+          message: `Welcome to the world! ${baby.firstName} ${baby.lastName} has been registered and transferred to Paediatrics.`,
+          type: 'registration'
+        }
       });
+      
+      await tx.patient_notifications.create({
+        data: {
+          patientId: mother.id,
+          title: '🤱 Delivery Completed',
+          message: `Congratulations! You have delivered a ${babyGender} baby weighing ${babyWeight || 'not recorded'} kg. Baby has been transferred to Paediatrics.`,
+          type: 'delivery'
+        }
+      });
+      
+      // ✅ 8. Audit log
       await tx.auditLog.create({
         data: {
           staffId: req.user.id,
@@ -5824,36 +6228,44 @@ app.post('/api/deliveries', authenticate, checkPermission('antenatal'), async (r
           details: `Delivery recorded for pregnancy ${pregnancyId}. Baby ${baby.hospitalId} (${baby.firstName} ${baby.lastName}) transferred to Paediatrics.`
         }
       });
+      
       return { delivery, baby, paediatricsClinic };
     });
+    
     const formattedResponse = {
       success: true,
       message: '✅ Delivery recorded successfully! Baby transferred to Paediatrics.',
       delivery: {
-        id: result.delivery.id, type: result.delivery.type,
-        date: result.delivery.deliveryDate, durationHours: result.delivery.durationHours,
-        outcome: result.delivery.outcome, maternalCondition: result.delivery.maternalCondition,
-        complications: result.delivery.complications
+        id: result.delivery.id,
+        type: result.delivery.type,
+        date: result.delivery.deliveryDate,
+        durationHours: result.delivery.durationHours,
+        outcome: result.delivery.outcome,
+        babyWeight: result.delivery.babyWeight,
+        babyLength: result.delivery.babyLength,
+        babyHeadCircumference: result.delivery.babyHeadCircumference,
+        babyApgar1min: result.delivery.babyApgar1min,
+        babyApgar5min: result.delivery.babyApgar5min,
+        babyApgar10min: result.delivery.babyApgar10min,
+        maternalCondition: result.delivery.maternalCondition
       },
       baby: {
-        id: result.baby.id, hospitalId: result.baby.hospitalId,
-        firstName: result.baby.firstName, lastName: result.baby.lastName,
-        gender: result.baby.gender, dateOfBirth: result.baby.dateOfBirth,
-        weight: result.delivery.babyWeight, length: result.delivery.babyLength,
-        headCircumference: result.delivery.babyHeadCircumference,
-        apgar1min: result.delivery.babyApgar1min,
-        apgar5min: result.delivery.babyApgar5min,
-        apgar10min: result.delivery.babyApgar10min,
-        notes: result.delivery.babyNotes
+        id: result.baby.id,
+        hospitalId: result.baby.hospitalId,
+        firstName: result.baby.firstName,
+        lastName: result.baby.lastName,
+        gender: result.baby.gender,
+        dateOfBirth: result.baby.dateOfBirth
       },
       mother: {
-        id: result.delivery.pregnancy.patient.id,
-        hospitalId: result.delivery.pregnancy.patient.hospitalId,
-        firstName: result.delivery.pregnancy.patient.firstName,
-        lastName: result.delivery.pregnancy.patient.lastName
+        id: mother.id,
+        hospitalId: mother.hospitalId,
+        firstName: mother.firstName,
+        lastName: mother.lastName
       },
       paediatricsClinic: result.paediatricsClinic
     };
+    
     res.status(201).json(formattedResponse);
   } catch (error) {
     console.error('Record delivery error:', error);
@@ -6648,7 +7060,7 @@ async function deductFromWallet(patientId, amount, description, category, servic
   }
 }
 
-app.post('/api/wallet/check-service', authenticate, authorize('Doctor', 'Nurse', 'Admin', 'LabTechnician', 'Radiologist', 'LabScientist'), async (req, res) => {
+app.post('/api/wallet/process-service', authenticate, authorize('Admin', 'Records', 'BillingOfficer', 'Accountant', 'Doctor', 'Nurse', 'Pharmacist', 'LabTechnician', 'Radiologist'), async (req, res) => {
   try {
     const { patientId, amount, serviceName } = req.body;
     if (!patientId || !amount) {

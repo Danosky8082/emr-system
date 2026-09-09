@@ -191,24 +191,40 @@ model ClinicalNote {
 }
 
 // ============================================================
-// DELIVERY
+// DELIVERY - UPDATED WITH ALL FIELDS
 // ============================================================
 model Delivery {
-  id            String    @id @default(cuid())
-  pregnancyId   String    @unique
-  deliveryDate  DateTime  @default(now())
-  type          String
-  durationHours Float?
-  babyGender    String
-  babyWeight    Float?
-  babyApgar     Int?
-  outcome       String
-  notes         String?
-  staffId       String
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  Pregnancy     Pregnancy @relation(fields: [pregnancyId], references: [id], onDelete: Cascade)
-  Staff         Staff     @relation(fields: [staffId], references: [id])
+  id                      String    @id @default(cuid())
+  pregnancyId             String    @unique
+  deliveryDate            DateTime  @default(now())
+  type                    String
+  durationHours           Float?
+  
+  // Baby Information
+  babyGender              String
+  babyWeight              Float?
+  babyLength              Float?    // ✅ ADD THIS
+  babyHeadCircumference   Float?    // ✅ ADD THIS
+  babyApgar1min           Int?      // ✅ ADD THIS
+  babyApgar5min           Int?      // ✅ ADD THIS
+  babyApgar10min          Int?      // ✅ ADD THIS
+  babyNotes               String?   // ✅ ADD THIS
+  
+  // Maternal Information
+  maternalCondition       String?   // ✅ ADD THIS (Stable, Unstable, Critical)
+  complications           String?   // ✅ ADD THIS
+  placentaDelivery        String?   // ✅ ADD THIS (Complete, Incomplete)
+  estimatedBloodLoss      Float?    // ✅ ADD THIS (in ml)
+  perinealCondition       String?   // ✅ ADD THIS (Intact, Tear, Episiotomy)
+  
+  outcome                 String
+  notes                   String?
+  staffId                 String
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  
+  Pregnancy               Pregnancy @relation(fields: [pregnancyId], references: [id], onDelete: Cascade)
+  Staff                   Staff     @relation(fields: [staffId], references: [id])
 }
 
 
@@ -801,9 +817,8 @@ model PharmacyTransaction {
   Staff             Staff          @relation(fields: [staffId], references: [id])
 }
 
-// ============================================================
-// PREGNANCY
-// ============================================================
+// schema.prisma - Update the Pregnancy model
+
 model Pregnancy {
   id                  String           @id @default(cuid())
   patientId           String
@@ -815,11 +830,20 @@ model Pregnancy {
   riskLevel           String?
   status              String           @default("Active")
   notes               String?
+  laborStartTime      DateTime?        // When labor started
+  contractions        String?          // Description of contractions
+  dilation            Float?           // Cervical dilation in cm (0-10)
+  effacement          Float?           // Cervical effacement in percentage (0-100)
+  laborNotes          String?          // Notes during labor
+  deliveryDate        DateTime?        // When delivery occurred
+  
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
+  
+  // Relations
+  Patient             Patient          @relation(fields: [patientId], references: [id], onDelete: Cascade)
   AntenatalVisit      AntenatalVisit[]
   Delivery            Delivery?
-  Patient             Patient          @relation(fields: [patientId], references: [id], onDelete: Cascade)
 }
 
 // ============================================================
