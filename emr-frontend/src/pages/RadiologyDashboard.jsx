@@ -95,17 +95,27 @@ const RadiologyDashboard = () => {
     }
   };
 
+  // ✅ Helper: resolve full image URL from any stored format
   const getImageUrl = (url) => {
-  if (!url) return '';
-  let cleanUrl = url.trim();
-  // If it's already a full URL, return it
-  if (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://')) {
-    return cleanUrl;
-  }
-  // Otherwise, construct the full URL
-  const filename = cleanUrl.split('/').pop();
-  return `http://localhost:3000/images/${filename}`;
-};
+    if (!url || typeof url !== 'string') return '';
+    let cleanUrl = url.trim();
+    if (cleanUrl === '') return '';
+    // Already a full URL
+    if (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://')) {
+      return cleanUrl;
+    }
+    // Just a filename — construct full URL
+    const filename = cleanUrl.split('/').pop().split('?')[0];
+    return `http://localhost:3000/images/${filename}`;
+  };
+
+  // ✅ Helper: extract valid image URLs from an order (supports images + imagesUrl)
+  const getOrderImages = (order) => {
+    if (!order) return [];
+    const raw = order.images || order.imagesUrl || '';
+    if (!raw || typeof raw !== 'string') return [];
+    return raw.split(',').map(u => u.trim()).filter(u => u && u !== '');
+  };
 
   const getStatusColor = (status) => {
     const colors = {
@@ -586,15 +596,17 @@ const RadiologyDashboard = () => {
                     </div>
                     
                     {/* Display images for completed orders */}
-                    {selectedOrder.images && selectedOrder.images.length > 0 && (
+                    {getOrderImages(selectedOrder).length > 0 && (
                       <div style={{ marginTop: '16px', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
-                        <h4 style={{ margin: '0 0 12px 0' }}>📷 Images ({selectedOrder.images.split(',').length})</h4>
+                        <h4 style={{ margin: '0 0 12px 0' }}>
+                          📷 Images ({getOrderImages(selectedOrder).length})
+                        </h4>
                         <div style={{ 
                           display: 'grid', 
                           gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', 
                           gap: '12px'
                         }}>
-                          {selectedOrder.images.split(',').filter(url => url && url.trim() !== '').map((url, index) => {
+                          {getOrderImages(selectedOrder).map((url, index) => {
                             const imageUrl = getImageUrl(url);
                             return (
                               <div key={index} style={{ 
@@ -723,7 +735,7 @@ const RadiologyDashboard = () => {
                           setSelectedOrder(prev => ({
                             ...prev,
                             ...updatedOrder,
-                            images: updatedOrder.images,
+                            images: updatedOrder.images || updatedOrder.imagesUrl || '',
                             imageCount: updatedOrder.imageCount,
                             hasImages: true
                           }));
@@ -942,15 +954,17 @@ const RadiologyDashboard = () => {
               </div>
               
               {/* Images */}
-              {selectedOrder.images && selectedOrder.images.length > 0 && (
+              {getOrderImages(selectedOrder).length > 0 && (
                 <div style={{ marginTop: '16px', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
-                  <h4 style={{ margin: '0 0 12px 0' }}>📷 Images ({selectedOrder.images.split(',').length})</h4>
+                  <h4 style={{ margin: '0 0 12px 0' }}>
+                    📷 Images ({getOrderImages(selectedOrder).length})
+                  </h4>
                   <div style={{ 
                     display: 'grid', 
                     gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', 
                     gap: '12px'
                   }}>
-                    {selectedOrder.images.split(',').filter(url => url && url.trim() !== '').map((url, index) => {
+                    {getOrderImages(selectedOrder).map((url, index) => {
                       const imageUrl = getImageUrl(url);
                       return (
                         <div key={index} style={{ 

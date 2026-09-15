@@ -29,6 +29,9 @@ const LabOrders = () => {
   });
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [validating, setValidating] = useState(false);
+
+  const [showViewResultModal, setShowViewResultModal] = useState(false);
+  const [viewingResult, setViewingResult] = useState(null);
   
   const [formData, setFormData] = useState({
     patientId: '',
@@ -545,27 +548,24 @@ const LabOrders = () => {
                       
                       {/* View Results - FIXED: toast.info replaced with toast.success */}
                       {l.result && (
-                        <button
-                          onClick={() => {
-                            toast.success(
-                              `📋 Result: ${l.result}\n` +
-                              `👤 By: ${l.performedBy?.firstName || 'Unknown'}\n` +
-                              `📅 ${new Date(l.resultDate).toLocaleString()}`
-                            );
-                          }}
-                          style={{
-                            background: '#10b981',
-                            color: 'white',
-                            border: 'none',
-                            padding: '4px 12px',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            fontSize: '12px'
-                          }}
-                        >
-                          👁️ View
-                        </button>
-                      )}
+  <button
+    onClick={() => {
+      setViewingResult(l);
+      setShowViewResultModal(true);
+    }}
+    style={{
+      background: '#10b981',
+      color: 'white',
+      border: 'none',
+      padding: '4px 12px',
+      borderRadius: '4px',
+      cursor: 'pointer',
+      fontSize: '12px'
+    }}
+  >
+    👁️ View
+  </button>
+)}
                       
                       {/* Validate - Only Lab Scientist */}
                       {canValidateResults && l.result && !l.validated && (
@@ -960,6 +960,60 @@ const LabOrders = () => {
           </div>
         </div>
       )}
+
+
+      {showViewResultModal && viewingResult && (
+  <div className="modal-overlay" onClick={() => setShowViewResultModal(false)}>
+    <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+      <div className="modal-header">
+        <h3>📋 Lab Result</h3>
+        <button className="modal-close" onClick={() => setShowViewResultModal(false)}>×</button>
+      </div>
+      <div className="modal-body">
+        <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', marginBottom: '16px' }}>
+          <p style={{ margin: 0 }}>
+            <strong>Patient:</strong> {viewingResult.patient?.firstName} {viewingResult.patient?.lastName}
+          </p>
+          <p style={{ margin: '4px 0 0 0', fontSize: '14px', color: '#6b7280' }}>
+            <strong>Test:</strong> {viewingResult.testName} ({viewingResult.testType})
+          </p>
+          <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: '#6b7280' }}>
+            <strong>Status:</strong> {viewingResult.status}
+          </p>
+        </div>
+
+        <div className="form-group">
+          <label style={{ fontWeight: '600' }}>Result</label>
+          <div style={{
+            background: '#f0fdf4',
+            padding: '12px',
+            borderRadius: '8px',
+            border: '1px solid #10b981',
+            whiteSpace: 'pre-wrap',
+            minHeight: '60px'
+          }}>
+            {viewingResult.result}
+          </div>
+        </div>
+
+        <div style={{ marginTop: '12px', fontSize: '13px', color: '#6b7280' }}>
+          <div><strong>Performed by:</strong> {viewingResult.performedBy?.firstName} {viewingResult.performedBy?.lastName || 'N/A'}</div>
+          {viewingResult.resultDate && (
+            <div><strong>Result Date:</strong> {new Date(viewingResult.resultDate).toLocaleString()}</div>
+          )}
+          {viewingResult.validated && (
+            <div style={{ color: '#8b5cf6', fontWeight: '600' }}>
+              ✅ Validated by {viewingResult.validatedBy?.firstName || 'Lab Scientist'}
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="modal-footer">
+        <button className="btn btn-secondary" onClick={() => setShowViewResultModal(false)}>Close</button>
+      </div>
+    </div>
+  </div>
+)}
     </div>
   );
 };

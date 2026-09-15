@@ -1,5 +1,3 @@
-// schema.prisma - COMPLETE WITH ALL FIXES
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,28 +6,137 @@ datasource db {
   provider = "postgresql"
 }
 
-// ============================================================
-// SERVICE CONFIGURATION
-// ============================================================
+model Hospital {
+  id                    String                     @id @default(cuid())
+  name                  String
+  slug                  String                     @unique
+  code                  String                     @unique
+  email                 String?
+  phone                 String?
+  address               String?
+  city                  String?
+  state                 String?
+  country               String                     @default("Nigeria")
+  logoUrl               String?
+  primaryColor          String                     @default("#0f3460")
+  secondaryColor        String                     @default("#1a4a7a")
+  plan                  String                     @default("trial")
+  status                String                     @default("active")
+  trialEndsAt           DateTime?
+  subscriptionEndsAt    DateTime?
+  maxStaff              Int                        @default(50)
+  maxPatients           Int                        @default(1000)
+  isActive              Boolean                    @default(true)
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+  Admission             Admission[]
+  AntenatalVisit        AntenatalVisit[]
+  Appointment           Appointment[]
+  AppointmentReminder   AppointmentReminder[]
+  AuditLog              AuditLog[]
+  BillingRecord         BillingRecord[]
+  Clinic                Clinic[]
+  ClinicalNote          ClinicalNote[]
+  Delivery              Delivery[]
+  Department            Department[]
+  Settings              HospitalSettings?
+  ImagingOrder          ImagingOrder[]
+  ImagingResult         ImagingResult[]
+  KioskSession          KioskSession[]
+  LabOrder              LabOrder[]
+  Medication            Medication[]
+  MedicationTransaction MedicationTransaction[]
+  NHISAuthorization     NHISAuthorization[]
+  NHISClaim             NHISClaim[]
+  NHISDrugFormulary     NHISDrugFormulary[]
+  NHISDrugPrice         NHISDrugPrice[]
+  PartialPayment        PartialPayment[]
+  Patient               Patient[]
+  PatientHistoryRecord  PatientHistoryRecord[]
+  PatientJourney        PatientJourney[]
+  PatientMessage        PatientMessage[]
+  PatientQueue          PatientQueue[]
+  PatientTransfer       PatientTransfer[]
+  PatientWallet         PatientWallet[]
+  PaymentPlan           PaymentPlan[]
+  PharmacyBranch        PharmacyBranch[]
+  PharmacyStaff         PharmacyStaff[]
+  PharmacyTransaction   PharmacyTransaction[]
+  Pregnancy             Pregnancy[]
+  Prescription          Prescription[]
+  ROIRequest            ROIRequest[]
+  RolePermission        RolePermission[]
+  ServiceConfiguration  ServiceConfiguration[]
+  ServicePrice          ServicePrice[]
+  ServicePricing        ServicePricing[]
+  Staff                 Staff[]
+  staffClinics          StaffClinic[]
+  staffWards            StaffWard[]
+  VitalSign             VitalSign[]
+  WalletTransaction     WalletTransaction[]
+  Ward                  Ward[]
+  Attendance            attendance[]
+  DentalRecord          dental_records[]
+  Immunization          immunizations[]
+  LeaveNotification     leave_notifications[]
+  LeavePolicy           leave_policies[]
+  LeaveRequest          leave_requests[]
+  LeaveUsage            leave_usages[]
+  OptometryRecord       optometry_records[]
+  PatientNotification   patient_notifications[]
+  PerformanceReview     performance_reviews[]
+  StaffLeaveEntitlement staff_leave_entitlements[]
+  StaffTraining         staff_trainings[]
+  Training              trainings[]
+}
+
+model HospitalSettings {
+  id                  String   @id @default(cuid())
+  tenantId            String   @unique
+  hospitalId          String   @unique
+  registrationFee     Float    @default(2000)
+  cardFee             Float    @default(1000)
+  consultationFee     Float    @default(5000)
+  nhisMultiplier      Float    @default(0.1)
+  retainerMultiplier  Float    @default(2.0)
+  autoArchiveHours    Int      @default(24)
+  appointmentDuration Int      @default(30)
+  enablePatientPortal Boolean  @default(true)
+  enableKioskMode     Boolean  @default(true)
+  smsEnabled          Boolean  @default(false)
+  emailEnabled        Boolean  @default(false)
+  smsSenderId         String?
+  emailSenderName     String?
+  currency            String   @default("NGN")
+  currencySymbol      String   @default("₦")
+  timezone            String   @default("Africa/Lagos")
+  dateFormat          String   @default("DD/MM/YYYY")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  Hospital            Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+}
+
 model ServiceConfiguration {
   id              String   @id @default(cuid())
-  serviceType     String   @unique // REGISTRATION, CARD, CONSULTATION
+  serviceType     String
   name            String
   description     String?
   baseAmount      Float
-  nhisAmount      Float?   // 10% for NHIS
-  corporateAmount Float?   // 200% for Corporate
   isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  corporateAmount Float?
+  nhisAmount      Float?
+  tenantId        String
+  Hospital        Hospital @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, serviceType])
+  @@index([tenantId])
 }
 
-// ============================================================
-// ADMISSION
-// ============================================================
 model Admission {
   id               String    @id @default(cuid())
-  admissionNumber  String    @unique
+  admissionNumber  String
   patientId        String
   staffId          String
   wardId           String?
@@ -44,14 +151,16 @@ model Admission {
   admittedBy       String?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
+  tenantId         String
   Patient          Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
   Staff            Staff     @relation(fields: [staffId], references: [id])
+  Hospital         Hospital  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   Ward             Ward?     @relation(fields: [wardId], references: [id])
+
+  @@unique([tenantId, admissionNumber])
+  @@index([tenantId])
 }
 
-// ============================================================
-// ANTENATAL VISIT
-// ============================================================
 model AntenatalVisit {
   id               String    @id @default(cuid())
   pregnancyId      String
@@ -65,13 +174,14 @@ model AntenatalVisit {
   staffId          String
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
+  tenantId         String
   Pregnancy        Pregnancy @relation(fields: [pregnancyId], references: [id], onDelete: Cascade)
   Staff            Staff     @relation(fields: [staffId], references: [id])
+  Hospital         Hospital  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
-// ============================================================
-// APPOINTMENT
-// ============================================================
 model Appointment {
   id                  String                @id @default(cuid())
   patientId           String
@@ -83,15 +193,17 @@ model Appointment {
   notes               String?
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
+  tenantId            String
   Patient             Patient               @relation(fields: [patientId], references: [id], onDelete: Cascade)
   Staff               Staff                 @relation(fields: [staffId], references: [id])
+  Hospital            Hospital              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   AppointmentReminder AppointmentReminder[]
   PatientQueue        PatientQueue[]
+
+  @@index([tenantId])
+  @@index([tenantId, status])
 }
 
-// ============================================================
-// APPOINTMENT REMINDER
-// ============================================================
 model AppointmentReminder {
   id            String      @id @default(cuid())
   appointmentId String
@@ -100,12 +212,13 @@ model AppointmentReminder {
   status        String
   message       String
   createdAt     DateTime    @default(now())
+  tenantId      String
   Appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  Hospital      Hospital    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
-// ============================================================
-// AUDIT LOG
-// ============================================================
 model AuditLog {
   id        String   @id @default(cuid())
   staffId   String
@@ -114,66 +227,76 @@ model AuditLog {
   details   String?
   ipAddress String?
   createdAt DateTime @default(now())
+  tenantId  String
   Staff     Staff    @relation(fields: [staffId], references: [id])
+  Hospital  Hospital @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, action])
 }
 
-// ============================================================
-// BILLING RECORD - WITH ITEMIZED BILLING
-// ============================================================
 model BillingRecord {
-  id                String   @id @default(cuid())
-  patientId         String
-  invoiceNumber     String   @unique
-  items             Json     // [{name, amount, category, status, paidAt?, serviceType?}]
-  totalAmount       Float
-  paidAmount        Float    @default(0)
-  balance           Float
-  status            String   @default("Pending") // Pending, Partial, Paid, Overdue
-  description       String
-  paymentMethod     String?  // Cash, Transfer, Card, Wallet
-  paymentDate       DateTime?
-  isWalletPayment   Boolean  @default(false)
+  id                  String             @id @default(cuid())
+  patientId           String
+  invoiceNumber       String
+  description         String
+  totalAmount         Float
+  status              String             @default("Pending")
+  paymentMethod       String?
+  paymentDate         DateTime?
   walletTransactionId String?
-  cashAmountPaid    Float?
-  walletAmountPaid  Float?
-  paymentReference  String?  @unique
-  receiptNumber     String?  @unique
-  receiptGenerated  Boolean  @default(false)
-  receiptGeneratedAt DateTime?
-  processedBy       String?
-  processedAt       DateTime?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  Patient           Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  PatientJourney    PatientJourney?
-  Staff             Staff?   @relation(fields: [processedBy], references: [id])
-  WalletTransaction WalletTransaction?
-  ImagingOrder      ImagingOrder[]
-  PaymentPlan       PaymentPlan[]
+  isWalletPayment     Boolean            @default(false)
+  walletAmountPaid    Float?
+  cashAmountPaid      Float?
+  paymentReference    String?
+  processedAt         DateTime?
+  processedBy         String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  balance             Float
+  items               Json
+  paidAmount          Float              @default(0)
+  receiptGenerated    Boolean            @default(false)
+  receiptGeneratedAt  DateTime?
+  receiptNumber       String?
+  tenantId            String
+  Patient             Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  Staff               Staff?             @relation(fields: [processedBy], references: [id])
+  Hospital            Hospital           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ImagingOrder        ImagingOrder[]
+  PatientJourney      PatientJourney?
+  PaymentPlan         PaymentPlan[]
+  WalletTransaction   WalletTransaction?
+
+  @@unique([tenantId, invoiceNumber])
+  @@unique([tenantId, paymentReference])
+  @@unique([tenantId, receiptNumber])
+  @@index([tenantId])
+  @@index([tenantId, status])
 }
 
-// ============================================================
-// CLINIC
-// ============================================================
 model Clinic {
   id                                                   String            @id @default(cuid())
-  name                                                 String            @unique
+  name                                                 String
   description                                          String?
   location                                             String?
   isActive                                             Boolean           @default(true)
   createdAt                                            DateTime          @default(now())
   updatedAt                                            DateTime          @updatedAt
+  tenantId                                             String
+  Hospital                                             Hospital          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   PatientJourney                                       PatientJourney[]
   PatientQueue                                         PatientQueue[]
   PatientTransfer_PatientTransfer_fromClinicIdToClinic PatientTransfer[] @relation("PatientTransfer_fromClinicIdToClinic")
   PatientTransfer_PatientTransfer_toClinicIdToClinic   PatientTransfer[] @relation("PatientTransfer_toClinicIdToClinic")
   ServicePrice                                         ServicePrice[]
   StaffClinic                                          StaffClinic[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
 }
 
-// ============================================================
-// CLINICAL NOTE
-// ============================================================
 model ClinicalNote {
   id          String   @id @default(cuid())
   patientId   String
@@ -186,54 +309,49 @@ model ClinicalNote {
   fullContent String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  tenantId    String
   Staff       Staff    @relation(fields: [authorId], references: [id])
   Patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  Hospital    Hospital @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
-// ============================================================
-// DELIVERY - UPDATED WITH ALL FIELDS
-// ============================================================
 model Delivery {
-  id                      String    @id @default(cuid())
-  pregnancyId             String    @unique
-  deliveryDate            DateTime  @default(now())
-  type                    String
-  durationHours           Float?
-  
-  // Baby Information
-  babyGender              String
-  babyWeight              Float?
-  babyLength              Float?    // ✅ ADD THIS
-  babyHeadCircumference   Float?    // ✅ ADD THIS
-  babyApgar1min           Int?      // ✅ ADD THIS
-  babyApgar5min           Int?      // ✅ ADD THIS
-  babyApgar10min          Int?      // ✅ ADD THIS
-  babyNotes               String?   // ✅ ADD THIS
-  
-  // Maternal Information
-  maternalCondition       String?   // ✅ ADD THIS (Stable, Unstable, Critical)
-  complications           String?   // ✅ ADD THIS
-  placentaDelivery        String?   // ✅ ADD THIS (Complete, Incomplete)
-  estimatedBloodLoss      Float?    // ✅ ADD THIS (in ml)
-  perinealCondition       String?   // ✅ ADD THIS (Intact, Tear, Episiotomy)
-  
-  outcome                 String
-  notes                   String?
-  staffId                 String
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
-  
-  Pregnancy               Pregnancy @relation(fields: [pregnancyId], references: [id], onDelete: Cascade)
-  Staff                   Staff     @relation(fields: [staffId], references: [id])
+  id                    String    @id @default(cuid())
+  pregnancyId           String    @unique
+  deliveryDate          DateTime  @default(now())
+  type                  String
+  durationHours         Float?
+  babyGender            String
+  babyWeight            Float?
+  outcome               String
+  notes                 String?
+  staffId               String
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  babyApgar10min        Int?
+  babyApgar1min         Int?
+  babyApgar5min         Int?
+  babyHeadCircumference Float?
+  babyLength            Float?
+  babyNotes             String?
+  complications         String?
+  estimatedBloodLoss    Float?
+  maternalCondition     String?
+  perinealCondition     String?
+  placentaDelivery      String?
+  tenantId              String
+  Pregnancy             Pregnancy @relation(fields: [pregnancyId], references: [id], onDelete: Cascade)
+  Staff                 Staff     @relation(fields: [staffId], references: [id])
+  Hospital              Hospital  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
-
-// ============================================================
-// IMAGING ORDER
-// ============================================================
 model ImagingOrder {
   id                                        String          @id @default(cuid())
-  orderNumber                               String          @unique
+  orderNumber                               String
   patientId                                 String
   imagingType                               String
   bodyPart                                  String
@@ -254,16 +372,20 @@ model ImagingOrder {
   notes                                     String?
   createdAt                                 DateTime        @default(now())
   updatedAt                                 DateTime        @updatedAt
+  tenantId                                  String
   BillingRecord                             BillingRecord?  @relation(fields: [billingRecordId], references: [id])
   Staff_ImagingOrder_orderingStaffIdToStaff Staff           @relation("ImagingOrder_orderingStaffIdToStaff", fields: [orderingStaffId], references: [id])
   Patient                                   Patient         @relation(fields: [patientId], references: [id], onDelete: Cascade)
   Staff_ImagingOrder_radiologistIdToStaff   Staff?          @relation("ImagingOrder_radiologistIdToStaff", fields: [radiologistId], references: [id])
+  Hospital                                  Hospital        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   ImagingResult                             ImagingResult[]
+
+  @@unique([tenantId, orderNumber])
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, patientId])
 }
 
-// ============================================================
-// IMAGING RESULT
-// ============================================================
 model ImagingResult {
   id              String       @id @default(cuid())
   imagingOrderId  String
@@ -273,12 +395,13 @@ model ImagingResult {
   severity        String?
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
+  tenantId        String
   ImagingOrder    ImagingOrder @relation(fields: [imagingOrderId], references: [id], onDelete: Cascade)
+  Hospital        Hospital     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
-// ============================================================
-// KIOSK SESSION
-// ============================================================
 model KioskSession {
   id           String    @id @default(cuid())
   patientId    String
@@ -288,37 +411,40 @@ model KioskSession {
   status       String    @default("active")
   deviceInfo   String?
   ipAddress    String?
+  tenantId     String
   Patient      Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  Hospital     Hospital  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
-// ============================================================
-// LAB ORDER
-// ============================================================
 model LabOrder {
-  id                String   @id @default(cuid())
-  patientId         String
-  orderingStaffId   String
-  labStaffId        String?
-  testName          String
-  testType          String
-  priority          String   @default("Routine")
-  status            String   @default("Ordered")
-  result            String?
-  resultDate        DateTime?
-  notes             String?
-  validated         Boolean  @default(false)
-  validatedBy       String?
-  validatedAt       DateTime?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  Staff_LabOrder_labStaffIdToStaff      Staff?  @relation("LabOrder_labStaffIdToStaff", fields: [labStaffId], references: [id])
-  Staff_LabOrder_orderingStaffIdToStaff Staff   @relation("LabOrder_orderingStaffIdToStaff", fields: [orderingStaffId], references: [id])
-  Patient           Patient             @relation(fields: [patientId], references: [id])
+  id                                    String    @id @default(cuid())
+  patientId                             String
+  orderingStaffId                       String
+  labStaffId                            String?
+  testName                              String
+  testType                              String
+  priority                              String    @default("Routine")
+  status                                String    @default("Ordered")
+  result                                String?
+  resultDate                            DateTime?
+  notes                                 String?
+  createdAt                             DateTime  @default(now())
+  updatedAt                             DateTime  @updatedAt
+  validated                             Boolean   @default(false)
+  validatedAt                           DateTime?
+  validatedBy                           String?
+  tenantId                              String
+  Staff_LabOrder_labStaffIdToStaff      Staff?    @relation("LabOrder_labStaffIdToStaff", fields: [labStaffId], references: [id])
+  Staff_LabOrder_orderingStaffIdToStaff Staff     @relation("LabOrder_orderingStaffIdToStaff", fields: [orderingStaffId], references: [id])
+  Patient                               Patient   @relation(fields: [patientId], references: [id])
+  Hospital                              Hospital  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, status])
 }
 
-// ============================================================
-// MEDICATION
-// ============================================================
 model Medication {
   id                    String                  @id @default(cuid())
   name                  String
@@ -332,15 +458,17 @@ model Medication {
   batchNumber           String?
   createdAt             DateTime                @default(now())
   updatedAt             DateTime                @updatedAt
+  tenantId              String
+  Hospital              Hospital                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   MedicationTransaction MedicationTransaction[]
   NHISDrugFormulary     NHISDrugFormulary[]
   NHISDrugPrice         NHISDrugPrice[]
   PharmacyTransaction   PharmacyTransaction[]
+
+  @@index([tenantId])
+  @@index([tenantId, name])
 }
 
-// ============================================================
-// MEDICATION TRANSACTION
-// ============================================================
 model MedicationTransaction {
   id              String     @id @default(cuid())
   medicationId    String
@@ -352,15 +480,19 @@ model MedicationTransaction {
   staffId         String?
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
+  reference       String?
+  patientId       String?
+  tenantId        String
   Medication      Medication @relation(fields: [medicationId], references: [id])
+  Patient         Patient?   @relation(fields: [patientId], references: [id])
+  Hospital        Hospital   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
-// ============================================================
-// NHIS AUTHORIZATION
-// ============================================================
 model NHISAuthorization {
   id                                         String        @id @default(cuid())
-  authorizationNumber                        String        @unique
+  authorizationNumber                        String
   patientId                                  String
   prescriptionId                             String?
   medications                                String
@@ -376,19 +508,21 @@ model NHISAuthorization {
   denialReason                               String?
   createdAt                                  DateTime      @default(now())
   updatedAt                                  DateTime      @updatedAt
+  tenantId                                   String
   Staff_NHISAuthorization_approvedByToStaff  Staff?        @relation("NHISAuthorization_approvedByToStaff", fields: [approvedBy], references: [id])
   Patient                                    Patient       @relation(fields: [patientId], references: [id])
   Prescription                               Prescription? @relation(fields: [prescriptionId], references: [id])
   Staff_NHISAuthorization_requestedByToStaff Staff         @relation("NHISAuthorization_requestedByToStaff", fields: [requestedBy], references: [id])
+  Hospital                                   Hospital      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   NHISClaim                                  NHISClaim[]
+
+  @@unique([tenantId, authorizationNumber])
+  @@index([tenantId])
 }
 
-// ============================================================
-// NHIS CLAIM
-// ============================================================
 model NHISClaim {
   id                                 String             @id @default(cuid())
-  claimNumber                        String             @unique
+  claimNumber                        String
   patientId                          String
   authorizationId                    String?
   prescriptionId                     String?
@@ -405,20 +539,22 @@ model NHISClaim {
   notes                              String?
   createdAt                          DateTime           @default(now())
   updatedAt                          DateTime           @updatedAt
+  tenantId                           String
   Staff_NHISClaim_approvedByToStaff  Staff?             @relation("NHISClaim_approvedByToStaff", fields: [approvedBy], references: [id])
   NHISAuthorization                  NHISAuthorization? @relation(fields: [authorizationId], references: [id])
   Patient                            Patient            @relation(fields: [patientId], references: [id])
   Prescription                       Prescription?      @relation(fields: [prescriptionId], references: [id])
   Staff_NHISClaim_submittedByToStaff Staff              @relation("NHISClaim_submittedByToStaff", fields: [submittedBy], references: [id])
+  Hospital                           Hospital           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, claimNumber])
+  @@index([tenantId])
 }
 
-// ============================================================
-// NHIS DRUG FORMULARY
-// ============================================================
 model NHISDrugFormulary {
   id                         String     @id @default(cuid())
   medicationId               String
-  nhisCode                   String     @unique
+  nhisCode                   String
   nhisName                   String?
   formularyStatus            String     @default("Active")
   coverageType               String     @default("Full")
@@ -440,14 +576,15 @@ model NHISDrugFormulary {
   isActive                   Boolean    @default(true)
   createdAt                  DateTime   @default(now())
   updatedAt                  DateTime   @updatedAt
+  tenantId                   String
   Medication                 Medication @relation(fields: [medicationId], references: [id])
+  Hospital                   Hospital   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@unique([medicationId, nhisCode])
+  @@unique([tenantId, nhisCode])
+  @@unique([tenantId, medicationId, nhisCode])
+  @@index([tenantId])
 }
 
-// ============================================================
-// NHIS DRUG PRICE
-// ============================================================
 model NHISDrugPrice {
   id                String     @id @default(cuid())
   medicationId      String
@@ -467,14 +604,14 @@ model NHISDrugPrice {
   expiryDate        DateTime?
   createdAt         DateTime   @default(now())
   updatedAt         DateTime   @updatedAt
+  tenantId          String
   Medication        Medication @relation(fields: [medicationId], references: [id])
+  Hospital          Hospital   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@unique([medicationId, nhisCode])
+  @@unique([tenantId, medicationId, nhisCode])
+  @@index([tenantId])
 }
 
-// ============================================================
-// PARTIAL PAYMENT
-// ============================================================
 model PartialPayment {
   id            String      @id @default(cuid())
   paymentPlanId String
@@ -484,22 +621,23 @@ model PartialPayment {
   notes         String?
   processedBy   String
   createdAt     DateTime    @default(now())
+  tenantId      String
   PaymentPlan   PaymentPlan @relation(fields: [paymentPlanId], references: [id], onDelete: Cascade)
   Staff         Staff       @relation(fields: [processedBy], references: [id])
+  Hospital      Hospital    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
-// ============================================================
-// PATIENT - COMPLETE WITH ARCHIVE CONTROL & MODULE ACCESS
-// ============================================================
 model Patient {
   id                    String                  @id @default(cuid())
-  hospitalId            String                  @unique
+  hospitalId            String
   firstName             String
   lastName              String
   dateOfBirth           DateTime
   gender                String
   phone                 String?
-  email                 String?                 @unique
+  email                 String?
   address               String?
   emergencyContact      String?
   allergies             String?
@@ -521,32 +659,30 @@ model Patient {
   lockedUntil           DateTime?
   lastPinChange         DateTime?
   lastPasswordChange    DateTime?
-  
-  // ============================================================
-  // ✅ ARCHIVE CONTROL
-  // ============================================================
   isArchived            Boolean                 @default(false)
   archivedAt            DateTime?
   archivedReason        String?
   archivedBy            String?
   autoArchived          Boolean                 @default(false)
-  archiveScheduledAt    DateTime?               // When the file is scheduled for auto-archive
-  activationRequestedAt DateTime?               // When a user requests to activate the file
-  
-  // ============================================================
-  // ✅ MODULE ACCESS
-  // ============================================================
-  lastAccessedAt        DateTime?
-  accessCount           Int                     @default(0)
-  isActiveForModule     Boolean                 @default(true)  // Can be accessed by Pharmacy/Lab
-  
   createdAt             DateTime                @default(now())
-  updatedAt             DateTime                @updatedAt 
+  updatedAt             DateTime                @updatedAt
   walletId              String?                 @unique
-  
-  // ============================================================
-  // RELATIONS
-  // ============================================================
+  accessCount           Int                     @default(0)
+  activationRequestedAt DateTime?
+  archiveScheduledAt    DateTime?
+  isActiveForModule     Boolean                 @default(true)
+  lastAccessedAt        DateTime?
+  autoArchiveAt         DateTime?
+  dischargeNotes        String?
+  dischargeType         String?
+  dischargedAt          DateTime?
+  dischargedBy          String?
+  fileStatus            String                  @default("ACTIVE")
+  isDischarged          Boolean                 @default(false)
+  tenantId              String
+  deleteReason          String?
+  deletedAt             DateTime?
+  deletedBy             String?
   Admission             Admission[]
   Appointment           Appointment[]
   BillingRecord         BillingRecord[]
@@ -554,8 +690,10 @@ model Patient {
   ImagingOrder          ImagingOrder[]
   KioskSession          KioskSession[]
   LabOrder              LabOrder[]
+  MedicationTransaction MedicationTransaction[]
   NHISAuthorization     NHISAuthorization[]
   NHISClaim             NHISClaim[]
+  Hospital              Hospital                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   PatientHistoryRecord  PatientHistoryRecord[]
   PatientJourney        PatientJourney[]
   PatientMessage        PatientMessage[]
@@ -570,11 +708,16 @@ model Patient {
   immunizations         immunizations[]
   optometry_records     optometry_records[]
   patient_notifications patient_notifications[]
+
+  @@unique([tenantId, hospitalId])
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@index([tenantId, isArchived])
+  @@index([tenantId, fileStatus])
+  @@index([tenantId, isDischarged])
+  @@index([deletedAt])
 }
 
-// ============================================================
-// PATIENT HISTORY RECORD
-// ============================================================
 model PatientHistoryRecord {
   id            String   @id @default(cuid())
   patientId     String
@@ -586,64 +729,53 @@ model PatientHistoryRecord {
   notes         String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  tenantId      String
   Patient       Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  Hospital      Hospital @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
-// ============================================================
-// PATIENT JOURNEY - WITH FEE TRACKING & ACCESS CONTROL
-// ============================================================
 model PatientJourney {
-  id                          String         @id @default(cuid())
-  patientId                   String
-  destinationType             String         @default("CLINIC")
-  clinicId                    String?
-  wardId                      String?
-  registeredById              String
-  status                      String         @default("REGISTERED")
-  cardGeneratedAt             DateTime?
-  sentToDestinationAt         DateTime?
-  completedAt                 DateTime?
-  archivedAt                  DateTime?
-  billingRecordId             String?        @unique
-  
-  // ============================================================
-  // AUTO-BILLING FLAGS
-  // ============================================================
-  registrationFeeBilled       Boolean        @default(false)
-  registrationFeePaid         Boolean        @default(false)
-  cardFeeBilled               Boolean        @default(false)
-  cardFeePaid                 Boolean        @default(false)
-  consultationFeeBilled       Boolean        @default(false)
-  consultationFeePaid         Boolean        @default(false)
-  
-  registrationFeeRecordId     String?
-  cardFeeRecordId             String?
-  consultationFeeRecordId     String?
-  
-  // ============================================================
-  // ✅ ACCESS CONTROL
-  // ============================================================
-  isActive              Boolean        @default(true)      // Whether the journey is active
-  activationRequested   Boolean        @default(false)     // Whether activation was requested
-  activatedAt           DateTime?                          // When the journey was activated
-  activatedBy           String?                            // Who activated the journey
-  
-  createdAt                   DateTime       @default(now())
-  updatedAt                   DateTime       @updatedAt
-  
-  // ============================================================
-  // RELATIONS
-  // ============================================================
-  BillingRecord               BillingRecord? @relation(fields: [billingRecordId], references: [id])
-  Clinic                      Clinic?        @relation(fields: [clinicId], references: [id])
-  Patient                     Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  Staff                       Staff          @relation(fields: [registeredById], references: [id])
-  Ward                        Ward?          @relation(fields: [wardId], references: [id])
+  id                      String         @id @default(cuid())
+  patientId               String
+  destinationType         String         @default("CLINIC")
+  clinicId                String?
+  wardId                  String?
+  registeredById          String
+  status                  String         @default("REGISTERED")
+  cardGeneratedAt         DateTime?
+  sentToDestinationAt     DateTime?
+  completedAt             DateTime?
+  archivedAt              DateTime?
+  billingRecordId         String?        @unique
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
+  cardFeeBilled           Boolean        @default(false)
+  cardFeePaid             Boolean        @default(false)
+  cardFeeRecordId         String?
+  consultationFeeBilled   Boolean        @default(false)
+  consultationFeePaid     Boolean        @default(false)
+  consultationFeeRecordId String?
+  registrationFeeBilled   Boolean        @default(false)
+  registrationFeePaid     Boolean        @default(false)
+  registrationFeeRecordId String?
+  activatedAt             DateTime?
+  activatedBy             String?
+  activationRequested     Boolean        @default(false)
+  isActive                Boolean        @default(true)
+  tenantId                String
+  BillingRecord           BillingRecord? @relation(fields: [billingRecordId], references: [id])
+  Clinic                  Clinic?        @relation(fields: [clinicId], references: [id])
+  Patient                 Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  Staff                   Staff          @relation(fields: [registeredById], references: [id])
+  Hospital                Hospital       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  Ward                    Ward?          @relation(fields: [wardId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, status])
 }
 
-// ============================================================
-// PATIENT MESSAGE
-// ============================================================
 model PatientMessage {
   id            String   @id @default(cuid())
   patientId     String
@@ -653,13 +785,14 @@ model PatientMessage {
   isRead        Boolean  @default(false)
   isFromPatient Boolean  @default(true)
   createdAt     DateTime @default(now())
+  tenantId      String
   Patient       Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
   Staff         Staff    @relation(fields: [staffId], references: [id])
+  Hospital      Hospital @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
-// ============================================================
-// PATIENT QUEUE
-// ============================================================
 model PatientQueue {
   id              String       @id @default(cuid())
   patientId       String
@@ -678,19 +811,21 @@ model PatientQueue {
   notes           String?
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
+  tenantId        String
   Appointment     Appointment? @relation(fields: [appointmentId], references: [id])
   Staff           Staff?       @relation(fields: [assignedTo], references: [id])
   Clinic          Clinic?      @relation(fields: [clinicId], references: [id])
   Patient         Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  Hospital        Hospital     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   Ward            Ward?        @relation(fields: [wardId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, status])
 }
 
-// ============================================================
-// PATIENT TRANSFER
-// ============================================================
 model PatientTransfer {
   id                                          String    @id @default(cuid())
-  transferNumber                              String    @unique
+  transferNumber                              String
   patientId                                   String
   fromLocationType                            String
   fromClinicId                                String?
@@ -711,18 +846,20 @@ model PatientTransfer {
   notes                                       String?
   createdAt                                   DateTime  @default(now())
   updatedAt                                   DateTime  @updatedAt
+  tenantId                                    String
   Staff_PatientTransfer_approvedByToStaff     Staff?    @relation("PatientTransfer_approvedByToStaff", fields: [approvedBy], references: [id])
   Clinic_PatientTransfer_fromClinicIdToClinic Clinic?   @relation("PatientTransfer_fromClinicIdToClinic", fields: [fromClinicId], references: [id])
   Ward_PatientTransfer_fromWardIdToWard       Ward?     @relation("PatientTransfer_fromWardIdToWard", fields: [fromWardId], references: [id])
   Patient                                     Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
   Staff_PatientTransfer_requestedByToStaff    Staff     @relation("PatientTransfer_requestedByToStaff", fields: [requestedBy], references: [id])
+  Hospital                                    Hospital  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   Clinic_PatientTransfer_toClinicIdToClinic   Clinic?   @relation("PatientTransfer_toClinicIdToClinic", fields: [toClinicId], references: [id])
   Ward_PatientTransfer_toWardIdToWard         Ward?     @relation("PatientTransfer_toWardIdToWard", fields: [toWardId], references: [id])
+
+  @@unique([tenantId, transferNumber])
+  @@index([tenantId])
 }
 
-// ============================================================
-// PATIENT WALLET
-// ============================================================
 model PatientWallet {
   id                String              @id @default(cuid())
   patientId         String              @unique
@@ -732,13 +869,14 @@ model PatientWallet {
   lastTransactionAt DateTime?
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
+  tenantId          String
   Patient           Patient             @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  Hospital          Hospital            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   WalletTransaction WalletTransaction[]
+
+  @@index([tenantId])
 }
 
-// ============================================================
-// PAYMENT PLAN
-// ============================================================
 model PaymentPlan {
   id                String           @id @default(cuid())
   patientId         String
@@ -756,31 +894,34 @@ model PaymentPlan {
   notes             String?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
+  tenantId          String
   PartialPayment    PartialPayment[]
   BillingRecord     BillingRecord    @relation(fields: [billingRecordId], references: [id], onDelete: Cascade)
   Patient           Patient          @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  Hospital          Hospital         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
-// ============================================================
-// PHARMACY BRANCH
-// ============================================================
 model PharmacyBranch {
   id                  String                @id @default(cuid())
   name                String
-  code                String                @unique
+  code                String
   location            String?
   phone               String?
   email               String?
   isActive            Boolean               @default(true)
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
+  tenantId            String
+  Hospital            Hospital              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   PharmacyStaff       PharmacyStaff[]
   PharmacyTransaction PharmacyTransaction[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
 }
 
-// ============================================================
-// PHARMACY STAFF
-// ============================================================
 model PharmacyStaff {
   id             String         @id @default(cuid())
   pharmacyId     String
@@ -789,18 +930,18 @@ model PharmacyStaff {
   isActive       Boolean        @default(true)
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
+  tenantId       String
   PharmacyBranch PharmacyBranch @relation(fields: [pharmacyId], references: [id])
   Staff          Staff          @relation(fields: [staffId], references: [id])
+  Hospital       Hospital       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@unique([pharmacyId, staffId])
+  @@unique([tenantId, pharmacyId, staffId])
+  @@index([tenantId])
 }
 
-// ============================================================
-// PHARMACY TRANSACTION
-// ============================================================
 model PharmacyTransaction {
   id                String         @id @default(cuid())
-  transactionNumber String         @unique
+  transactionNumber String
   pharmacyId        String
   medicationId      String
   transactionType   String
@@ -812,12 +953,15 @@ model PharmacyTransaction {
   staffId           String
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
+  tenantId          String
   Medication        Medication     @relation(fields: [medicationId], references: [id])
   PharmacyBranch    PharmacyBranch @relation(fields: [pharmacyId], references: [id])
   Staff             Staff          @relation(fields: [staffId], references: [id])
-}
+  Hospital          Hospital       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-// schema.prisma - Update the Pregnancy model
+  @@unique([tenantId, transactionNumber])
+  @@index([tenantId])
+}
 
 model Pregnancy {
   id                  String           @id @default(cuid())
@@ -830,25 +974,23 @@ model Pregnancy {
   riskLevel           String?
   status              String           @default("Active")
   notes               String?
-  laborStartTime      DateTime?        // When labor started
-  contractions        String?          // Description of contractions
-  dilation            Float?           // Cervical dilation in cm (0-10)
-  effacement          Float?           // Cervical effacement in percentage (0-100)
-  laborNotes          String?          // Notes during labor
-  deliveryDate        DateTime?        // When delivery occurred
-  
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
-  
-  // Relations
-  Patient             Patient          @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  contractions        String?
+  deliveryDate        DateTime?
+  dilation            Float?
+  effacement          Float?
+  laborNotes          String?
+  laborStartTime      DateTime?
+  tenantId            String
   AntenatalVisit      AntenatalVisit[]
   Delivery            Delivery?
+  Patient             Patient          @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  Hospital            Hospital         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
-// ============================================================
-// PRESCRIPTION
-// ============================================================
 model Prescription {
   id                                           String              @id @default(cuid())
   patientId                                    String
@@ -865,16 +1007,18 @@ model Prescription {
   status                                       String              @default("Prescribed")
   createdAt                                    DateTime            @default(now())
   updatedAt                                    DateTime            @updatedAt
+  tenantId                                     String
   NHISAuthorization                            NHISAuthorization[]
   NHISClaim                                    NHISClaim[]
   Staff_Prescription_dispensingStaffIdToStaff  Staff?              @relation("Prescription_dispensingStaffIdToStaff", fields: [dispensingStaffId], references: [id])
   Patient                                      Patient             @relation(fields: [patientId], references: [id], onDelete: Cascade)
   Staff_Prescription_prescribingStaffIdToStaff Staff               @relation("Prescription_prescribingStaffIdToStaff", fields: [prescribingStaffId], references: [id])
+  Hospital                                     Hospital            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, status])
 }
 
-// ============================================================
-// ROI REQUEST
-// ============================================================
 model ROIRequest {
   id            String   @id @default(cuid())
   requestorName String
@@ -884,66 +1028,69 @@ model ROIRequest {
   status        String   @default("Pending")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  tenantId      String
+  Hospital      Hospital @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
-// ============================================================
-// ROLE PERMISSION
-// ============================================================
 model RolePermission {
-  id                     String   @id @default(cuid())
-  role                   String   @unique
-  dashboard              Boolean  @default(false)
-  patients               Boolean  @default(false)
-  staff                  Boolean  @default(false)
-  appointments           Boolean  @default(false)
-  prescriptions          Boolean  @default(false)
-  labOrders              Boolean  @default(false)
-  billing                Boolean  @default(false)
-  pharmacy               Boolean  @default(false)
-  pharmacyDashboard      Boolean  @default(false)
-  pharmacyInventory      Boolean  @default(false)
-  nhisManagement         Boolean  @default(false)
-  nhisAuthorizations     Boolean  @default(false)
-  pharmacyStock          Boolean  @default(false)
-  pharmacyTransactions   Boolean  @default(false)
-  pharmacyBranches       Boolean  @default(false)
-  clinics                Boolean  @default(false)
-  wards                  Boolean  @default(false)
-  pricing                Boolean  @default(false)
-  billingOfficer         Boolean  @default(false)
-  patientIntake          Boolean  @default(false)
-  admissions             Boolean  @default(false)
-  patientHistory         Boolean  @default(false)
-  roiRequests            Boolean  @default(false)
-  nurseDashboard         Boolean  @default(false)
-  doctorDashboard        Boolean  @default(false)
-  antenatal              Boolean  @default(false)
-  archivedPatients       Boolean  @default(false)
-  archivedPatientsView   Boolean  @default(false)
-  doctorQueue            Boolean  @default(false)
-  queueManagement        Boolean  @default(false)
-  hrDashboard            Boolean  @default(false)
-  hrEmployees            Boolean  @default(false)
-  hrDepartments          Boolean  @default(false)
-  hrLeaves               Boolean  @default(false)
-  hrAttendance           Boolean  @default(false)
-  hrPerformance          Boolean  @default(false)
-  hrTrainings            Boolean  @default(false)
-  radiology              Boolean  @default(false)
-  dental                 Boolean  @default(false)
-  optometry              Boolean  @default(false)
-  immunizations          Boolean  @default(false)
-  patientPortal          Boolean  @default(false)
-  portalSetup            Boolean  @default(false)
-  wallet                 Boolean  @default(false)
-  laborAndDelivery       Boolean  @default(false)
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  role                 String
+  dashboard            Boolean  @default(false)
+  patients             Boolean  @default(false)
+  staff                Boolean  @default(false)
+  appointments         Boolean  @default(false)
+  prescriptions        Boolean  @default(false)
+  labOrders            Boolean  @default(false)
+  billing              Boolean  @default(false)
+  pharmacy             Boolean  @default(false)
+  pharmacyDashboard    Boolean  @default(false)
+  pharmacyInventory    Boolean  @default(false)
+  nhisManagement       Boolean  @default(false)
+  nhisAuthorizations   Boolean  @default(false)
+  pharmacyStock        Boolean  @default(false)
+  pharmacyTransactions Boolean  @default(false)
+  pharmacyBranches     Boolean  @default(false)
+  clinics              Boolean  @default(false)
+  wards                Boolean  @default(false)
+  pricing              Boolean  @default(false)
+  billingOfficer       Boolean  @default(false)
+  wallet               Boolean  @default(false)
+  patientIntake        Boolean  @default(false)
+  admissions           Boolean  @default(false)
+  patientHistory       Boolean  @default(false)
+  roiRequests          Boolean  @default(false)
+  nurseDashboard       Boolean  @default(false)
+  doctorDashboard      Boolean  @default(false)
+  antenatal            Boolean  @default(false)
+  archivedPatients     Boolean  @default(false)
+  archivedPatientsView Boolean  @default(false)
+  queueManagement      Boolean  @default(false)
+  doctorQueue          Boolean  @default(false)
+  hrDashboard          Boolean  @default(false)
+  hrEmployees          Boolean  @default(false)
+  hrDepartments        Boolean  @default(false)
+  hrLeaves             Boolean  @default(false)
+  hrAttendance         Boolean  @default(false)
+  hrPerformance        Boolean  @default(false)
+  hrTrainings          Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  dental               Boolean  @default(false)
+  immunizations        Boolean  @default(false)
+  laborAndDelivery     Boolean  @default(false)
+  optometry            Boolean  @default(false)
+  patientPortal        Boolean  @default(false)
+  portalSetup          Boolean  @default(false)
+  radiology            Boolean  @default(false)
+  tenantId             String
+  Hospital             Hospital @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, role])
+  @@index([tenantId])
 }
 
-// ============================================================
-// SERVICE PRICE
-// ============================================================
 model ServicePrice {
   id          String   @id @default(cuid())
   name        String
@@ -953,15 +1100,16 @@ model ServicePrice {
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  tenantId    String
   Clinic      Clinic?  @relation(fields: [clinicId], references: [id])
+  Hospital    Hospital @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
-// ============================================================
-// SERVICE PRICING - FIXED: Added missing closing brace
-// ============================================================
 model ServicePricing {
   id             String   @id @default(cuid())
-  name           String   @unique
+  name           String
   description    String?
   category       String   @default("FPP")
   basePrice      Float    @default(0)
@@ -970,44 +1118,44 @@ model ServicePricing {
   isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  tenantId       String
+  Hospital       Hospital @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
 }
 
-// ============================================================
-// DEPARTMENT - FIXED: managerId has @unique for one-to-one
-// ============================================================
 model Department {
   id          String   @id @default(cuid())
-  name        String   @unique
+  name        String
   description String?
-  managerId   String?  @unique  // ✅ MUST BE UNIQUE for one-to-one relation
+  managerId   String?  @unique
   location    String?
   costCenter  String?
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  
-  // Relations
-  staff       Staff[]  @relation("StaffDepartment")
+  tenantId    String
   manager     Staff?   @relation("DepartmentManager", fields: [managerId], references: [id])
-  
+  Hospital    Hospital @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  staff       Staff[]  @relation("StaffDepartment")
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
   @@map("Department")
 }
 
-// ============================================================
-// STAFF - FIXED: Self-reference and DepartmentManager conflicts resolved
-// ============================================================
 model Staff {
   id                                                         String                     @id @default(cuid())
-  employeeId                                                 String                     @unique
-  username                                                   String                     @unique
+  employeeId                                                 String
+  username                                                   String
   firstName                                                  String
   lastName                                                   String
-  email                                                      String                     @unique
+  email                                                      String
   role                                                       String
   password                                                   String
   isActive                                                   Boolean                    @default(true)
   manager_id                                                 String?
-  departmentId                                               String?                    @map("departmentId")
   dateOfBirth                                                DateTime?
   gender                                                     String?
   phone                                                      String?
@@ -1024,20 +1172,8 @@ model Staff {
   nationalId                                                 String?
   createdAt                                                  DateTime                   @default(now())
   updatedAt                                                  DateTime                   @updatedAt
-  
-  // ============================================================
-  // SELF-REFERENCING for manager - FIXED: map with custom constraint name
-  // ============================================================
-  manager                                                    Staff?                     @relation("StaffManager", fields: [manager_id], references: [id], map: "Staff_manager_id_fkey_self")
-  subordinates                                               Staff[]                    @relation("StaffManager")
-  
-  // ============================================================
-  // DEPARTMENT relations - FIXED: Only ONE side has fields/references
-  // ============================================================
-  department                                                 Department?                @relation("StaffDepartment", fields: [departmentId], references: [id])
-  managesDepartment                                          Department?                @relation("DepartmentManager")
-  
-  // Relations
+  departmentId                                               String?                    @map("departmentId")
+  tenantId                                                   String
   Admission                                                  Admission[]
   AntenatalVisit                                             AntenatalVisit[]
   Appointment                                                Appointment[]
@@ -1045,6 +1181,7 @@ model Staff {
   BillingRecord                                              BillingRecord[]
   ClinicalNote                                               ClinicalNote[]
   Delivery                                                   Delivery[]
+  managesDepartment                                          Department?                @relation("DepartmentManager")
   ImagingOrder_ImagingOrder_orderingStaffIdToStaff           ImagingOrder[]             @relation("ImagingOrder_orderingStaffIdToStaff")
   ImagingOrder_ImagingOrder_radiologistIdToStaff             ImagingOrder[]             @relation("ImagingOrder_radiologistIdToStaff")
   LabOrder_LabOrder_labStaffIdToStaff                        LabOrder[]                 @relation("LabOrder_labStaffIdToStaff")
@@ -1063,6 +1200,10 @@ model Staff {
   PharmacyTransaction                                        PharmacyTransaction[]
   Prescription_Prescription_dispensingStaffIdToStaff         Prescription[]             @relation("Prescription_dispensingStaffIdToStaff")
   Prescription_Prescription_prescribingStaffIdToStaff        Prescription[]             @relation("Prescription_prescribingStaffIdToStaff")
+  department                                                 Department?                @relation("StaffDepartment", fields: [departmentId], references: [id])
+  manager                                                    Staff?                     @relation("StaffManager", fields: [manager_id], references: [id], map: "Staff_manager_id_fkey_self")
+  subordinates                                               Staff[]                    @relation("StaffManager")
+  Hospital                                                   Hospital                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   StaffClinic                                                StaffClinic[]
   StaffWard                                                  StaffWard[]
   VitalSign                                                  VitalSign[]
@@ -1080,35 +1221,39 @@ model Staff {
   performance_reviews_performance_reviews_staff_idToStaff    performance_reviews[]      @relation("performance_reviews_staff_idToStaff")
   staff_leave_entitlements                                   staff_leave_entitlements[]
   staff_trainings                                            staff_trainings[]
+
+  @@unique([tenantId, employeeId])
+  @@unique([tenantId, username])
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@index([tenantId, role])
+  @@index([tenantId, isActive])
 }
 
-// ============================================================
-// STAFF CLINIC
-// ============================================================
 model StaffClinic {
   staffId  String
   clinicId String
-  Clinic   Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  Staff    Staff  @relation(fields: [staffId], references: [id])
+  tenantId String
+  Clinic   Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  Staff    Staff    @relation(fields: [staffId], references: [id])
+  Hospital Hospital @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@id([staffId, clinicId])
+  @@id([tenantId, staffId, clinicId])
+  @@index([tenantId])
 }
 
-// ============================================================
-// STAFF WARD
-// ============================================================
 model StaffWard {
-  staffId String
-  wardId  String
-  Staff   Staff  @relation(fields: [staffId], references: [id])
-  Ward    Ward   @relation(fields: [wardId], references: [id], onDelete: Cascade)
+  staffId  String
+  wardId   String
+  tenantId String
+  Staff    Staff    @relation(fields: [staffId], references: [id])
+  Hospital Hospital @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  Ward     Ward     @relation(fields: [wardId], references: [id], onDelete: Cascade)
 
-  @@id([staffId, wardId])
+  @@id([tenantId, staffId, wardId])
+  @@index([tenantId])
 }
 
-// ============================================================
-// VITAL SIGN
-// ============================================================
 model VitalSign {
   id                     String   @id @default(cuid())
   patientId              String
@@ -1125,13 +1270,15 @@ model VitalSign {
   notes                  String?
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
+  tenantId               String
   Staff                  Staff    @relation(fields: [nurseId], references: [id])
   Patient                Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  Hospital               Hospital @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, patientId])
 }
 
-// ============================================================
-// WALLET TRANSACTION
-// ============================================================
 model WalletTransaction {
   id               String         @id @default(cuid())
   walletId         String
@@ -1140,13 +1287,13 @@ model WalletTransaction {
   balanceBefore    Float
   balanceAfter     Float
   description      String
-  reference        String         @unique
+  reference        String
   status           String         @default("Completed")
   billingRecordId  String?        @unique
   category         String?
   serviceId        String?
   serviceType      String?
-  paymentReference String?        @unique
+  paymentReference String?
   processedAt      DateTime?
   processedBy      String?
   paidToStaffId    String?
@@ -1154,32 +1301,37 @@ model WalletTransaction {
   notes            String?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
+  tenantId         String
   BillingRecord    BillingRecord? @relation(fields: [billingRecordId], references: [id])
   Staff            Staff?         @relation(fields: [paidToStaffId], references: [id])
+  Hospital         Hospital       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   PatientWallet    PatientWallet  @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, reference])
+  @@unique([tenantId, paymentReference])
+  @@index([tenantId])
 }
 
-// ============================================================
-// WARD
-// ============================================================
 model Ward {
   id                                               String            @id @default(cuid())
-  name                                             String            @unique
+  name                                             String
   description                                      String?
   capacity                                         Int?
   createdAt                                        DateTime          @default(now())
   updatedAt                                        DateTime          @updatedAt
+  tenantId                                         String
   Admission                                        Admission[]
   PatientJourney                                   PatientJourney[]
   PatientQueue                                     PatientQueue[]
   PatientTransfer_PatientTransfer_fromWardIdToWard PatientTransfer[] @relation("PatientTransfer_fromWardIdToWard")
   PatientTransfer_PatientTransfer_toWardIdToWard   PatientTransfer[] @relation("PatientTransfer_toWardIdToWard")
   StaffWard                                        StaffWard[]
+  Hospital                                         Hospital          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
 }
 
-// ============================================================
-// ATTENDANCE
-// ============================================================
 model attendance {
   id         String    @id @default(cuid())
   staff_id   String
@@ -1189,12 +1341,13 @@ model attendance {
   notes      String?
   created_at DateTime  @default(now())
   updated_at DateTime  @updatedAt
+  tenantId   String
   Staff      Staff     @relation(fields: [staff_id], references: [id])
+  Hospital   Hospital  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
-// ============================================================
-// DENTAL RECORDS
-// ============================================================
 model dental_records {
   id              String   @id @default(cuid())
   patientId       String
@@ -1207,13 +1360,14 @@ model dental_records {
   staffId         String
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  tenantId        String
   Patient         Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
   Staff           Staff    @relation(fields: [staffId], references: [id])
+  Hospital        Hospital @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
-// ============================================================
-// IMMUNIZATIONS
-// ============================================================
 model immunizations {
   id                 String    @id @default(cuid())
   patientId          String
@@ -1229,12 +1383,13 @@ model immunizations {
   notes              String?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
+  tenantId           String
   Patient            Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  Hospital           Hospital  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
-// ============================================================
-// LEAVE NOTIFICATIONS
-// ============================================================
 model leave_notifications {
   id                String          @id @default(cuid())
   leave_request_id  String?
@@ -1249,16 +1404,17 @@ model leave_notifications {
   is_global         Boolean         @default(false)
   created_at        DateTime        @default(now())
   updated_at        DateTime        @updatedAt
+  tenantId          String
   leave_requests    leave_requests? @relation(fields: [leave_request_id], references: [id], onDelete: Cascade)
   Staff             Staff?          @relation(fields: [staff_id], references: [id], onDelete: Cascade)
+  Hospital          Hospital        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
-// ============================================================
-// LEAVE POLICIES
-// ============================================================
 model leave_policies {
   id                     String   @id @default(cuid())
-  name                   String   @unique
+  name                   String
   description            String?
   default_annual_days    Float    @default(21)
   default_sick_days      Float    @default(10)
@@ -1274,11 +1430,13 @@ model leave_policies {
   is_active              Boolean  @default(true)
   created_at             DateTime @default(now())
   updated_at             DateTime @updatedAt
+  tenantId               String
+  Hospital               Hospital @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
 }
 
-// ============================================================
-// LEAVE REQUESTS
-// ============================================================
 model leave_requests {
   id                                         String                @id @default(cuid())
   staff_id                                   String
@@ -1296,16 +1454,17 @@ model leave_requests {
   created_at                                 DateTime              @default(now())
   updated_at                                 DateTime              @updatedAt
   leave_usage_id                             String?               @unique
+  tenantId                                   String
   leave_notifications                        leave_notifications[]
   Staff_leave_requests_approved_by_idToStaff Staff?                @relation("leave_requests_approved_by_idToStaff", fields: [approved_by_id], references: [id])
   Staff_leave_requests_staff_idToStaff       Staff                 @relation("leave_requests_staff_idToStaff", fields: [staff_id], references: [id])
   Staff_leave_requests_substitute_idToStaff  Staff?                @relation("leave_requests_substitute_idToStaff", fields: [substitute_id], references: [id])
+  Hospital                                   Hospital              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   leave_usages                               leave_usages?
+
+  @@index([tenantId])
 }
 
-// ============================================================
-// LEAVE USAGES
-// ============================================================
 model leave_usages {
   id                                       String                    @id @default(cuid())
   staff_id                                 String
@@ -1321,15 +1480,16 @@ model leave_usages {
   notes                                    String?
   created_at                               DateTime                  @default(now())
   updated_at                               DateTime                  @updatedAt
+  tenantId                                 String
   Staff_leave_usages_approved_by_idToStaff Staff?                    @relation("leave_usages_approved_by_idToStaff", fields: [approved_by_id], references: [id])
   staff_leave_entitlements                 staff_leave_entitlements? @relation(fields: [entitlement_id], references: [id])
   leave_requests                           leave_requests?           @relation(fields: [leave_request_id], references: [id])
   Staff_leave_usages_staff_idToStaff       Staff                     @relation("leave_usages_staff_idToStaff", fields: [staff_id], references: [id])
+  Hospital                                 Hospital                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
-// ============================================================
-// OPTOMETRY RECORDS
-// ============================================================
 model optometry_records {
   id                       String   @id @default(cuid())
   patientId                String
@@ -1347,13 +1507,14 @@ model optometry_records {
   staffId                  String
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
+  tenantId                 String
   Patient                  Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
   Staff                    Staff    @relation(fields: [staffId], references: [id])
+  Hospital                 Hospital @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
-// ============================================================
-// PATIENT NOTIFICATIONS
-// ============================================================
 model patient_notifications {
   id        String   @id @default(cuid())
   patientId String
@@ -1363,12 +1524,13 @@ model patient_notifications {
   isRead    Boolean  @default(false)
   link      String?
   createdAt DateTime @default(now())
+  tenantId  String
   Patient   Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  Hospital  Hospital @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
-// ============================================================
-// PERFORMANCE REVIEWS
-// ============================================================
 model performance_reviews {
   id                                           String    @id @default(cuid())
   staff_id                                     String
@@ -1384,13 +1546,14 @@ model performance_reviews {
   overall_comments                             String?
   created_at                                   DateTime  @default(now())
   updated_at                                   DateTime  @updatedAt
+  tenantId                                     String
   Staff_performance_reviews_reviewer_idToStaff Staff     @relation("performance_reviews_reviewer_idToStaff", fields: [reviewer_id], references: [id])
   Staff_performance_reviews_staff_idToStaff    Staff     @relation("performance_reviews_staff_idToStaff", fields: [staff_id], references: [id])
+  Hospital                                     Hospital  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
-// ============================================================
-// STAFF LEAVE ENTITLEMENTS
-// ============================================================
 model staff_leave_entitlements {
   id                       String         @id @default(cuid())
   staff_id                 String
@@ -1422,15 +1585,15 @@ model staff_leave_entitlements {
   notes                    String?
   created_at               DateTime       @default(now())
   updated_at               DateTime       @updatedAt
+  tenantId                 String
   leave_usages             leave_usages[]
   Staff                    Staff          @relation(fields: [staff_id], references: [id])
+  Hospital                 Hospital       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@unique([staff_id, year])
+  @@unique([tenantId, staff_id, year])
+  @@index([tenantId])
 }
 
-// ============================================================
-// STAFF TRAININGS
-// ============================================================
 model staff_trainings {
   staff_id           String
   training_id        String
@@ -1441,15 +1604,15 @@ model staff_trainings {
   score              Int?
   created_at         DateTime  @default(now())
   updated_at         DateTime  @updatedAt
+  tenantId           String
   Staff              Staff     @relation(fields: [staff_id], references: [id])
+  Hospital           Hospital  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   trainings          trainings @relation(fields: [training_id], references: [id])
 
-  @@id([staff_id, training_id])
+  @@id([tenantId, staff_id, training_id])
+  @@index([tenantId])
 }
 
-// ============================================================
-// TRAININGS
-// ============================================================
 model trainings {
   id                   String            @id @default(cuid())
   title                String
@@ -1463,5 +1626,9 @@ model trainings {
   certificate_provided Boolean           @default(false)
   created_at           DateTime          @default(now())
   updated_at           DateTime          @updatedAt
+  tenantId             String
   staff_trainings      staff_trainings[]
+  Hospital             Hospital          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }

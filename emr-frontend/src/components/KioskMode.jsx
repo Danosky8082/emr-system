@@ -4,8 +4,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import './KioskMode.css';
+import { useSearchParams } from 'react-router-dom';
 
 const KioskMode = () => {
+  const [searchParams] = useSearchParams();
+  const tenantId = searchParams.get('tenantId') || 'default-hospital-id';
   const [step, setStep] = useState('welcome');
   const [inputValue, setInputValue] = useState('');
   const [patient, setPatient] = useState(null);
@@ -43,13 +46,15 @@ const KioskMode = () => {
 
   // Fetch consultation fee
   const fetchConsultationFee = async () => {
-    try {
-      const res = await axios.get('http://localhost:3000/api/services/config/CONSULTATION');
-      setConsultationFee(res.data?.baseAmount || 5000);
-    } catch (error) {
-      console.log('Using default consultation fee: 5000');
-    }
-  };
+  try {
+    const res = await axios.get(
+      `http://localhost:3000/api/services/config/CONSULTATION?tenantId=${tenantId}`
+    );
+    setConsultationFee(res.data?.baseAmount || 5000);
+  } catch (error) {
+    console.log('Using default consultation fee: 5000');
+  }
+};
 
   useEffect(() => {
     fetchConsultationFee();
@@ -65,8 +70,8 @@ const KioskMode = () => {
     setLoading(true);
     try {
       const res = await axios.get(
-        `http://localhost:3000/api/public/patient/search?query=${encodeURIComponent(inputValue)}`
-      );
+  `http://localhost:3000/api/public/patient/search?query=${encodeURIComponent(inputValue)}&tenantId=${tenantId}`
+);
 
       if (res.data.length === 0) {
         toast.error('Patient not found. Please try again.');
@@ -96,45 +101,47 @@ const KioskMode = () => {
 
   // Check appointment
   const checkAppointment = async (patientId) => {
-    try {
-      const token = localStorage.getItem('emr_token');
-      if (!token) {
-        setAppointment(null);
-        setStep('confirm');
-        return;
-      }
-
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-
-      const res = await axios.get(
-        `http://localhost:3000/api/appointments?patientId=${patientId}&dateFrom=${today.toISOString()}&dateTo=${tomorrow.toISOString()}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      const todayAppointments = res.data.filter(a => 
-        a.status !== 'Cancelled' && 
-        new Date(a.dateTime) >= today && 
-        new Date(a.dateTime) < tomorrow
-      );
-
-      if (todayAppointments.length > 0) {
-        const upcomingAppt = todayAppointments[0];
-        setAppointment(upcomingAppt);
-        await checkWalletAndFee(patientId, upcomingAppt);
-      } else {
-        setAppointment(null);
-        setStep('confirm');
-        toast.error('📋 No appointment found for today. Please visit Records.');
-      }
-    } catch (error) {
-      console.error('Appointment check error:', error);
+  try {
+    const token = localStorage.getItem('emr_token');
+    if (!token) {
       setAppointment(null);
       setStep('confirm');
+      return;
     }
-  };
+
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const res = await axios.get(
+      `http://localhost:3000/api/appointments?patientId=${patientId}&dateFrom=${today.toISOString()}&dateTo=${tomorrow.toISOString()}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    const todayAppointments = res.data.filter(a =>
+      a.status !== 'Cancelled' &&
+      new Date(a.dateTime) >= today &&
+      new Date(a.dateTime) < tomorrow
+    );
+
+    if (todayAppointments.length > 0) {
+      const upcomingAppt = todayAppointments[0];
+      setAppointment(upcomingAppt);
+      await checkWalletAndFee(patientId, upcomingAppt);
+    } else {
+      // ✅ FIX: Block the flow entirely
+      setAppointment(null);
+      toast.error('📋 No appointment found for today. Please visit the Records desk.');
+      setStep('no-appointment');  // new step
+    }
+  } catch (error) {
+    console.error('Appointment check error:', error);
+    setAppointment(null);
+    toast.error('Failed to verify appointment. Please see staff.');
+    setStep('no-appointment');
+  }
+};
+
+
 
   // Check wallet and auto-deduct
   const checkWalletAndFee = async (patientId, appt) => {
@@ -170,58 +177,61 @@ const KioskMode = () => {
 
   // Confirm auto-deduction
   const handleConfirmDeduction = async () => {
-    setProcessingDeduction(true);
-    try {
-      const token = localStorage.getItem('emr_token');
-      if (!token) {
-        toast.error('Please contact staff to complete check-in');
-        setStep('confirm');
-        return;
-      }
-
-      const fee = consultationFee || 5000;
-
-      // ✅ FIX: Get the doctor name from appointment
-      const doctorName = appointment?.Staff 
-        ? `Dr. ${appointment.Staff.firstName || ''} ${appointment.Staff.lastName || ''}`.trim() 
-        : 'Doctor';
-
-      // Process wallet payment
-      await axios.post(
-        `http://localhost:3000/api/patients/${patient.id}/wallet/pay`,
-        {
-          amount: fee,
-          description: `Consultation Fee - ${doctorName} at ${new Date(appointment.dateTime).toLocaleString()}`,
-          category: 'Consultation',
-          serviceType: 'consultation',
-          serviceId: appointment.id
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      // Check-in patient
-      await axios.post(
-        'http://localhost:3000/api/patient/checkin',
-        {
-          patientId: patient.id,
-          appointmentId: appointment.id,
-          checkInMethod: 'self_kiosk'
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      toast.success(`✅ ₦${fee.toLocaleString()} deducted from wallet. Check-in complete!`);
-      setStep('success');
-      
-    } catch (error) {
-      console.error('Deduction/check-in error:', error);
-      const errorMessage = error.response?.data?.error || 'Failed to complete check-in. Please see staff.';
-      toast.error(errorMessage);
+  setProcessingDeduction(true);
+  try {
+    const token = localStorage.getItem('emr_token');
+    if (!token) {
+      toast.error('Please contact staff to complete check-in');
       setStep('confirm');
-    } finally {
-      setProcessingDeduction(false);
+      return;
     }
-  };
+
+    const fee = consultationFee || 5000;
+
+    // ✅ FIX: Safely handle missing appointment
+    const doctorName = appointment?.Staff
+      ? `Dr. ${appointment.Staff.firstName || ''} ${appointment.Staff.lastName || ''}`.trim()
+      : 'Doctor';
+
+    const description = appointment
+      ? `Consultation Fee - ${doctorName} at ${new Date(appointment.dateTime).toLocaleString()}`
+      : `Consultation Fee - Walk-in`;
+
+    // Process wallet payment
+    await axios.post(
+      `http://localhost:3000/api/patients/${patient.id}/wallet/pay`,
+      {
+        amount: fee,
+        description,
+        category: 'Consultation',
+        serviceType: 'consultation',
+        serviceId: appointment?.id || null   // ✅ optional chaining
+      },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    // Check-in patient
+    await axios.post(
+      'http://localhost:3000/api/patient/checkin',
+      {
+        patientId: patient.id,
+        appointmentId: appointment?.id || null,   // ✅ optional chaining
+        checkInMethod: 'self_kiosk'
+      },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    toast.success(`✅ ₦${fee.toLocaleString()} deducted from wallet. Check-in complete!`);
+    setStep('success');
+  } catch (error) {
+    console.error('Deduction/check-in error:', error);
+    const errorMessage = error.response?.data?.error || 'Failed to complete check-in. Please see staff.';
+    toast.error(errorMessage);
+    setStep('confirm');
+  } finally {
+    setProcessingDeduction(false);
+  }
+};
 
   // Decline auto-deduction
   const handleDeclineDeduction = () => {
@@ -347,6 +357,32 @@ const KioskMode = () => {
       </div>
     </div>
   );
+
+  const renderNoAppointment = () => (
+  <div className="kiosk-confirm">
+    <div className="kiosk-header">
+      <h2>📋 No Appointment Found</h2>
+    </div>
+    <div style={{ textAlign: 'center', padding: '20px' }}>
+      <span style={{ fontSize: '64px' }}>📅</span>
+      <h3>We couldn't find an appointment for you today</h3>
+      <p style={{ color: '#6b7280' }}>
+        Patient: {patient?.firstName} {patient?.lastName} ({patient?.hospitalId})
+      </p>
+      <p style={{ color: '#6b7280', fontSize: '14px' }}>
+        Please proceed to the <strong>Records desk</strong> to register a walk-in visit.
+      </p>
+      <button
+        className="kiosk-button kiosk-button-primary"
+        onClick={resetKiosk}
+        style={{ marginTop: '20px' }}
+      >
+        🔄 Start Over
+      </button>
+    </div>
+  </div>
+);
+
 
   const renderSuccess = () => (
     <div className="kiosk-success">
@@ -553,6 +589,7 @@ const KioskMode = () => {
       {step === 'wallet-check' && renderWalletCheck()}
       {step === 'wallet-insufficient' && renderWalletCheck()}
       {step === 'billing-redirect' && renderBillingRedirect()}
+      {step === 'no-appointment' && renderNoAppointment()} 
       {step === 'confirm' && renderConfirm()}
       {step === 'success' && renderSuccess()}
     </div>
