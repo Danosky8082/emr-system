@@ -36,21 +36,33 @@ const RegisterHospital = () => {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      const res = await axios.post(
-        'http://localhost:3000/api/public/register-hospital',
-        formData
-      );
-      toast.success(`Welcome, ${res.data.hospital.name}!`);
-      navigate(`/h/${res.data.hospital.slug}/login`);
-    } catch (error) {
-      toast.error(error.response?.data?.error || 'Registration failed');
-    } finally {
-      setLoading(false);
-    }
-  };
+  e.preventDefault();
+  setLoading(true);
+  try {
+    const res = await axios.post(
+      'http://localhost:3000/api/public/register-hospital',
+      formData
+    );
+
+    const { hospital, admin } = res.data;
+
+    toast.success(`Welcome, ${hospital.name}!`);
+
+    // Send the user to login, and carry the generated username so
+    // the login page can pre-fill / display it.
+    navigate(`/h/${hospital.slug}/login`, {
+      state: {
+        justRegistered: true,
+        adminUsername: admin.username,   // ← stmary-7231
+        hospitalName: hospital.name,
+      },
+    });
+  } catch (error) {
+    toast.error(error.response?.data?.error || 'Registration failed');
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="login-screen app-container">
@@ -177,34 +189,30 @@ const RegisterHospital = () => {
             <small style={{ color: '#6b7280' }}>Minimum 8 characters</small>
           </div>
 
-          {formData.usernamePrefix && (
-            <div
-              style={{
-                background: '#eff6ff',
-                border: '1px solid #3b82f6',
-                borderRadius: '8px',
-                padding: '12px 16px',
-                marginTop: '8px',
-                marginBottom: '16px',
-                fontSize: '13px',
-                color: '#1e3a5f',
-              }}
-            >
-              📋 <strong>Your admin username will be:</strong>{' '}
-              <code
-                style={{
-                  background: 'white',
-                  padding: '2px 8px',
-                  borderRadius: '4px',
-                  fontWeight: 600,
-                }}
-              >
-                {formData.usernamePrefix}-admin
-              </code>
-              <br />
-              Save this — you'll need it to log in.
-            </div>
-          )}
+          {formData.slug && (
+  <div
+    style={{
+      background: '#eff6ff',
+      border: '1px solid #3b82f6',
+      borderRadius: '8px',
+      padding: '12px 16px',
+      marginTop: '8px',
+      marginBottom: '16px',
+      fontSize: '13px',
+      color: '#1e3a5f',
+    }}
+  >
+    📋 <strong>Your admin username will be generated automatically</strong>
+    <br />
+    It will look like <code style={{ background: 'white', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>
+      {formData.slug}-1234
+    </code>
+    <br />
+    <span style={{ color: '#6b7280' }}>
+      We'll show it to you on the next screen — save it for login.
+    </span>
+  </div>
+)}
 
           <button
             type="submit"

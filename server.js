@@ -58,7 +58,32 @@ async function findPatientIncludingDeleted(db, id, tenantId) {
   }
   return db.patient.findFirst({ where: { id } });
 }
+async function generateUsername(slug, tenantId, tx = prisma) {
+  const base = String(slug)
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
 
+  if (!base) throw new Error('Invalid slug for username generation');
+
+  const MAX_ATTEMPTS = 50;
+
+  for (let i = 0; i < MAX_ATTEMPTS; i++) {
+    const suffix = String(Math.floor(1000 + Math.random() * 9000));
+    const candidate = `${base}-${suffix}`;
+
+    const existing = await tx.staff.findFirst({
+      where: { tenantId, username: candidate },
+      select: { id: true },
+    });
+
+    if (!existing) return candidate;
+  }
+
+  throw new Error('Could not generate a unique username, please try again');
+}
 // ============================================================
 // 5. ROUTES — after all middleware
 // ============================================================
@@ -673,21 +698,23 @@ app.post('/api/public/register-hospital', async (req, res) => {
       });
 
       const hashedPassword = await bcrypt.hash(adminPassword, SALT_ROUNDS);
-      const adminUsername = `${usernamePrefix}-admin`;
 
-      const admin = await tx.staff.create({
-        data: {
-          tenantId: hospital.id,
-          employeeId: 'ADMIN-001',
-          username: adminUsername,
-          firstName: adminFirstName,
-          lastName: adminLastName,
-          email: adminEmail,
-          role: 'Admin',
-          password: hashedPassword,
-          isActive: true,
-        }
-      });
+// ✅ Slug-based random username: stmary-7231
+const adminUsername = await generateUsername(slug, hospital.id, tx);
+
+const admin = await tx.staff.create({
+  data: {
+    tenantId: hospital.id,
+    employeeId: 'ADMIN-001',
+    username: adminUsername,
+    firstName: adminFirstName,
+    lastName: adminLastName,
+    email: adminEmail,
+    role: 'Admin',
+    password: hashedPassword,
+    isActive: true,
+  }
+});
 
       // Create default role permissions
       const defaultRoles = ['Admin', 'Doctor', 'Nurse', 'Records', 'Pharmacist', 'Accountant', 'BillingOfficer'];
@@ -708,7 +735,7 @@ app.post('/api/public/register-hospital', async (req, res) => {
         slug: result.hospital.slug,
         usernamePrefix: result.hospital.usernamePrefix,   // ← NEW: return it too
       },
-      admin: { email: result.admin.email, role: result.admin.role }
+      admin: { email: result.admin.email, role: result.admin.role, username: result.admin.username, }
     });
   } catch (error) {
     console.error('Hospital registration error:', error);
@@ -2509,9 +2536,17 @@ app.patch('/api/roi/:id', authenticate, authorize('Admin', 'Records', 'ITAdmin')
 // ============================================================
 app.get('/api/staff', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
   try {
-    const staff = await req.db.staff.findMany({ orderBy: { createdAt: 'desc' } });
-    const staffWithoutPasswords = staff.map(({ password, ...rest }) => rest);
-    res.json(staffWithoutPasswords);
+    const staff = await req.db.staff.findMany({
+      include: { department: { select: { id: true, name: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(
+      staff.map(({ password, department, ...rest }) => ({
+        ...rest,
+        department: department?.name || null,
+        departmentId: department?.id || null,
+      }))
+    );
   } catch (error) {
     console.error('Get staff error:', error);
     res.status(500).json({ error: error.message });
@@ -2521,110 +2556,80 @@ app.get('/api/staff', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (
 app.get('/api/staff/:id', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
   try {
     const { id } = req.params;
-    const staff = await req.db.staff.findUnique({ where: { id } });
+    const staff = await req.db.staff.findUnique({
+      where: { id },
+      include: { department: { select: { id: true, name: true } } },
+    });
     if (!staff) return res.status(404).json({ error: 'Staff not found' });
-    const { password, ...staffWithoutPassword } = staff;
-    res.json(staffWithoutPassword);
+    const { password, department, ...rest } = staff;
+    res.json({
+      ...rest,
+      department: department?.name || null,
+      departmentId: department?.id || null,
+    });
   } catch (error) {
     console.error('Get staff error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-app.post('/api/staff', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
-  try {
-    const { employeeId, firstName, lastName, username, email, role, password } = req.body;
-
-    if (!employeeId || !firstName || !lastName || !username || !email || !role || !password) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
-
-    const hospital = await prisma.hospital.findUnique({
-      where: { id: req.tenantId },
-      select: { usernamePrefix: true, slug: true, name: true },
-    });
-
-    if (!hospital?.usernamePrefix) {
-      return res.status(500).json({ error: 'Hospital username prefix is not configured. Contact platform admin.' });
-    }
-
-    // Strip any prefix the admin typed, then rebuild it
-    const baseUsername = username.toLowerCase().trim().replace(/^[a-z0-9]+-/, '');
-    const fullUsername = `${hospital.usernamePrefix}-${baseUsername}`;
-
-    // Uniqueness checks within this tenant
-    const existingEmployeeId = await req.db.staff.findFirst({ where: { employeeId } });
-    if (existingEmployeeId) return res.status(400).json({ error: 'Employee ID already exists' });
-
-    const existingUsername = await req.db.staff.findFirst({
-      where: {
-        OR: [
-          { username: fullUsername },   // "caretech-doc001"
-          { username: baseUsername },   // "doc001" (legacy)
-        ],
-      },
-    });
-    if (existingUsername) return res.status(400).json({ error: 'Username already taken' });
-
-    const existingEmail = await req.db.staff.findFirst({ where: { email } });
-    if (existingEmail) return res.status(400).json({ error: 'Staff with this email already exists' });
-
-    const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
-
-    const staff = await req.db.staff.create({
-      data: {
-        employeeId,
-        firstName,
-        lastName,
-        username: fullUsername,   // ← "caretech-doc001"
-        email,
-        role,
-        password: hashedPassword,
-        isActive: true,
-        updatedAt: new Date(),
-      },
-    });
-
-    await req.db.auditLog.create({
-      data: {
-        staffId: req.user.id,
-        action: 'CREATE_STAFF',
-        module: 'Staff',
-        details: `Created staff ${fullUsername} as ${role}`,
-      },
-    });
-
-    const { password: _, ...staffWithoutPassword } = staff;
-    res.status(201).json({ ...staffWithoutPassword, fullUsername });
-  } catch (error) {
-    console.error('Create staff error:', error);
-    if (error.code === 'P2002') {
-      const field = error.meta?.target?.[0];
-      return res.status(400).json({ error: `Duplicate value for ${field}.` });
-    }
-    res.status(400).json({ error: error.message });
-  }
-});
-
 app.put('/api/staff/:id', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
   try {
     const { id } = req.params;
-    const { employeeId, firstName, lastName, username, email, role, isActive } = req.body;
-    const staff = await req.db.staff.update({
-      where: { id },
-      data: {
-        employeeId, firstName, lastName,
-        username: username ? username.toLowerCase().trim() : undefined,
-        email, role, isActive, updatedAt: new Date()
+    const { employeeId, firstName, lastName, username, email, role, department, isActive } = req.body;
+
+    const staff = await prisma.$transaction(async (tx) => {
+      // Resolve department only if the key was sent
+      let departmentId;
+      if (department !== undefined) {
+        if (department === null || department === '') {
+          departmentId = null;
+        } else {
+          const name = department.trim();
+          let dept = await tx.department.findFirst({
+            where: { tenantId: req.tenantId, name },
+            select: { id: true },
+          });
+          if (!dept) {
+            dept = await tx.department.create({
+              data: { tenantId: req.tenantId, name, isActive: true },
+              select: { id: true },
+            });
+          }
+          departmentId = dept.id;
+        }
       }
+
+      return tx.staff.update({
+        where: { id },
+        data: {
+          employeeId,
+          firstName,
+          lastName,
+          username: username ? username.toLowerCase().trim() : undefined,
+          email,
+          role,
+          departmentId,
+          isActive,
+          updatedAt: new Date(),
+        },
+        include: {
+          department: { select: { id: true, name: true } },
+        },
+      });
     });
-    const { password, ...staffWithoutPassword } = staff;
-    res.json(staffWithoutPassword);
+
+    const { password, department: deptRel, ...rest } = staff;
+    res.json({
+      ...rest,
+      department: deptRel?.name || null,
+      departmentId: deptRel?.id || null,
+    });
   } catch (error) {
     console.error('Update staff error:', error);
     if (error.code === 'P2002') {
       const field = error.meta?.target?.[0];
-      return res.status(400).json({ error: `Duplicate value for ${field}. Please use a unique ${field}.` });
+      return res.status(400).json({ error: `Duplicate value for ${field}.` });
     }
     res.status(400).json({ error: error.message });
   }
@@ -3995,7 +4000,7 @@ app.get('/api/billing/pending', authenticate, authorize('Admin', 'BillingOfficer
     wallets.forEach(w => { walletMap[w.patientId] = w.balance; });
     const formattedBills = pendingBills.map(bill => {
       const items = bill.items || [];
-      const totalPending = items.filter(i => i.status === 'Pending').reduce((sum, i) => sum + i.amount, 0);
+      const totalPending = bill.balance || 0;
       return {
         ...bill,
         patient: bill.Patient,
@@ -5682,13 +5687,121 @@ app.patch('/api/patient-journeys/:id/reverse', authenticate, authorize('Admin', 
       return res.status(400).json({ error: 'Only COMPLETED or SENT_TO_DESTINATION journeys can be reversed' });
     }
 
-    const newStatus = 'SENT_TO_DESTINATION';
-    if (journey.billingRecordId) {
+    // If a bill exists and has been partially or fully paid, refund the wallet + reset items
+    if (journey.billingRecordId && journey.BillingRecord) {
+      const bill = journey.BillingRecord;
+      const amountPaid = bill.paidAmount || 0;
+
+      // ✅ 0) Snapshot the bill's pre-reversal state into the audit trail
+      //       BEFORE anything is modified, so history is preserved forever.
+      await req.db.auditLog.create({
+        data: {
+          staffId: req.user.id,
+          action: 'BILL_REVERSED',
+          module: 'Billing',
+          details: JSON.stringify({
+            invoiceNumber: bill.invoiceNumber,
+            priorStatus: bill.status,
+            priorPaidAmount: bill.paidAmount,
+            priorPaymentMethod: bill.paymentMethod,
+            priorItems: bill.items,
+            reversalReason: reason || 'Process correction'
+          })
+        }
+      });
+
+      // 1) Refund wallet if the payment was made from wallet
+      if (bill.isWalletPayment && amountPaid > 0) {
+        const wallet = await req.db.patientWallet.findUnique({
+          where: { patientId: journey.patientId }
+        });
+        if (wallet) {
+          const balanceBefore = wallet.balance;
+          const balanceAfter = balanceBefore + amountPaid;
+          await req.db.$transaction(async (tx) => {
+            await tx.patientWallet.update({
+              where: { id: wallet.id },
+              data: { balance: balanceAfter, lastTransactionAt: new Date(), updatedAt: new Date() }
+            });
+            await tx.walletTransaction.create({
+              data: {
+                walletId: wallet.id,
+                transactionType: 'Refund',
+                amount: amountPaid,
+                balanceBefore,
+                balanceAfter,
+                description: `Reversal refund for ${bill.invoiceNumber}`,
+                reference: `REV-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+                status: 'Completed',
+                category: 'Billing',
+                serviceId: bill.id,
+                serviceType: 'billing_reversal',
+                notes: `Auto-refund on journey reversal. Reason: ${reason || 'Process correction'}`,
+                updatedAt: new Date()
+              }
+            });
+            await tx.patient_notifications.create({
+              data: {
+                patientId: journey.patientId,
+                title: '💰 Wallet Refund',
+                message: `₦${amountPaid.toLocaleString()} has been refunded to your wallet for invoice ${bill.invoiceNumber}.`,
+                type: 'wallet'
+              }
+            });
+          });
+        }
+      }
+
+      // 2) Reset every item back to Pending
+      const originalItems = Array.isArray(bill.items) ? bill.items : [];
+      const resetItems = originalItems.map(item => ({
+        ...item,
+        status: 'Pending',
+        paidAt: null,
+        paidAmount: 0
+      }));
+
+      // 3) Reset the bill
       await req.db.billingRecord.update({
         where: { id: journey.billingRecordId },
-        data: { status: 'Pending', paymentMethod: null, paymentDate: null, updatedAt: new Date() }
+        data: {
+          status: 'Pending',
+          paidAmount: 0,
+          balance: bill.totalAmount,
+          items: resetItems,
+          paymentMethod: null,
+          paymentDate: null,
+          isWalletPayment: false,
+          walletTransactionId: null,
+          walletAmountPaid: null,
+          cashAmountPaid: null,
+          paymentReference: null,
+          processedBy: null,
+          processedAt: null,
+          receiptGenerated: false,
+          receiptGeneratedAt: null,
+          receiptNumber: null,
+          updatedAt: new Date()
+        }
       });
     }
+
+    // 4) Reverse the journey itself
+    const updatedJourney = await req.db.patientJourney.update({
+      where: { id },
+      data: {
+        status: 'SENT_TO_DESTINATION',
+        sentToDestinationAt: null,
+        cardGeneratedAt: null,
+        registrationFeePaid: false,
+        cardFeePaid: false,
+        consultationFeePaid: false,
+        updatedAt: new Date()
+      },
+      include: { Patient: true, Clinic: true, Ward: true, BillingRecord: true }
+    });
+
+    // 5) If admitted to a ward, discharge
     if (journey.wardId) {
       const admission = await req.db.admission.findFirst({
         where: { patientId: journey.patientId, status: 'Admitted' }
@@ -5705,19 +5818,19 @@ app.patch('/api/patient-journeys/:id/reverse', authenticate, authorize('Admin', 
         });
       }
     }
-    const updatedJourney = await req.db.patientJourney.update({
-      where: { id },
-      data: { status: newStatus, sentToDestinationAt: null, cardGeneratedAt: null, updatedAt: new Date() },
-      include: { Patient: true, Clinic: true, Ward: true, BillingRecord: true }
-    });
+
+    // 6) Audit log — the journey-level entry
     await req.db.auditLog.create({
       data: {
         staffId: req.user.id,
         action: 'REVERSE_JOURNEY',
         module: 'Records',
-        details: `Reversed journey for ${journey.Patient?.hospitalId} from ${journey.status} to ${newStatus}. Reason: ${reason || 'Process error'}`
+        details: `Reversed journey for ${journey.Patient?.hospitalId}. ` +
+          `Bill ${journey.BillingRecord?.invoiceNumber || 'N/A'} reset to Pending. ` +
+          `Reason: ${reason || 'Process error'}`
       }
     });
+
     res.json({
       message: 'Journey reversed successfully',
       journey: {
@@ -5726,12 +5839,43 @@ app.patch('/api/patient-journeys/:id/reverse', authenticate, authorize('Admin', 
         clinic: updatedJourney.Clinic,
         ward: updatedJourney.Ward,
         billingRecord: updatedJourney.BillingRecord
-      },
-      newStatus
+      }
     });
   } catch (error) {
     console.error('Reverse journey error:', error);
     res.status(400).json({ error: error.message || 'Failed to reverse journey' });
+  }
+});
+
+app.get('/api/billing/:id/reversals', authenticate, authorize('Admin', 'ITAdmin', 'Accountant', 'BillingOfficer'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const bill = await req.db.billingRecord.findUnique({
+      where: { id },
+      select: { invoiceNumber: true }
+    });
+    if (!bill) return res.status(404).json({ error: 'Bill not found' });
+
+    // Find all BILL_REVERSED audit entries that mention this invoice number
+    const entries = await req.db.auditLog.findMany({
+      where: {
+        action: 'BILL_REVERSED',
+        module: 'Billing',
+        details: { contains: bill.invoiceNumber }
+      },
+      include: { Staff: { select: { id: true, firstName: true, lastName: true, username: true } } },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    res.json(entries.map(e => ({
+      id: e.id,
+      createdAt: e.createdAt,
+      staff: e.Staff,
+      snapshot: (() => { try { return JSON.parse(e.details); } catch { return null; } })()
+    })));
+  } catch (error) {
+    console.error('Get bill reversals error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 

@@ -1,8 +1,9 @@
 // src/pages/StaffManagement.jsx - COMPLETE WITH ALL SPECIALIST ROLES
+// + server-generated usernames (no manual username input)
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useTenant } from '../context/TenantContext';   // ← NEW
+import { useTenant } from '../context/TenantContext';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import './StaffManagement.css';
@@ -11,9 +12,10 @@ import Modal from '../components/Modal';
 
 const StaffManagement = () => {
   const { token } = useAuth();
-  const { hospital } = useTenant();                      // ← NEW
-  const usernamePrefix = hospital?.usernamePrefix || ''; // ← NEW
+  const { hospital } = useTenant();
+  const usernamePrefix = hospital?.usernamePrefix || '';
   const { searchTerm } = useSearch();
+
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -21,11 +23,15 @@ const StaffManagement = () => {
   const [showAssignmentAlert, setShowAssignmentAlert] = useState(false);
   const [newStaffName, setNewStaffName] = useState('');
   const [newStaffRole, setNewStaffRole] = useState('');
+
+  // Post-creation credentials modal
+  const [createdCreds, setCreatedCreds] = useState(null);
+
+  // Form state — NO username field. Server generates it.
   const [formData, setFormData] = useState({
     employeeId: '',
     firstName: '',
     lastName: '',
-    username: '',
     email: '',
     role: 'Records',
     department: '',
@@ -128,6 +134,16 @@ const StaffManagement = () => {
       Records: 'Records', Receptionist: 'Administrative', HR: 'HR',
     };
     return groups[role] || 'Other';
+  };
+
+  const emptyForm = {
+    employeeId: '',
+    firstName: '',
+    lastName: '',
+    email: '',
+    role: 'Records',
+    department: '',
+    password: '',
   };
 
   const fetchStaff = async () => {
@@ -239,18 +255,23 @@ const StaffManagement = () => {
 
   const filteredStaff = staff.filter((s) => {
     const searchString =
-      `${s.firstName} ${s.lastName} ${s.username || ''} ${s.email || ''} ${s.role} ${s.employeeId || ''} ${s.department || ''}`.toLowerCase().trim();
+      `${s.firstName} ${s.lastName} ${s.username || ''} ${s.email || ''} ${s.role} ${s.employeeId || ''} ${s.department || ''}`
+        .toLowerCase()
+        .trim();
     return searchString.includes(searchTerm.toLowerCase().trim());
   });
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    // Lowercase and strip any prefix the admin might type for the username field
-    if (name === 'username') {
-      const cleaned = value.toLowerCase().replace(/^[a-z0-9]+-/, '');
-      setFormData((prev) => ({ ...prev, [name]: cleaned }));
-    } else {
-      setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const copyToClipboard = async (text, label = 'Copied!') => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(`📋 ${label}`);
+    } catch {
+      toast.error('Clipboard not available');
     }
   };
 
@@ -258,13 +279,13 @@ const StaffManagement = () => {
     e.preventDefault();
     try {
       if (editingStaff) {
-        // Editing — no username change on update, so skip the prefix logic
+        // -------- EDIT PATH --------
         const { password, ...updateData } = formData;
-        // Don't send username on update — backend keeps the prefixed one
-        delete updateData.username;
-        await axios.put(`http://localhost:3000/api/staff/${editingStaff.id}`, updateData, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        await axios.put(
+          `http://localhost:3000/api/staff/${editingStaff.id}`,
+          updateData,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
         toast.success('Staff updated successfully!');
 
         if (rolesRequiringAssignment.includes(formData.role) && editingStaff) {
@@ -316,17 +337,24 @@ const StaffManagement = () => {
           }
         }
       } else {
-        // Creating — backend will auto-prefix the username
-        const newStaff = { ...formData, username: formData.username.toLowerCase().trim() };
-        const response = await axios.post('http://localhost:3000/api/staff', newStaff, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        // -------- CREATE PATH --------
+        // The server generates the username. We do NOT send one.
+        const response = await axios.post(
+          'http://localhost:3000/api/staff',
+          formData,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
 
         const createdStaff = response.data;
 
-        // Show the full prefixed username in the toast
-        const displayUsername = createdStaff.fullUsername || createdStaff.username || formData.username;
-        toast.success(`Staff created! Login: ${displayUsername}`, { duration: 6000 });
+        // Show credentials in a dedicated modal (not just a toast)
+        setCreatedCreds({
+          name: `${createdStaff.firstName} ${createdStaff.lastName}`,
+          username: createdStaff.username || '(not returned by server)',
+          employeeId: createdStaff.employeeId,
+          email: createdStaff.email,
+          role: createdStaff.role,
+        });
 
         if (rolesRequiringAssignment.includes(formData.role)) {
           setNewStaffName(`${formData.firstName} ${formData.lastName}`);
@@ -338,7 +366,6 @@ const StaffManagement = () => {
             employeeId: createdStaff.employeeId,
             firstName: createdStaff.firstName,
             lastName: createdStaff.lastName,
-            username: createdStaff.username || '',
             email: createdStaff.email,
             role: createdStaff.role,
             department: createdStaff.department || '',
@@ -353,16 +380,7 @@ const StaffManagement = () => {
 
       setShowModal(false);
       setEditingStaff(null);
-      setFormData({
-        employeeId: '',
-        firstName: '',
-        lastName: '',
-        username: '',
-        email: '',
-        role: 'Records',
-        department: '',
-        password: '',
-      });
+      setFormData(emptyForm);
       setAssignedClinicIds([]);
       setAssignedWardIds([]);
       fetchStaff();
@@ -378,7 +396,6 @@ const StaffManagement = () => {
       employeeId: staffMember.employeeId,
       firstName: staffMember.firstName,
       lastName: staffMember.lastName,
-      username: staffMember.username || '',
       email: staffMember.email,
       role: staffMember.role,
       department: staffMember.department || '',
@@ -497,16 +514,7 @@ const StaffManagement = () => {
             className="btn btn-primary"
             onClick={() => {
               setEditingStaff(null);
-              setFormData({
-                employeeId: '',
-                firstName: '',
-                lastName: '',
-                username: '',
-                email: '',
-                role: 'Records',
-                department: '',
-                password: '',
-              });
+              setFormData(emptyForm);
               setAssignedClinicIds([]);
               setAssignedWardIds([]);
               setShowAssignmentAlert(false);
@@ -754,6 +762,7 @@ const StaffManagement = () => {
         </table>
       </div>
 
+      {/* ============ ADD/EDIT STAFF MODAL ============ */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)}>
         <div className="modal-header">
           <h3>{editingStaff ? '✏️ Edit Staff' : '➕ Add New Staff'}</h3>
@@ -763,6 +772,29 @@ const StaffManagement = () => {
         </div>
         <form onSubmit={handleSubmit}>
           <div className="modal-body">
+            {/* Read-only username display when editing */}
+            {editingStaff && (
+              <div
+                style={{
+                  background: '#f3f4f6',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '6px',
+                  padding: '10px 14px',
+                  marginBottom: '12px',
+                  fontSize: '13px',
+                  color: '#374151',
+                }}
+              >
+                <strong>Login username:</strong>{' '}
+                <code style={{ background: 'white', padding: '2px 6px', borderRadius: '4px' }}>
+                  {editingStaff.username || '—'}
+                </code>
+                <span style={{ color: '#6b7280', marginLeft: '8px' }}>
+                  (cannot be changed here)
+                </span>
+              </div>
+            )}
+
             <div className="form-row">
               <div className="form-group">
                 <label>Employee ID *</label>
@@ -773,32 +805,12 @@ const StaffManagement = () => {
                   onChange={handleInputChange}
                   required
                 />
-              </div>
-              <div className="form-group">
-                <label>Username *</label>
-                <input
-                  type="text"
-                  name="username"
-                  value={formData.username}
-                  onChange={handleInputChange}
-                  placeholder="e.g., doc001"
-                  disabled={!!editingStaff}
-                  required
-                />
-                <small style={{ color: '#6b7280' }}>
-                  {editingStaff ? (
-                    'Username cannot be changed after creation.'
-                  ) : usernamePrefix ? (
-                    <>
-                      Final login will be:{' '}
-                      <code style={{ fontWeight: 600, color: '#0f3460' }}>
-                        {usernamePrefix}-{formData.username || 'username'}
-                      </code>
-                    </>
-                  ) : (
-                    'Your hospital prefix will be added automatically.'
-                  )}
-                </small>
+                {!editingStaff && (
+                  <small style={{ color: '#6b7280' }}>
+                    The login username will be generated automatically
+                    {usernamePrefix ? ` (e.g. ${usernamePrefix}-4821)` : ''} and shown after creation.
+                  </small>
+                )}
               </div>
             </div>
 
@@ -1075,6 +1087,84 @@ const StaffManagement = () => {
           </div>
         </form>
       </Modal>
+
+      {/* ============ POST-CREATION CREDENTIALS MODAL ============ */}
+      {createdCreds && (
+        <Modal isOpen={true} onClose={() => setCreatedCreds(null)}>
+          <div className="modal-header">
+            <h3>✅ Staff Created — Save These Details</h3>
+            <button className="modal-close" onClick={() => setCreatedCreds(null)}>
+              ×
+            </button>
+          </div>
+          <div className="modal-body" style={{ textAlign: 'center' }}>
+            <p style={{ color: '#6b7280', marginTop: 0 }}>
+              Give these login credentials to <strong>{createdCreds.name}</strong>.
+            </p>
+
+            <div
+              style={{
+                background: '#f0fdf4',
+                border: '2px dashed #10b981',
+                borderRadius: '10px',
+                padding: '16px',
+                margin: '16px 0',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '12px',
+                  color: '#166534',
+                  letterSpacing: '0.05em',
+                  fontWeight: 600,
+                }}
+              >
+                LOGIN USERNAME
+              </div>
+              <div
+                style={{
+                  fontFamily: 'monospace',
+                  fontSize: '22px',
+                  fontWeight: 700,
+                  color: '#14532d',
+                  wordBreak: 'break-all',
+                  margin: '6px 0 10px',
+                }}
+              >
+                {createdCreds.username}
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => copyToClipboard(createdCreds.username, 'Username copied!')}
+              >
+                📋 Copy Username
+              </button>
+            </div>
+
+            <div style={{ textAlign: 'left', fontSize: '13px', color: '#374151' }}>
+              <div>
+                <strong>Employee ID:</strong> <code>{createdCreds.employeeId}</code>
+              </div>
+              <div>
+                <strong>Email:</strong> {createdCreds.email}
+              </div>
+              <div>
+                <strong>Role:</strong> {createdCreds.role}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{ marginTop: '20px' }}
+              onClick={() => setCreatedCreds(null)}
+            >
+              Done
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };
