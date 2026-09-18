@@ -23,18 +23,14 @@ const DEFAULT_TENANT_ID = 'default-hospital-id';
 const app = express();
 
 // ============================================================
-// Helper: Find a patient by ID, allowing soft-deleted patients.
-// Bypasses the tenant extension's auto-injected `deletedAt: null`
-// filter by using the global prisma client with an explicit tenantId.
+// 1. BODY PARSERS — MUST come before any route that reads req.body
 // ============================================================
-async function findPatientIncludingDeleted(db, id, tenantId) {
-  if (tenantId) {
-    return prisma.patient.findFirst({ where: { id, tenantId } });
-  }
-  return db.patient.findFirst({ where: { id } });
-}
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// ============ CORS ============
+// ============================================================
+// 2. CORS — before routes
+// ============================================================
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -44,15 +40,29 @@ app.use(cors({
   maxAge: 86400
 }));
 
-// ============ Security middleware ============
+// ============================================================
+// 3. SECURITY HEADERS — before routes
+// ============================================================
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
   crossOriginOpenerPolicy: { policy: 'unsafe-none' },
   crossOriginEmbedderPolicy: false
 }));
 
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+// ============================================================
+// 4. HELPER FUNCTIONS
+// ============================================================
+async function findPatientIncludingDeleted(db, id, tenantId) {
+  if (tenantId) {
+    return prisma.patient.findFirst({ where: { id, tenantId } });
+  }
+  return db.patient.findFirst({ where: { id } });
+}
+
+// ============================================================
+// 5. ROUTES — after all middleware
+// ============================================================
+app.use('/api/platform', require('./src/routes/platform'));
 
 // ============ Uploads directory ============
 const uploadDir = path.join(__dirname, 'uploads', 'imaging');
@@ -285,6 +295,9 @@ if (!rolePerm) {
   };
 };
 
+
+
+
 // ============================================================
 // AUTHENTICATION ENDPOINTS
 // ============================================================
@@ -328,35 +341,80 @@ app.post('/api/auth/register', async (req, res) => {
 
 app.post('/api/auth/login', async (req, res) => {
   try {
-    const { email, password, username, hospitalSlug, tenantId } = req.body;
-    if ((!email && !username) || !password) {
-      return res.status(400).json({ error: 'Username/Email and password are required' });
-    }
-    const where = {};
-    if (email) where.email = email.trim();
-    else if (username) where.username = username.trim();
+    const { identifier, email, username, password } = req.body;
 
-    if (tenantId) {
-      where.tenantId = tenantId;
-    } else if (hospitalSlug) {
-      const hospital = await prisma.hospital.findUnique({
-        where: { slug: hospitalSlug },
-        select: { id: true }
+    const id = (identifier || email || username || '').trim();
+    if (!id || !password) {
+      return res.status(400).json({ error: 'Username and password are required' });
+    }
+
+    const idLower = id.toLowerCase();
+    let staff = null;
+
+    // ── Case 1: Email ────────────────────────────────
+    if (idLower.includes('@')) {
+      staff = await prisma.staff.findFirst({
+        where: { email: idLower },
       });
-      if (hospital) where.tenantId = hospital.id;
+    }
+    // ── Case 2: Prefixed username ("caretech-admin") ──
+    else if (idLower.includes('-')) {
+      const firstHyphen = idLower.indexOf('-');
+      const prefix = idLower.substring(0, firstHyphen);
+      const localUsername = idLower.substring(firstHyphen + 1);
+
+      const hospital = await prisma.hospital.findUnique({
+        where: { usernamePrefix: prefix },
+        select: { id: true, isActive: true, name: true },
+      });
+
+      if (!hospital) {
+        return res.status(401).json({
+          error: 'Invalid credentials. Check your hospital prefix.',
+        });
+      }
+      if (!hospital.isActive) {
+        return res.status(403).json({
+          error: `Hospital "${hospital.name}" is not active. Contact support.`,
+        });
+      }
+
+      staff = await prisma.staff.findFirst({
+  where: {
+    tenantId: hospital.id,
+    OR: [
+      { username: `${prefix}-${localUsername}` },  // "stmarys-admin"
+      { username: localUsername },                 // "admin"
+    ],
+  },
+});
+    }
+    // ── Case 3: Bare username ("admin") — legacy fallback ──
+    else {
+      const matches = await prisma.staff.findMany({
+        where: { username: idLower },
+      });
+      if (matches.length === 0) {
+        staff = null;
+      } else if (matches.length === 1) {
+        staff = matches[0];
+      } else {
+        return res.status(409).json({
+          error: 'This username exists in multiple hospitals. Please include your hospital prefix (e.g., caretech-admin).',
+          code: 'AMBIGUOUS_USERNAME',
+        });
+      }
     }
 
-    const staff = await prisma.staff.findFirst({ where });
-    if (!staff) {
+    if (!staff || !staff.isActive) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-    if (!staff.isActive) {
-      return res.status(401).json({ error: 'Account is deactivated' });
-    }
-    const isValidPassword = await bcrypt.compare(password, staff.password);
-    if (!isValidPassword) {
+
+    const valid = await bcrypt.compare(password, staff.password);
+    if (!valid) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
+
     const token = jwt.sign(
       {
         id: staff.id,
@@ -365,11 +423,12 @@ app.post('/api/auth/login', async (req, res) => {
         username: staff.username,
         firstName: staff.firstName,
         lastName: staff.lastName,
-        tenantId: staff.tenantId
+        tenantId: staff.tenantId,
       },
       JWT_SECRET,
       { expiresIn: '8h' }
     );
+
     await prisma.auditLog.create({
       data: {
         tenantId: staff.tenantId,
@@ -377,16 +436,352 @@ app.post('/api/auth/login', async (req, res) => {
         action: 'LOGIN',
         module: 'Auth',
         details: `Staff ${staff.username || staff.email} logged in`,
-        ipAddress: req.ip
-      }
+        ipAddress: req.ip,
+      },
     });
+
     const { password: _, ...staffWithoutPassword } = staff;
     res.json({ token, staff: staffWithoutPassword });
   } catch (error) {
     console.error('Login error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(500).json({ error: error.message });
   }
 });
+
+// ✅ Super Admin middleware
+const requireSuperAdmin = (req, res, next) => {
+  if (!req.user?.isSuperAdmin) {
+    return res.status(403).json({ error: 'Super admin access required' });
+  }
+  next();
+};
+
+// List all hospitals
+app.get('/api/super-admin/hospitals', authenticate, requireSuperAdmin, async (req, res) => {
+  try {
+    const hospitals = await prisma.hospital.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        _count: {
+          select: { Staff: true, Patient: true }
+        }
+      }
+    });
+    res.json(hospitals);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create a new hospital
+app.post('/api/super-admin/hospitals', authenticate, requireSuperAdmin, async (req, res) => {
+  try {
+    const { name, slug, code, email, phone, address, city, state, plan } = req.body;
+
+    if (!name || !slug || !code) {
+      return res.status(400).json({ error: 'name, slug, code are required' });
+    }
+
+    const hospital = await prisma.hospital.create({
+      data: {
+        name, slug, code, email, phone, address, city, state,
+        plan: plan || 'trial',
+        status: 'active',
+        isActive: true,
+        trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 days
+      }
+    });
+
+    // ✅ Create default settings
+    await prisma.hospitalSettings.create({
+      data: {
+        tenantId: hospital.id,
+        hospitalId: hospital.id,
+      }
+    });
+
+    // ✅ Create default role permissions for common roles
+    const allModules = [
+  'dashboard','patients','staff','appointments','prescriptions','labOrders','billing',
+  'pharmacy','pharmacyDashboard','pharmacyInventory','nhisManagement','nhisAuthorizations',
+  'pharmacyStock','pharmacyTransactions','pharmacyBranches','clinics','wards','pricing',
+  'billingOfficer','wallet','patientIntake','admissions','patientHistory','roiRequests',
+  'nurseDashboard','doctorDashboard','antenatal','archivedPatients','archivedPatientsView',
+  'queueManagement','doctorQueue','hrDashboard','hrEmployees','hrDepartments','hrLeaves',
+  'hrAttendance','hrPerformance','hrTrainings','radiology','dental','optometry',
+  'immunizations','patientPortal','portalSetup','laborAndDelivery',
+];
+const base = Object.fromEntries(allModules.map((m) => [m, false]));
+const allTrue = Object.fromEntries(allModules.map((m) => [m, true]));
+
+const rolePerms = {
+  Admin: allTrue,
+  ITAdmin: allTrue,
+  HR: { ...base, dashboard: true, hrDashboard: true, hrEmployees: true, hrDepartments: true, hrLeaves: true, hrAttendance: true, hrPerformance: true, hrTrainings: true },
+  Doctor: { ...base, dashboard: true, patients: true, appointments: true, prescriptions: true, labOrders: true, doctorDashboard: true, doctorQueue: true, patientHistory: true, archivedPatientsView: true },
+  Nurse: { ...base, dashboard: true, patients: true, nurseDashboard: true, queueManagement: true, antenatal: true, laborAndDelivery: true, immunizations: true, archivedPatientsView: true },
+  Obstetrician: { ...base, dashboard: true, patients: true, appointments: true, prescriptions: true, labOrders: true, doctorDashboard: true, doctorQueue: true, antenatal: true, laborAndDelivery: true, archivedPatientsView: true },
+  Midwife: { ...base, dashboard: true, patients: true, nurseDashboard: true, queueManagement: true, antenatal: true, laborAndDelivery: true, archivedPatientsView: true },
+  Pharmacist: { ...base, dashboard: true, prescriptions: true, pharmacy: true, pharmacyDashboard: true, pharmacyInventory: true, pharmacyStock: true, pharmacyTransactions: true, nhisManagement: true, nhisAuthorizations: true },
+  BillingOfficer: { ...base, dashboard: true, patients: true, billingOfficer: true, wallet: true },
+  Accountant: { ...base, dashboard: true, billing: true, pricing: true, wallet: true, nhisManagement: true, nhisAuthorizations: true },
+  Records: { ...base, dashboard: true, patients: true, patientIntake: true, admissions: true, patientHistory: true, roiRequests: true, queueManagement: true, antenatal: true, archivedPatients: true, archivedPatientsView: true },
+  LabTechnician: { ...base, dashboard: true, patients: true, labOrders: true },
+  LabScientist: { ...base, dashboard: true, patients: true, labOrders: true, patientHistory: true, archivedPatientsView: true },
+  Radiologist: { ...base, dashboard: true, patients: true, radiology: true, archivedPatientsView: true },
+  Receptionist: { ...base, dashboard: true, patients: true, appointments: true },
+  Dentist: { ...base, dashboard: true, patients: true, dental: true },
+  Optometrist: { ...base, dashboard: true, patients: true, optometry: true },
+  Paediatrician: { ...base, dashboard: true, patients: true, appointments: true, prescriptions: true, labOrders: true, immunizations: true },
+  Surgeon: { ...base, dashboard: true, patients: true, appointments: true, prescriptions: true, labOrders: true },
+  Psychiatrist: { ...base, dashboard: true, patients: true, appointments: true, prescriptions: true },
+};
+
+for (const [role, perms] of Object.entries(rolePerms)) {
+  await tx.rolePermission.create({
+    data: { tenantId: hospital.id, role, ...perms },
+  });
+}
+
+    res.status(201).json(hospital);
+  } catch (error) {
+    console.error('Create hospital error:', error);
+    if (error.code === 'P2002') {
+      return res.status(400).json({ error: 'Slug or code already exists' });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update hospital
+app.patch('/api/super-admin/hospitals/:id', authenticate, requireSuperAdmin, async (req, res) => {
+  try {
+    const hospital = await prisma.hospital.update({
+      where: { id: req.params.id },
+      data: req.body
+    });
+    res.json(hospital);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Suspend a hospital
+app.patch('/api/super-admin/hospitals/:id/suspend', authenticate, requireSuperAdmin, async (req, res) => {
+  try {
+    const hospital = await prisma.hospital.update({
+      where: { id: req.params.id },
+      data: { status: 'suspended', isActive: false }
+    });
+    res.json(hospital);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Reactivate a hospital
+app.patch('/api/super-admin/hospitals/:id/reactivate', authenticate, requireSuperAdmin, async (req, res) => {
+  try {
+    const hospital = await prisma.hospital.update({
+      where: { id: req.params.id },
+      data: { status: 'active', isActive: true }
+    });
+    res.json(hospital);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Platform stats
+app.get('/api/super-admin/stats', authenticate, requireSuperAdmin, async (req, res) => {
+  try {
+    const [totalHospitals, activeHospitals, totalStaff, totalPatients] = await Promise.all([
+      prisma.hospital.count(),
+      prisma.hospital.count({ where: { isActive: true } }),
+      prisma.staff.count(),
+      prisma.patient.count(),
+    ]);
+
+    res.json({
+      totalHospitals,
+      activeHospitals,
+      suspendedHospitals: totalHospitals - activeHospitals,
+      totalStaff,
+      totalPatients,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Public — no auth required
+app.post('/api/public/register-hospital', async (req, res) => {
+  try {
+    const {
+      hospitalName, slug, code, usernamePrefix,   // ← NEW
+      adminEmail, adminFirstName, adminLastName, adminPassword,
+    } = req.body;
+
+    if (!hospitalName || !slug || !code || !usernamePrefix || !adminEmail || !adminPassword) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // Validate prefix
+    if (!/^[a-z0-9]+$/.test(usernamePrefix)) {
+      return res.status(400).json({ error: 'Username prefix must be lowercase letters and numbers only' });
+    }
+    if (usernamePrefix.length < 2 || usernamePrefix.length > 20) {
+      return res.status(400).json({ error: 'Username prefix must be 2-20 characters' });
+    }
+
+    // Check uniqueness — slug, code, AND prefix
+    const conflict = await prisma.hospital.findFirst({
+      where: {
+        OR: [
+          { slug },
+          { code },
+          { usernamePrefix },
+        ],
+      },
+    });
+    if (conflict) {
+      if (conflict.slug === slug) return res.status(409).json({ error: 'Slug already taken' });
+      if (conflict.code === code) return res.status(409).json({ error: 'Code already taken' });
+      if (conflict.usernamePrefix === usernamePrefix) {
+        return res.status(409).json({ error: 'Username prefix already taken. Try another.' });
+      }
+    }
+
+    // Create hospital + admin in one transaction
+    const result = await prisma.$transaction(async (tx) => {
+      const hospital = await tx.hospital.create({
+        data: {
+          name: hospitalName,
+          slug,
+          code,
+          usernamePrefix,                 // ← NEW: persist prefix
+          email: adminEmail,
+          plan: 'trial',
+          status: 'active',
+          isActive: true,
+          trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+        }
+      });
+
+      await tx.hospitalSettings.create({
+        data: { tenantId: hospital.id, hospitalId: hospital.id }
+      });
+
+      const hashedPassword = await bcrypt.hash(adminPassword, SALT_ROUNDS);
+      const adminUsername = `${usernamePrefix}-admin`;
+
+      const admin = await tx.staff.create({
+        data: {
+          tenantId: hospital.id,
+          employeeId: 'ADMIN-001',
+          username: adminUsername,
+          firstName: adminFirstName,
+          lastName: adminLastName,
+          email: adminEmail,
+          role: 'Admin',
+          password: hashedPassword,
+          isActive: true,
+        }
+      });
+
+      // Create default role permissions
+      const defaultRoles = ['Admin', 'Doctor', 'Nurse', 'Records', 'Pharmacist', 'Accountant', 'BillingOfficer'];
+      for (const role of defaultRoles) {
+        await tx.rolePermission.create({
+          data: { tenantId: hospital.id, role }
+        });
+      }
+
+      return { hospital, admin };
+    });
+
+    res.status(201).json({
+      success: true,
+      hospital: {
+        id: result.hospital.id,
+        name: result.hospital.name,
+        slug: result.hospital.slug,
+        usernamePrefix: result.hospital.usernamePrefix,   // ← NEW: return it too
+      },
+      admin: { email: result.admin.email, role: result.admin.role }
+    });
+  } catch (error) {
+    console.error('Hospital registration error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+// ============================================================
+// HOSPITAL ENDPOINTS (TENANT MANAGEMENT)
+// ============================================================
+// ✅ Your hospital endpoint(s) go here — cleanly separated
+
+app.get('/api/hospitals/:id', authenticate, async (req, res) => {
+  try {
+    const hospital = await prisma.hospital.findUnique({
+      where: { id: req.params.id },
+      include: { Settings: true }
+    });
+
+    if (!hospital) {
+      return res.status(404).json({ error: 'Hospital not found' });
+    }
+
+    if (req.user.tenantId !== hospital.id) {
+      return res.status(403).json({ error: 'Access denied to this hospital' });
+    }
+
+    res.json(hospital);
+  } catch (error) {
+    console.error('Get hospital error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ✅ Add a public one for the hospital login page (no auth)
+app.get('/api/hospitals/slug/:slug', async (req, res) => {
+  try {
+    const hospital = await prisma.hospital.findUnique({
+      where: { slug: req.params.slug },
+      include: { Settings: true }
+    });
+
+    if (!hospital || !hospital.isActive) {
+      return res.status(404).json({ error: 'Hospital not found or inactive' });
+    }
+
+    // Don't leak sensitive data
+    res.json({
+      id: hospital.id,
+      name: hospital.name,
+      slug: hospital.slug,
+      code: hospital.code,
+      city: hospital.city,
+      state: hospital.state,
+      logoUrl: hospital.logoUrl,
+      primaryColor: hospital.primaryColor,
+      secondaryColor: hospital.secondaryColor,
+      status: hospital.status,
+      settings: hospital.Settings ? {
+        currencySymbol: hospital.Settings.currencySymbol,
+        timezone: hospital.Settings.timezone,
+        enablePatientPortal: hospital.Settings.enablePatientPortal,
+        enableKioskMode: hospital.Settings.enableKioskMode,
+      } : null
+    });
+  } catch (error) {
+    console.error('Get hospital by slug error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
 
 // ============================================================
 // DEBUG ENDPOINT
@@ -2139,40 +2534,73 @@ app.get('/api/staff/:id', authenticate, authorize('Admin', 'ITAdmin', 'HR'), asy
 app.post('/api/staff', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
   try {
     const { employeeId, firstName, lastName, username, email, role, password } = req.body;
+
     if (!employeeId || !firstName || !lastName || !username || !email || !role || !password) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
+
+    const hospital = await prisma.hospital.findUnique({
+      where: { id: req.tenantId },
+      select: { usernamePrefix: true, slug: true, name: true },
+    });
+
+    if (!hospital?.usernamePrefix) {
+      return res.status(500).json({ error: 'Hospital username prefix is not configured. Contact platform admin.' });
+    }
+
+    // Strip any prefix the admin typed, then rebuild it
+    const baseUsername = username.toLowerCase().trim().replace(/^[a-z0-9]+-/, '');
+    const fullUsername = `${hospital.usernamePrefix}-${baseUsername}`;
+
+    // Uniqueness checks within this tenant
     const existingEmployeeId = await req.db.staff.findFirst({ where: { employeeId } });
     if (existingEmployeeId) return res.status(400).json({ error: 'Employee ID already exists' });
-    const existingUsername = await req.db.staff.findFirst({ where: { username } });
+
+    const existingUsername = await req.db.staff.findFirst({
+      where: {
+        OR: [
+          { username: fullUsername },   // "caretech-doc001"
+          { username: baseUsername },   // "doc001" (legacy)
+        ],
+      },
+    });
     if (existingUsername) return res.status(400).json({ error: 'Username already taken' });
+
     const existingEmail = await req.db.staff.findFirst({ where: { email } });
     if (existingEmail) return res.status(400).json({ error: 'Staff with this email already exists' });
 
     const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+
     const staff = await req.db.staff.create({
       data: {
-        employeeId, firstName, lastName,
-        username: username.toLowerCase().trim(),
-        email, role, password: hashedPassword,
-        isActive: true, updatedAt: new Date()
-      }
+        employeeId,
+        firstName,
+        lastName,
+        username: fullUsername,   // ← "caretech-doc001"
+        email,
+        role,
+        password: hashedPassword,
+        isActive: true,
+        updatedAt: new Date(),
+      },
     });
+
     await req.db.auditLog.create({
       data: {
         staffId: req.user.id,
         action: 'CREATE_STAFF',
         module: 'Staff',
-        details: `Created staff ${username} as ${role}`
-      }
+        details: `Created staff ${fullUsername} as ${role}`,
+      },
     });
+
     const { password: _, ...staffWithoutPassword } = staff;
-    res.status(201).json(staffWithoutPassword);
+    res.status(201).json({ ...staffWithoutPassword, fullUsername });
   } catch (error) {
     console.error('Create staff error:', error);
     if (error.code === 'P2002') {
       const field = error.meta?.target?.[0];
-      return res.status(400).json({ error: `Duplicate value for ${field}. Please use a unique ${field}.` });
+      return res.status(400).json({ error: `Duplicate value for ${field}.` });
     }
     res.status(400).json({ error: error.message });
   }

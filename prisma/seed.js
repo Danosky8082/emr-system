@@ -24,55 +24,93 @@ async function main() {
 
   try {
     // ============================================================
-    // 0. HOSPITAL (TENANT) — must exist first
-    // ============================================================
-    console.log('🏥 Hospital (tenant root)...');
-    await prisma.hospital.upsert({
-      where: { id: T },
-      update: { updatedAt: now },
-      create: {
-        id: T,
-        name: 'Default General Hospital',
-        slug: 'default-hospital',
-        code: 'DEFAULT-HOSP',
-        email: 'info@hospital.com',
-        phone: '08000000000',
-        city: 'Lagos',
-        state: 'Lagos',
-        country: 'Nigeria',
-        plan: 'trial',
-        status: 'active',
-        isActive: true,
-      },
-    });
-    console.log(`  ✅ Hospital created`);
+// 0. HOSPITALS (TENANTS) — must exist first
+// ============================================================
+console.log('🏥 Hospitals (tenants)...');
 
-    // ============================================================
-    // 1. HOSPITAL SETTINGS
-    // ============================================================
-    console.log('\n⚙️  Hospital settings...');
-    await prisma.hospitalSettings.upsert({
-      where: { tenantId: T },
-      update: { updatedAt: now },
-      create: {
-        tenantId: T,
-        hospitalId: T,
-        registrationFee: 2000,
-        cardFee: 1000,
-        consultationFee: 5000,
-        nhisMultiplier: 0.1,
-        retainerMultiplier: 2.0,
-        autoArchiveHours: 24,
-        appointmentDuration: 30,
-        enablePatientPortal: true,
-        enableKioskMode: true,
-        currency: 'NGN',
-        currencySymbol: '₦',
-        timezone: 'Africa/Lagos',
-      },
-    });
-    console.log('  ✅ Settings created');
+const HOSPITALS = [
+  {
+    id: 'default-hospital-id',
+    name: 'CareTech General Hospital',       // ← renamed from "Default General Hospital"
+    slug: 'default-hospital',
+    code: 'DEFAULT-HOSP',
+    usernamePrefix: 'caretech',              // ← NEW
+    email: 'info@hospital.com',
+    phone: '08000000000',
+    city: 'Lagos',
+    state: 'Lagos',
+    country: 'Nigeria',
+    primaryColor: '#0f3460',
+    secondaryColor: '#1a4a7a',
+  },
+  {
+    id: 'st-marys-hospital-id',
+    name: "St. Mary's Hospital",
+    slug: 'st-marys',
+    code: 'STMARYS',
+    usernamePrefix: 'stmarys',               // ← NEW
+    email: 'info@stmarys.health',
+    phone: '08000000002',
+    city: 'Abuja',
+    state: 'FCT',
+    country: 'Nigeria',
+    primaryColor: '#dc2626',
+    secondaryColor: '#991b1b',
+  },
+];
 
+for (const h of HOSPITALS) {
+  await prisma.hospital.upsert({
+    where: { id: h.id },
+    update: { updatedAt: now },
+    create: {
+      ...h,
+      plan: 'trial',
+      status: 'active',
+      isActive: true,
+    },
+  });
+  console.log(`  ✅ ${h.name} (${h.slug})`);
+}
+    // ============================================================
+// 1. HOSPITAL SETTINGS — one per hospital
+// ============================================================
+console.log('\n⚙️  Hospital settings...');
+
+const SETTINGS_PER_HOSPITAL = {
+  'default-hospital-id': {
+    registrationFee: 2000,
+    cardFee: 1000,
+    consultationFee: 5000,
+  },
+  'st-marys-hospital-id': {
+    registrationFee: 3000,
+    cardFee: 1500,
+    consultationFee: 7500,
+  },
+};
+
+for (const [hospitalId, s] of Object.entries(SETTINGS_PER_HOSPITAL)) {
+  await prisma.hospitalSettings.upsert({
+    where: { tenantId: hospitalId },
+    update: { ...s, updatedAt: now },
+    create: {
+      tenantId: hospitalId,
+      hospitalId,
+      ...s,
+      nhisMultiplier: 0.1,
+      retainerMultiplier: 2.0,
+      autoArchiveHours: 24,
+      appointmentDuration: 30,
+      enablePatientPortal: true,
+      enableKioskMode: true,
+      currency: 'NGN',
+      currencySymbol: '₦',
+      timezone: 'Africa/Lagos',
+    },
+  });
+  console.log(`  ✅ Settings for ${hospitalId}`);
+}
     // ============================================================
     // 2. SERVICE CONFIGURATIONS
     // ============================================================
@@ -413,38 +451,96 @@ async function main() {
     console.log(`  ✅ ${departments.length} departments`);
 
     // ============================================================
-    // 8. STAFF USERS
-    // ============================================================
-    console.log('\n👤 Staff users...');
-    const staffUsers = [
-      ['ADMIN001', 'admin', 'System', 'Administrator', 'admin@hospital.com', 'Admin', 'admin123'],
-      ['IT001', 'itadmin', 'IT', 'Admin', 'itadmin@hospital.com', 'ITAdmin', 'admin123'],
-      ['HR001', 'hr', 'HR', 'Manager', 'hr@hospital.com', 'HR', 'hr123'],
-      ['DOC001', 'doctor', 'John', 'Doctor', 'doctor@hospital.com', 'Doctor', 'doctor123'],
-      ['NURSE001', 'nurse', 'Sarah', 'Nurse', 'nurse@hospital.com', 'Nurse', 'nurse123'],
-      ['BILL001', 'billing', 'Billing', 'Officer', 'billing@hospital.com', 'BillingOfficer', 'billing123'],
-      ['PHARM001', 'pharmacist', 'Pharmacy', 'Staff', 'pharmacist@hospital.com', 'Pharmacist', 'pharm123'],
-      ['LAB001', 'labtech', 'Lab', 'Technician', 'labtech@hospital.com', 'LabTechnician', 'lab123'],
-      ['LABSCI001', 'labscientist', 'Lab', 'Scientist', 'labscientist@hospital.com', 'LabScientist', 'labsci123'],
-      ['RAD001', 'radiologist', 'Radiology', 'Specialist', 'radiologist@hospital.com', 'Radiologist', 'rad123'],
-      ['ACC001', 'accountant', 'Account', 'Ant', 'accountant@hospital.com', 'Accountant', 'acc123'],
-      ['REC001', 'records', 'Records', 'Officer', 'records@hospital.com', 'Records', 'records123'],
-      ['OBG001', 'obstetrician', 'Obstetrics', 'Specialist', 'obstetrician@hospital.com', 'Obstetrician', 'obg123'],
-      ['MID001', 'midwife', 'Midwife', 'Staff', 'midwife@hospital.com', 'Midwife', 'mid123'],
-      ['RECEPT001', 'receptionist', 'Reception', 'Staff', 'receptionist@hospital.com', 'Receptionist', 'recept123'],
-    ];
-    for (const [employeeId, username, firstName, lastName, email, role, password] of staffUsers) {
-      const hashedPassword = await bcrypt.hash(password, 10);
-      await prisma.staff.upsert({
-        where: { tenantId_email: { tenantId: T, email } },
-        update: { employeeId, username, firstName, lastName, role, isActive: true, updatedAt: now },
-        create: {
-          tenantId: T, employeeId, username, firstName, lastName, email, role,
-          password: hashedPassword, isActive: true, updatedAt: now,
-        },
-      });
-    }
-    console.log(`  ✅ ${staffUsers.length} staff`);
+// 8. STAFF USERS (default hospital)
+// ============================================================
+console.log('\n👤 Staff users...');
+const staffUsers = [
+  ['ADMIN001', 'admin', 'System', 'Administrator', 'admin@hospital.com', 'Admin', 'admin123'],
+  ['IT001', 'itadmin', 'IT', 'Admin', 'itadmin@hospital.com', 'ITAdmin', 'admin123'],
+  ['HR001', 'hr', 'HR', 'Manager', 'hr@hospital.com', 'HR', 'hr123'],
+  ['DOC001', 'doctor', 'John', 'Doctor', 'doctor@hospital.com', 'Doctor', 'doctor123'],
+  ['NURSE001', 'nurse', 'Sarah', 'Nurse', 'nurse@hospital.com', 'Nurse', 'nurse123'],
+  ['BILL001', 'billing', 'Billing', 'Officer', 'billing@hospital.com', 'BillingOfficer', 'billing123'],
+  ['PHARM001', 'pharmacist', 'Pharmacy', 'Staff', 'pharmacist@hospital.com', 'Pharmacist', 'pharm123'],
+  ['LAB001', 'labtech', 'Lab', 'Technician', 'labtech@hospital.com', 'LabTechnician', 'lab123'],
+  ['LABSCI001', 'labscientist', 'Lab', 'Scientist', 'labscientist@hospital.com', 'LabScientist', 'labsci123'],
+  ['RAD001', 'radiologist', 'Radiology', 'Specialist', 'radiologist@hospital.com', 'Radiologist', 'rad123'],
+  ['ACC001', 'accountant', 'Account', 'Ant', 'accountant@hospital.com', 'Accountant', 'acc123'],
+  ['REC001', 'records', 'Records', 'Officer', 'records@hospital.com', 'Records', 'records123'],
+  ['OBG001', 'obstetrician', 'Obstetrics', 'Specialist', 'obstetrician@hospital.com', 'Obstetrician', 'obg123'],
+  ['MID001', 'midwife', 'Midwife', 'Staff', 'midwife@hospital.com', 'Midwife', 'mid123'],
+  ['RECEPT001', 'receptionist', 'Reception', 'Staff', 'receptionist@hospital.com', 'Receptionist', 'recept123'],
+];
+
+const CARETECH_PREFIX = 'caretech';
+for (const [employeeId, username, firstName, lastName, email, role, password] of staffUsers) {
+  const hashedPassword = await bcrypt.hash(password, 10);
+  const fullUsername = `${CARETECH_PREFIX}-${username}`;    // ← prefix
+  await prisma.staff.upsert({
+    where: { tenantId_employeeId: { tenantId: T, employeeId } },
+    update: {
+      username: fullUsername,                               // ← prefixed
+      firstName, lastName, email, role,
+      isActive: true, updatedAt: now,
+    },
+    create: {
+      tenantId: T, employeeId,
+      username: fullUsername,                               // ← prefixed
+      firstName, lastName, email, role,
+      password: hashedPassword, isActive: true, updatedAt: now,
+    },
+  });
+}
+console.log(`  ✅ ${staffUsers.length} staff`);
+
+// ============================================================
+// 8b. ADMIN STAFF FOR ST. MARY'S
+// ============================================================
+console.log('\n👤 St. Mary\'s admin...');
+const stMarysAdmin = {
+  employeeId: 'ADMIN-SM-001',
+  username: 'stmarys-admin',
+  firstName: 'Mary',
+  lastName: 'Bello',
+  email: 'admin@stmarys.health',
+  role: 'Admin',
+  password: 'password123',
+  tenantId: 'st-marys-hospital-id',
+};
+
+{
+  const hashedPassword = await bcrypt.hash(stMarysAdmin.password, 10);
+  await prisma.staff.upsert({
+    where: {
+      tenantId_employeeId: {
+        tenantId: stMarysAdmin.tenantId,
+        employeeId: stMarysAdmin.employeeId,
+      },
+    },
+    update: {
+      username: stMarysAdmin.username,
+      firstName: stMarysAdmin.firstName,
+      lastName: stMarysAdmin.lastName,
+      email: stMarysAdmin.email,
+      role: stMarysAdmin.role,
+      isActive: true,
+      updatedAt: now,
+    },
+    create: {
+      tenantId: stMarysAdmin.tenantId,
+      employeeId: stMarysAdmin.employeeId,
+      username: stMarysAdmin.username,
+      firstName: stMarysAdmin.firstName,
+      lastName: stMarysAdmin.lastName,
+      email: stMarysAdmin.email,
+      role: stMarysAdmin.role,
+      password: hashedPassword,
+      isActive: true,
+      updatedAt: now,
+    },
+  });
+  console.log(`  ✅ ${stMarysAdmin.username} / ${stMarysAdmin.password}`);
+}
 
     // ============================================================
     // 9. ROLE PERMISSIONS
@@ -540,6 +636,28 @@ async function main() {
     console.log('  Nurse:   nurse@hospital.com / nurse123');
     console.log('  (see all in staff table)');
     console.log('═══════════════════════════════════════════════════');
+
+    // ============================================================
+// 11. PLATFORM USER (SaaS operator)
+// ============================================================
+console.log('\n🔐 Platform users...');
+{
+  const platformPassword = await bcrypt.hash('platform123', 10);
+  await prisma.platformUser.upsert({
+    where: { username: 'platform-admin' },
+    update: {},
+    create: {
+      username: 'platform-admin',
+      email: 'admin@nexgen.health',
+      password: platformPassword,
+      firstName: 'Platform',
+      lastName: 'Owner',
+      role: 'PlatformAdmin',
+      isActive: true,
+    },
+  });
+  console.log('  ✅ platform-admin / platform123');
+}
   } catch (error) {
     console.error('❌ Seed failed:', error);
     throw error;

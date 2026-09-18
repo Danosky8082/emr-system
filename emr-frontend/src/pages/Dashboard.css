@@ -1,5 +1,10 @@
 /* src/pages/Dashboard.css */
 
+.dashboard {
+    position: relative;
+    z-index: 1;
+}
+
 .dashboard .page-header {
     display: flex;
     justify-content: space-between;
@@ -110,7 +115,7 @@
 }
 
 .btn-primary {
-    background: #0f3460;
+    background: var(--primary-color, #0f3460);
     color: white;
 }
 

@@ -6,11 +6,29 @@ datasource db {
   provider = "postgresql"
 }
 
+model PlatformUser {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  email     String   @unique
+  password  String
+  firstName String
+  lastName  String
+  role      String   @default("PlatformAdmin")
+  isActive  Boolean  @default(true)
+  lastLogin DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("platform_users")
+}
+
+
 model Hospital {
   id                    String                     @id @default(cuid())
   name                  String
   slug                  String                     @unique
   code                  String                     @unique
+  usernamePrefix        String?                    @unique
   email                 String?
   phone                 String?
   address               String?
@@ -1155,6 +1173,7 @@ model Staff {
   role                                                       String
   password                                                   String
   isActive                                                   Boolean                    @default(true)
+  isSuperAdmin                                               Boolean                    @default(false)
   manager_id                                                 String?
   dateOfBirth                                                DateTime?
   gender                                                     String?

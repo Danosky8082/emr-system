@@ -34,13 +34,17 @@ html,
     background: rgba(8, 20, 40, 0.75);
     /* 75% opacity fade */
     z-index: 0;
+    pointer-events: none;
+    /* ✅ FIX: clicks pass through the overlay */
 }
 
 /* Ensure all content sits above the faded overlay */
 .layout,
 .navbar,
 .main-content,
-.login-container {
+.login-screen,
+.login-container,
+.dashboard {
     position: relative;
     z-index: 1;
 }

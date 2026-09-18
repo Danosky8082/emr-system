@@ -3,11 +3,14 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate, useOutletContext, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useTenant } from '../context/TenantContext';  // ✅ NEW
 import axios from 'axios';
 import './Layout.css';
+import { clearAllSessions } from '../utils/clearAllSessions';
 
 const Layout = () => {
   const { user, logout } = useAuth();
+  const { clearTenant, hospitalName, hospitalLogo, primaryColor } = useTenant();  // ✅ NEW
   const navigate = useNavigate();
   const location = useLocation();
   const [searchTerm, setSearchTerm] = useState('');
@@ -369,6 +372,40 @@ const Layout = () => {
   const renderNav = () => {
     if (loadingPermissions) {
       return <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.9rem' }}>Loading menu...</span>;
+    }
+
+        // ============================================================
+    // SUPER ADMIN NAVIGATION
+    // ============================================================
+    if (user?.role === 'SuperAdmin') {
+      return (
+        <>
+          <NavLink
+            to="/super-admin"
+            className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+          >
+            🔐 Platform Dashboard
+          </NavLink>
+
+          <button
+            onClick={() => navigate('/register-hospital')}
+            className="nav-link"
+            style={{
+              background: 'rgba(96, 165, 250, 0.15)',
+              color: '#60a5fa',
+              border: '1px solid rgba(96, 165, 250, 0.3)',
+              borderRadius: '6px',
+              padding: '8px 14px',
+              cursor: 'pointer',
+              fontWeight: 600,
+              fontSize: '0.9rem',
+              fontFamily: 'inherit',
+            }}
+          >
+            ➕ Register Hospital
+          </button>
+        </>
+      );
     }
 
     // ============================================================
@@ -1027,28 +1064,41 @@ const Layout = () => {
   };
 
   const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
+  clearAllSessions();   
+  clearTenant();         
+  logout();              
+  navigate('/login');
+};
 
   return (
     <div className="layout app-container">
-      <nav className="navbar">
+      <nav
+        className="navbar"
+        style={{ borderBottom: `2px solid ${primaryColor || '#00f2fe'}` }}  // ✅ Dynamic color with fallback
+      >
         <div className="nav-brand">
-          <svg className="unique-logo" viewBox="0 0 100 100">
-            <defs>
-              <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor="#00f2fe" />
-                <stop offset="100%" stopColor="#4facfe" />
-              </linearGradient>
-            </defs>
-            <path d="M50 8 L85 28 L85 72 L50 92 L15 72 L15 28 Z" fill="none" stroke="url(#glow)" strokeWidth="5" strokeLinejoin="round"/>
-            <path d="M 25 45 Q 45 30 50 50 Q 55 70 75 55" fill="none" stroke="#fff" strokeWidth="3" opacity="0.8"/>
-            <path d="M 25 55 Q 45 70 50 50 Q 55 30 75 45" fill="none" stroke="#fff" strokeWidth="3" opacity="0.6"/>
-            <rect x="45" y="40" width="10" height="20" rx="2" fill="#00f2fe" />
-            <rect x="40" y="45" width="20" height="10" rx="2" fill="#00f2fe" />
-          </svg>
-          <span>NexGen EMR</span>
+          {hospitalLogo ? (
+            <img
+              src={hospitalLogo}
+              alt={hospitalName || 'Hospital Logo'}
+              style={{ height: '38px' }}
+            />
+          ) : (
+            <svg className="unique-logo" viewBox="0 0 100 100">
+              <defs>
+                <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#00f2fe" />
+                  <stop offset="100%" stopColor="#4facfe" />
+                </linearGradient>
+              </defs>
+              <path d="M50 8 L85 28 L85 72 L50 92 L15 72 L15 28 Z" fill="none" stroke="url(#glow)" strokeWidth="5" strokeLinejoin="round"/>
+              <path d="M 25 45 Q 45 30 50 50 Q 55 70 75 55" fill="none" stroke="#fff" strokeWidth="3" opacity="0.8"/>
+              <path d="M 25 55 Q 45 70 50 50 Q 55 30 75 45" fill="none" stroke="#fff" strokeWidth="3" opacity="0.6"/>
+              <rect x="45" y="40" width="10" height="20" rx="2" fill="#00f2fe" />
+              <rect x="40" y="45" width="20" height="10" rx="2" fill="#00f2fe" />
+            </svg>
+          )}
+          <span>{hospitalName || 'NexGen EMR'}</span>  {/* ✅ Dynamic name with fallback */}
         </div>
 
         <div className="nav-menu">{renderNav()}</div>
