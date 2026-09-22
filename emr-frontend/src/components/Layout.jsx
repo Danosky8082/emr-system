@@ -8,6 +8,22 @@ import axios from 'axios';
 import './Layout.css';
 import { clearAllSessions } from '../utils/clearAllSessions';
 
+// ============================================================
+// LAYOUT — Main authenticated shell
+//
+// ⚠️  PRE-LAUNCH TODO — TRIAL BANNER:
+//     When trial enforcement is enabled, add a banner here that:
+//       - Fetches /api/hospitals/:tenantId on mount
+//       - Reads plan + trialEndsAt
+//       - Shows a countdown banner if daysRemaining <= 7
+//       - Shows a hard "TRIAL EXPIRED" banner if expired
+//
+//     Currently disabled so no banner nags during development.
+//     The Super Admin dashboard already shows trial status
+//     informationally in the Hospitals table.
+// ============================================================
+
+
 const Layout = () => {
   const { user, logout } = useAuth();
   const { clearTenant, hospitalName, hospitalLogo, primaryColor } = useTenant();  // ✅ NEW

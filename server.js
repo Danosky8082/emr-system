@@ -8,13 +8,16 @@ const helmet = require('helmet');
 const cors = require('cors');
 const cron = require('node-cron');
 const multer = require('multer');
+ 
 const path = require('path');
 const fs = require('fs');
+
 require('dotenv').config();
 
 // ✅ Multi-tenant Prisma client
 const { prisma, getTenantPrisma } = require('./src/prisma-client');
 const { backupDatabase } = require('./scripts/backup-db');
+const { createDefaultHospitalData } = require('./src/hospital-templates');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-this-in-production';
 const SALT_ROUNDS = 10;
@@ -27,6 +30,144 @@ const app = express();
 // ============================================================
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+
+// ============================================================
+// SHARED: Create default role permissions for a new hospital
+// ============================================================
+async function createDefaultRolePermissions(tx, hospitalId) {
+  const allModules = [
+    'dashboard','patients','staff','appointments','prescriptions','labOrders','billing',
+    'pharmacy','pharmacyDashboard','pharmacyInventory','nhisManagement','nhisAuthorizations',
+    'pharmacyStock','pharmacyTransactions','pharmacyBranches','clinics','wards','pricing',
+    'billingOfficer','wallet','patientIntake','admissions','patientHistory','roiRequests',
+    'nurseDashboard','doctorDashboard','antenatal','archivedPatients','archivedPatientsView',
+    'queueManagement','doctorQueue','hrDashboard','hrEmployees','hrDepartments','hrLeaves',
+    'hrAttendance','hrPerformance','hrTrainings','radiology','dental','optometry',
+    'immunizations','patientPortal','portalSetup','laborAndDelivery',
+  ];
+
+  const base = Object.fromEntries(allModules.map((m) => [m, false]));
+  const allTrue = Object.fromEntries(allModules.map((m) => [m, true]));
+
+  const rolePerms = {
+    Admin: allTrue,
+    ITAdmin: allTrue,
+
+    HR: { ...base,
+      dashboard: true, staff: true,
+      hrDashboard: true, hrEmployees: true, hrDepartments: true,
+      hrLeaves: true, hrAttendance: true, hrPerformance: true, hrTrainings: true,
+      archivedPatients: true, archivedPatientsView: true,
+    },
+
+    Doctor: { ...base,
+      dashboard: true, patients: true, appointments: true,
+      prescriptions: true, labOrders: true,
+      doctorDashboard: true, doctorQueue: true, patientHistory: true,
+      archivedPatientsView: true, immunizations: true,
+    },
+
+    Obstetrician: { ...base,
+      dashboard: true, patients: true, appointments: true,
+      prescriptions: true, labOrders: true,
+      doctorDashboard: true, doctorQueue: true,
+      antenatal: true, laborAndDelivery: true,
+      archivedPatientsView: true, immunizations: true,
+    },
+
+    Nurse: { ...base,
+      dashboard: true, patients: true,
+      nurseDashboard: true, queueManagement: true,
+      antenatal: true, laborAndDelivery: true,
+      immunizations: true, archivedPatientsView: true,
+    },
+
+    Midwife: { ...base,
+      dashboard: true, patients: true,
+      nurseDashboard: true, queueManagement: true,
+      antenatal: true, laborAndDelivery: true,
+      archivedPatientsView: true, immunizations: true,
+    },
+
+    Pharmacist: { ...base,
+      dashboard: true, prescriptions: true,
+      pharmacy: true, pharmacyDashboard: true, pharmacyInventory: true,
+      pharmacyStock: true, pharmacyTransactions: true,
+      nhisManagement: true, nhisAuthorizations: true,
+    },
+
+    LabTechnician: { ...base,
+      dashboard: true, patients: true, labOrders: true,
+    },
+
+    LabScientist: { ...base,
+      dashboard: true, patients: true, labOrders: true,
+      patientHistory: true, archivedPatientsView: true,
+    },
+
+    Radiologist: { ...base,
+      dashboard: true, patients: true, radiology: true,
+      archivedPatientsView: true,
+    },
+
+    Dentist: { ...base,
+      dashboard: true, patients: true, appointments: true,
+      prescriptions: true, dental: true, archivedPatientsView: true,
+    },
+
+    Optometrist: { ...base,
+      dashboard: true, patients: true, appointments: true,
+      prescriptions: true, optometry: true, archivedPatientsView: true,
+    },
+
+    Paediatrician: { ...base,
+      dashboard: true, patients: true, appointments: true,
+      prescriptions: true, labOrders: true,
+      immunizations: true, archivedPatientsView: true,
+    },
+
+    Surgeon: { ...base,
+      dashboard: true, patients: true, appointments: true,
+      prescriptions: true, labOrders: true, archivedPatientsView: true,
+    },
+
+    Psychiatrist: { ...base,
+      dashboard: true, patients: true, appointments: true,
+      prescriptions: true, labOrders: true, archivedPatientsView: true,
+    },
+
+    Accountant: { ...base,
+      dashboard: true, billing: true, pricing: true, wallet: true,
+      nhisManagement: true, nhisAuthorizations: true,
+    },
+
+    BillingOfficer: { ...base,
+      dashboard: true, patients: true,
+      billingOfficer: true, wallet: true,
+    },
+
+    Records: { ...base,
+      dashboard: true, patients: true,
+      patientIntake: true, admissions: true, patientHistory: true,
+      roiRequests: true, queueManagement: true, antenatal: true,
+      archivedPatients: true, archivedPatientsView: true,
+      patientPortal: true, portalSetup: true,
+    },
+
+    Receptionist: { ...base,
+      dashboard: true, patients: true, appointments: true,
+    },
+  };
+
+  for (const [role, perms] of Object.entries(rolePerms)) {
+    await tx.rolePermission.create({
+      data: { tenantId: hospitalId, role, ...perms },
+    });
+  }
+
+  return Object.keys(rolePerms).length;
+}
 
 // ============================================================
 // 2. CORS — before routes
@@ -84,56 +225,12 @@ async function generateUsername(slug, tenantId, tx = prisma) {
 
   throw new Error('Could not generate a unique username, please try again');
 }
-// ============================================================
-// 5. ROUTES — after all middleware
-// ============================================================
-app.use('/api/platform', require('./src/routes/platform'));
 
-// ============ Uploads directory ============
-const uploadDir = path.join(__dirname, 'uploads', 'imaging');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-  console.log(`✅ Created upload directory: ${uploadDir}`);
-}
-
-// ============ Static file serving ============
-app.use('/uploads/imaging', express.static(uploadDir, {
-  setHeaders: (res) => {
-    res.set('Access-Control-Allow-Origin', '*');
-    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
-  }
-}));
-
-app.get('/images/:filename', async (req, res) => {
-  try {
-    const { filename } = req.params;
-    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
-      return res.status(400).json({ error: 'Invalid filename' });
-    }
-    const imagePath = path.join(uploadDir, filename);
-    if (!fs.existsSync(imagePath)) {
-      return res.status(404).json({ error: 'Image not found' });
-    }
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-    res.sendFile(imagePath);
-  } catch (error) {
-    console.error('Image error:', error);
-    res.status(500).json({ error: 'Failed to serve image' });
-  }
-});
-
-// ============ Rate limiting ============
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: process.env.NODE_ENV === 'production' ? 100 : 1000
-});
-app.use('/api', limiter);
 
 // ============================================================
 // AUTHENTICATE MIDDLEWARE
 // ============================================================
-const authenticate = async (req, res, next) => {
+async function authenticate(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader) {
@@ -163,12 +260,12 @@ const authenticate = async (req, res, next) => {
     console.error('Auth error:', error);
     res.status(500).json({ error: 'Authentication error' });
   }
-};
+}
 
 // ============================================================
 // AUTHORIZE MIDDLEWARE
 // ============================================================
-const authorize = (...roles) => {
+function authorize(...roles) {
   return (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({ error: 'Not authenticated' });
@@ -184,9 +281,12 @@ const authorize = (...roles) => {
     }
     next();
   };
-};
+}
 
-const authenticatePatient = async (req, res, next) => {
+// ============================================================
+// PATIENT AUTH MIDDLEWARE
+// ============================================================
+async function authenticatePatient(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader) {
@@ -219,10 +319,12 @@ const authenticatePatient = async (req, res, next) => {
     console.error('Patient auth error:', error);
     res.status(500).json({ error: 'Authentication error' });
   }
-};
+}
+
+
 
 // ============================================================
-// PERMISSION MIDDLEWARE
+// PERMISSION MIDDLEWARE (unchanged logic, just moved up)
 // ============================================================
 const checkPermission = (permissionKey) => {
   return async (req, res, next) => {
@@ -279,36 +381,37 @@ const checkPermission = (permissionKey) => {
       }
 
       let rolePerm = await prisma.rolePermission.findFirst({
-  where: { role: userRole, tenantId: req.tenantId }
-});
+        where: { role: userRole, tenantId: req.tenantId }
+      });
 
-if (!rolePerm) {
-  try {
-    rolePerm = await prisma.rolePermission.create({
-      data: {
-        tenantId: req.tenantId,
-        role: userRole,
-        dashboard: false, patients: false, staff: false,
-        appointments: false, prescriptions: false, labOrders: false,
-        antenatal: false, laborAndDelivery: false, dental: false,
-        optometry: false, nurseDashboard: false, doctorDashboard: false,
-        doctorQueue: false, pharmacy: false, pharmacyDashboard: false,
-        pharmacyInventory: false, nhisManagement: false, nhisAuthorizations: false,
-        pharmacyStock: false, pharmacyTransactions: false, pharmacyBranches: false,
-        billing: false, pricing: false, billingOfficer: false, wallet: false,
-        patientIntake: false, admissions: false, patientHistory: false,
-        roiRequests: false, archivedPatients: false, archivedPatientsView: false,
-        clinics: false, wards: false, queueManagement: false,
-        hrDashboard: false, hrEmployees: false, hrDepartments: false,
-        hrLeaves: false, hrAttendance: false, hrPerformance: false, hrTrainings: false,
-        radiology: false, patientPortal: false, portalSetup: false, immunizations: false
+      if (!rolePerm) {
+        try {
+          rolePerm = await prisma.rolePermission.create({
+            data: {
+              tenantId: req.tenantId,
+              role: userRole,
+              dashboard: false, patients: false, staff: false,
+              appointments: false, prescriptions: false, labOrders: false,
+              antenatal: false, laborAndDelivery: false, dental: false,
+              optometry: false, nurseDashboard: false, doctorDashboard: false,
+              doctorQueue: false, pharmacy: false, pharmacyDashboard: false,
+              pharmacyInventory: false, nhisManagement: false, nhisAuthorizations: false,
+              pharmacyStock: false, pharmacyTransactions: false, pharmacyBranches: false,
+              billing: false, pricing: false, billingOfficer: false, wallet: false,
+              patientIntake: false, admissions: false, patientHistory: false,
+              roiRequests: false, archivedPatients: false, archivedPatientsView: false,
+              clinics: false, wards: false, queueManagement: false,
+              hrDashboard: false, hrEmployees: false, hrDepartments: false,
+              hrLeaves: false, hrAttendance: false, hrPerformance: false, hrTrainings: false,
+              radiology: false, patientPortal: false, portalSetup: false, immunizations: false
+            }
+          });
+        } catch (createError) {
+          console.error(`❌ Failed to create permissions for ${userRole}:`, createError);
+          return res.status(403).json({ error: 'Forbidden – insufficient permissions. Please contact administrator.' });
+        }
       }
-    });
-  } catch (createError) {
-    console.error(`❌ Failed to create permissions for ${userRole}:`, createError);
-    return res.status(403).json({ error: 'Forbidden – insufficient permissions. Please contact administrator.' });
-  }
-}
+
       if (rolePerm[permissionKey] !== true) {
         return res.status(403).json({ error: `Forbidden – you do not have permission to access ${permissionKey}` });
       }
@@ -320,8 +423,147 @@ if (!rolePerm) {
   };
 };
 
+// ============================================================
+// 5. ROUTES — after all middleware
+// ============================================================
 
+// ---------- 5a. Uploads directory (MUST be ready before serving) ----------
+const uploadDir = path.join(__dirname, 'uploads', 'imaging');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+  console.log(`✅ Created upload directory: ${uploadDir}`);
+} else {
+  console.log(`✅ Upload directory ready: ${uploadDir}`);
+}
 
+// ---------- 5b. Static file serving ----------
+app.use('/uploads/imaging', express.static(uploadDir, {
+  setHeaders: (res) => {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+  }
+}));
+
+// ---------- 5c. Image proxy endpoint ----------
+app.get('/images/:filename', async (req, res) => {
+  try {
+    const { filename } = req.params;
+    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+    const imagePath = path.join(uploadDir, filename);
+    if (!fs.existsSync(imagePath)) {
+      return res.status(404).json({ error: 'Image not found' });
+    }
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.sendFile(imagePath);
+  } catch (error) {
+    console.error('Image error:', error);
+    res.status(500).json({ error: 'Failed to serve image' });
+  }
+});
+
+// ---------- 5d. Rate limiting (applies to ALL /api routes) ----------
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === 'production' ? 100 : 1000
+});
+app.use('/api', limiter);
+
+// ---------- 5e. PLATFORM ROUTES — with diagnostics ----------
+console.log('\n🔧 Loading platform routes...');
+
+app.use('/api/platform', (req, res, next) => {
+  console.log(`🌐 [PLATFORM] ${req.method} ${req.originalUrl} — hasAuth: ${!!req.headers.authorization}`);
+  next();
+});
+
+try {
+  const platformRouter = require('./src/routes/platform');
+
+  if (typeof platformRouter !== 'function' && typeof platformRouter !== 'object') {
+    throw new Error('platform.js did not export an Express router');
+  }
+
+  const routes = (platformRouter.stack || [])
+    .filter((l) => l.route)
+    .map((l) => `${Object.keys(l.route.methods)[0].toUpperCase()} ${l.route.path}`);
+
+  console.log(`✅ Platform router loaded`);
+  console.log(`   Routes registered: ${routes.length}`);
+  console.log(`   Has /hospitals: ${routes.some(r => r.includes('/hospitals')) ? '✅ YES' : '❌ NO'}`);
+  console.log(`   Route list: ${routes.join(', ') || '(none)'}`);
+
+  app.use('/api/platform', platformRouter);
+  console.log('✅ Platform routes mounted at /api/platform\n');
+} catch (err) {
+  console.error('❌ FAILED to load platform routes:', err.message);
+  console.error('   Stack:', err.stack);
+
+  app.use('/api/platform', (req, res) => {
+    res.status(503).json({
+      error: 'Platform routes failed to load',
+      details: err.message,
+      hint: 'See server console for full stack trace',
+    });
+  });
+}
+
+// ---------- 5f. Public hospital lookup by slug (no auth) ----------
+app.get('/api/hospitals/slug/:slug', async (req, res) => {
+  try {
+    const hospital = await prisma.hospital.findUnique({
+      where: { slug: req.params.slug },
+      include: { Settings: true }
+    });
+    if (!hospital || !hospital.isActive) {
+      return res.status(404).json({ error: 'Hospital not found or inactive' });
+    }
+    res.json({
+      id: hospital.id,
+      name: hospital.name,
+      slug: hospital.slug,
+      code: hospital.code,
+      usernamePrefix: hospital.usernamePrefix,
+      city: hospital.city,
+      state: hospital.state,
+      logoUrl: hospital.logoUrl,
+      primaryColor: hospital.primaryColor,
+      secondaryColor: hospital.secondaryColor,
+      status: hospital.status,
+      settings: hospital.Settings ? {
+        currencySymbol: hospital.Settings.currencySymbol,
+        timezone: hospital.Settings.timezone,
+        enablePatientPortal: hospital.Settings.enablePatientPortal,
+        enableKioskMode: hospital.Settings.enableKioskMode,
+      } : null
+    });
+  } catch (error) {
+    console.error('Get hospital by slug error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ---------- 5g. Auth-protected hospital lookup by id ----------
+app.get('/api/hospitals/:id', authenticate, async (req, res) => {
+  try {
+    const hospital = await prisma.hospital.findUnique({
+      where: { id: req.params.id },
+      include: { Settings: true }
+    });
+    if (!hospital) {
+      return res.status(404).json({ error: 'Hospital not found' });
+    }
+    if (req.user.tenantId !== hospital.id) {
+      return res.status(403).json({ error: 'Access denied to this hospital' });
+    }
+    res.json(hospital);
+  } catch (error) {
+    console.error('Get hospital error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // ============================================================
 // AUTHENTICATION ENDPOINTS
@@ -498,7 +740,9 @@ app.get('/api/super-admin/hospitals', authenticate, requireSuperAdmin, async (re
   }
 });
 
-// Create a new hospital
+// ============================================================
+// CREATE A NEW HOSPITAL (Super Admin)
+// ============================================================
 app.post('/api/super-admin/hospitals', authenticate, requireSuperAdmin, async (req, res) => {
   try {
     const { name, slug, code, email, phone, address, city, state, plan } = req.body;
@@ -507,68 +751,39 @@ app.post('/api/super-admin/hospitals', authenticate, requireSuperAdmin, async (r
       return res.status(400).json({ error: 'name, slug, code are required' });
     }
 
-    const hospital = await prisma.hospital.create({
-      data: {
-        name, slug, code, email, phone, address, city, state,
-        plan: plan || 'trial',
-        status: 'active',
-        isActive: true,
-        trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 days
-      }
+    const result = await prisma.$transaction(async (tx) => {
+      // 1) Create hospital
+      const hospital = await tx.hospital.create({
+        data: {
+          name, slug, code, email, phone, address, city, state,
+          plan: plan || 'trial',
+          status: 'active',
+          isActive: true,
+          trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+        },
+      });
+
+      // 2) Default hospital settings
+      await tx.hospitalSettings.create({
+        data: { tenantId: hospital.id, hospitalId: hospital.id },
+      });
+
+            // 3) Default role permissions (20 roles)
+      const rolesCreated = await createDefaultRolePermissions(tx, hospital.id);
+
+      // 4) Default clinics, wards, departments, services
+      const starterData = await createDefaultHospitalData(tx, hospital.id);
+
+      return { hospital, rolesCreated, starterData };
     });
 
-    // ✅ Create default settings
-    await prisma.hospitalSettings.create({
-      data: {
-        tenantId: hospital.id,
-        hospitalId: hospital.id,
-      }
+    res.status(201).json({
+      ...result.hospital,
+      _meta: {
+        rolesCreated: result.rolesCreated,
+        ...result.starterData, // clinics, wards, departments, services
+      },
     });
-
-    // ✅ Create default role permissions for common roles
-    const allModules = [
-  'dashboard','patients','staff','appointments','prescriptions','labOrders','billing',
-  'pharmacy','pharmacyDashboard','pharmacyInventory','nhisManagement','nhisAuthorizations',
-  'pharmacyStock','pharmacyTransactions','pharmacyBranches','clinics','wards','pricing',
-  'billingOfficer','wallet','patientIntake','admissions','patientHistory','roiRequests',
-  'nurseDashboard','doctorDashboard','antenatal','archivedPatients','archivedPatientsView',
-  'queueManagement','doctorQueue','hrDashboard','hrEmployees','hrDepartments','hrLeaves',
-  'hrAttendance','hrPerformance','hrTrainings','radiology','dental','optometry',
-  'immunizations','patientPortal','portalSetup','laborAndDelivery',
-];
-const base = Object.fromEntries(allModules.map((m) => [m, false]));
-const allTrue = Object.fromEntries(allModules.map((m) => [m, true]));
-
-const rolePerms = {
-  Admin: allTrue,
-  ITAdmin: allTrue,
-  HR: { ...base, dashboard: true, hrDashboard: true, hrEmployees: true, hrDepartments: true, hrLeaves: true, hrAttendance: true, hrPerformance: true, hrTrainings: true },
-  Doctor: { ...base, dashboard: true, patients: true, appointments: true, prescriptions: true, labOrders: true, doctorDashboard: true, doctorQueue: true, patientHistory: true, archivedPatientsView: true },
-  Nurse: { ...base, dashboard: true, patients: true, nurseDashboard: true, queueManagement: true, antenatal: true, laborAndDelivery: true, immunizations: true, archivedPatientsView: true },
-  Obstetrician: { ...base, dashboard: true, patients: true, appointments: true, prescriptions: true, labOrders: true, doctorDashboard: true, doctorQueue: true, antenatal: true, laborAndDelivery: true, archivedPatientsView: true },
-  Midwife: { ...base, dashboard: true, patients: true, nurseDashboard: true, queueManagement: true, antenatal: true, laborAndDelivery: true, archivedPatientsView: true },
-  Pharmacist: { ...base, dashboard: true, prescriptions: true, pharmacy: true, pharmacyDashboard: true, pharmacyInventory: true, pharmacyStock: true, pharmacyTransactions: true, nhisManagement: true, nhisAuthorizations: true },
-  BillingOfficer: { ...base, dashboard: true, patients: true, billingOfficer: true, wallet: true },
-  Accountant: { ...base, dashboard: true, billing: true, pricing: true, wallet: true, nhisManagement: true, nhisAuthorizations: true },
-  Records: { ...base, dashboard: true, patients: true, patientIntake: true, admissions: true, patientHistory: true, roiRequests: true, queueManagement: true, antenatal: true, archivedPatients: true, archivedPatientsView: true },
-  LabTechnician: { ...base, dashboard: true, patients: true, labOrders: true },
-  LabScientist: { ...base, dashboard: true, patients: true, labOrders: true, patientHistory: true, archivedPatientsView: true },
-  Radiologist: { ...base, dashboard: true, patients: true, radiology: true, archivedPatientsView: true },
-  Receptionist: { ...base, dashboard: true, patients: true, appointments: true },
-  Dentist: { ...base, dashboard: true, patients: true, dental: true },
-  Optometrist: { ...base, dashboard: true, patients: true, optometry: true },
-  Paediatrician: { ...base, dashboard: true, patients: true, appointments: true, prescriptions: true, labOrders: true, immunizations: true },
-  Surgeon: { ...base, dashboard: true, patients: true, appointments: true, prescriptions: true, labOrders: true },
-  Psychiatrist: { ...base, dashboard: true, patients: true, appointments: true, prescriptions: true },
-};
-
-for (const [role, perms] of Object.entries(rolePerms)) {
-  await tx.rolePermission.create({
-    data: { tenantId: hospital.id, role, ...perms },
-  });
-}
-
-    res.status(201).json(hospital);
   } catch (error) {
     console.error('Create hospital error:', error);
     if (error.code === 'P2002') {
@@ -643,7 +858,7 @@ app.get('/api/super-admin/stats', authenticate, requireSuperAdmin, async (req, r
 app.post('/api/public/register-hospital', async (req, res) => {
   try {
     const {
-      hospitalName, slug, code, usernamePrefix,   // ← NEW
+      hospitalName, slug, code, usernamePrefix,
       adminEmail, adminFirstName, adminLastName, adminPassword,
     } = req.body;
 
@@ -677,54 +892,53 @@ app.post('/api/public/register-hospital', async (req, res) => {
       }
     }
 
-    // Create hospital + admin in one transaction
+    // Create hospital + admin + starter data in one transaction
     const result = await prisma.$transaction(async (tx) => {
+      // 1) Create hospital
       const hospital = await tx.hospital.create({
         data: {
           name: hospitalName,
           slug,
           code,
-          usernamePrefix,                 // ← NEW: persist prefix
+          usernamePrefix,
           email: adminEmail,
           plan: 'trial',
           status: 'active',
           isActive: true,
           trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
-        }
+        },
       });
 
+      // 2) Default hospital settings
       await tx.hospitalSettings.create({
-        data: { tenantId: hospital.id, hospitalId: hospital.id }
+        data: { tenantId: hospital.id, hospitalId: hospital.id },
       });
 
+      // 3) Create the admin staff account
       const hashedPassword = await bcrypt.hash(adminPassword, SALT_ROUNDS);
+      const adminUsername = await generateUsername(slug, hospital.id, tx);
 
-// ✅ Slug-based random username: stmary-7231
-const adminUsername = await generateUsername(slug, hospital.id, tx);
+      const admin = await tx.staff.create({
+        data: {
+          tenantId: hospital.id,
+          employeeId: 'ADMIN-001',
+          username: adminUsername,
+          firstName: adminFirstName,
+          lastName: adminLastName,
+          email: adminEmail,
+          role: 'Admin',
+          password: hashedPassword,
+          isActive: true,
+        },
+      });
 
-const admin = await tx.staff.create({
-  data: {
-    tenantId: hospital.id,
-    employeeId: 'ADMIN-001',
-    username: adminUsername,
-    firstName: adminFirstName,
-    lastName: adminLastName,
-    email: adminEmail,
-    role: 'Admin',
-    password: hashedPassword,
-    isActive: true,
-  }
-});
+      // 4) Full 20-role permission matrix
+      const rolesCreated = await createDefaultRolePermissions(tx, hospital.id);
 
-      // Create default role permissions
-      const defaultRoles = ['Admin', 'Doctor', 'Nurse', 'Records', 'Pharmacist', 'Accountant', 'BillingOfficer'];
-      for (const role of defaultRoles) {
-        await tx.rolePermission.create({
-          data: { tenantId: hospital.id, role }
-        });
-      }
+      // 5) Default clinics, wards, departments, services
+      const starterData = await createDefaultHospitalData(tx, hospital.id);
 
-      return { hospital, admin };
+      return { hospital, admin, rolesCreated, starterData };
     });
 
     res.status(201).json({
@@ -733,82 +947,21 @@ const admin = await tx.staff.create({
         id: result.hospital.id,
         name: result.hospital.name,
         slug: result.hospital.slug,
-        usernamePrefix: result.hospital.usernamePrefix,   // ← NEW: return it too
+        usernamePrefix: result.hospital.usernamePrefix,
       },
-      admin: { email: result.admin.email, role: result.admin.role, username: result.admin.username, }
+      admin: {
+        email: result.admin.email,
+        role: result.admin.role,
+        username: result.admin.username,
+      },
+      rolesCreated: result.rolesCreated,
+      starterData: result.starterData,
     });
   } catch (error) {
     console.error('Hospital registration error:', error);
     res.status(500).json({ error: error.message });
   }
 });
-
-
-// ============================================================
-// HOSPITAL ENDPOINTS (TENANT MANAGEMENT)
-// ============================================================
-// ✅ Your hospital endpoint(s) go here — cleanly separated
-
-app.get('/api/hospitals/:id', authenticate, async (req, res) => {
-  try {
-    const hospital = await prisma.hospital.findUnique({
-      where: { id: req.params.id },
-      include: { Settings: true }
-    });
-
-    if (!hospital) {
-      return res.status(404).json({ error: 'Hospital not found' });
-    }
-
-    if (req.user.tenantId !== hospital.id) {
-      return res.status(403).json({ error: 'Access denied to this hospital' });
-    }
-
-    res.json(hospital);
-  } catch (error) {
-    console.error('Get hospital error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// ✅ Add a public one for the hospital login page (no auth)
-app.get('/api/hospitals/slug/:slug', async (req, res) => {
-  try {
-    const hospital = await prisma.hospital.findUnique({
-      where: { slug: req.params.slug },
-      include: { Settings: true }
-    });
-
-    if (!hospital || !hospital.isActive) {
-      return res.status(404).json({ error: 'Hospital not found or inactive' });
-    }
-
-    // Don't leak sensitive data
-    res.json({
-      id: hospital.id,
-      name: hospital.name,
-      slug: hospital.slug,
-      code: hospital.code,
-      city: hospital.city,
-      state: hospital.state,
-      logoUrl: hospital.logoUrl,
-      primaryColor: hospital.primaryColor,
-      secondaryColor: hospital.secondaryColor,
-      status: hospital.status,
-      settings: hospital.Settings ? {
-        currencySymbol: hospital.Settings.currencySymbol,
-        timezone: hospital.Settings.timezone,
-        enablePatientPortal: hospital.Settings.enablePatientPortal,
-        enableKioskMode: hospital.Settings.enableKioskMode,
-      } : null
-    });
-  } catch (error) {
-    console.error('Get hospital by slug error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-
 
 // ============================================================
 // DEBUG ENDPOINT
@@ -2573,6 +2726,97 @@ app.get('/api/staff/:id', authenticate, authorize('Admin', 'ITAdmin', 'HR'), asy
   }
 });
 
+app.post('/api/staff', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
+  try {
+    const { employeeId, firstName, lastName, email, role, department, password } = req.body;
+
+    if (!employeeId || !firstName || !lastName || !email || !role || !password) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const hospital = await prisma.hospital.findUnique({
+      where: { id: req.tenantId },
+      select: { usernamePrefix: true, name: true },
+    });
+    if (!hospital?.usernamePrefix) {
+      return res.status(500).json({ error: 'Hospital username prefix not configured' });
+    }
+
+    const existingEmployeeId = await req.db.staff.findFirst({ where: { employeeId } });
+    if (existingEmployeeId) return res.status(400).json({ error: 'Employee ID already exists' });
+
+    const existingEmail = await req.db.staff.findFirst({ where: { email } });
+    if (existingEmail) return res.status(400).json({ error: 'Staff with this email already exists' });
+
+    const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+
+    const staff = await prisma.$transaction(async (tx) => {
+      // 1) Generate slug-based username: stmarys-4821
+      const username = await generateUsername(hospital.usernamePrefix, req.tenantId, tx);
+
+      // 2) Resolve department name → Department row id (auto-create if missing)
+      let departmentId = null;
+      if (department && department.trim()) {
+        const name = department.trim();
+        let dept = await tx.department.findFirst({
+          where: { tenantId: req.tenantId, name },
+          select: { id: true },
+        });
+        if (!dept) {
+          dept = await tx.department.create({
+            data: { tenantId: req.tenantId, name, isActive: true },
+            select: { id: true },
+          });
+        }
+        departmentId = dept.id;
+      }
+
+      // 3) Create staff
+      return tx.staff.create({
+        data: {
+          tenantId: req.tenantId,
+          employeeId,
+          username,
+          firstName,
+          lastName,
+          email,
+          role,
+          departmentId,
+          password: hashedPassword,
+          isActive: true,
+          updatedAt: new Date(),
+        },
+        include: {
+          department: { select: { id: true, name: true } },
+        },
+      });
+    });
+
+    await req.db.auditLog.create({
+      data: {
+        staffId: req.user.id,
+        action: 'CREATE_STAFF',
+        module: 'Staff',
+        details: `Created staff ${staff.username} as ${role}`,
+      },
+    });
+
+    const { password: _, department: deptRel, ...rest } = staff;
+    res.status(201).json({
+      ...rest,
+      department: deptRel?.name || null,
+      departmentId: deptRel?.id || null,
+    });
+  } catch (error) {
+    console.error('Create staff error:', error);
+    if (error.code === 'P2002') {
+      const field = error.meta?.target?.[0];
+      return res.status(400).json({ error: `Duplicate value for ${field}.` });
+    }
+    res.status(400).json({ error: error.message });
+  }
+});
+
 app.put('/api/staff/:id', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
   try {
     const { id } = req.params;
@@ -4114,28 +4358,9 @@ app.post('/api/billing/process-payment', authenticate, authorize('Admin', 'Billi
       include: { Patient: true, PatientJourney: true }
     });
 
-    let autoAdvanced = false;
-    if (newStatus === 'Paid' && updatedBill.PatientJourney) {
-      autoAdvanced = true;
-      await req.db.patientJourney.update({
-        where: { id: updatedBill.PatientJourney.id },
-        data: {
-          status: 'BILLING_CLEARED',
-          registrationFeePaid: true, cardFeePaid: true, consultationFeePaid: true,
-          updatedAt: new Date()
-        }
-      });
-      await req.db.patientJourney.update({
-        where: { id: updatedBill.PatientJourney.id },
-        data: { status: 'CARD_PRINTED', cardGeneratedAt: new Date(), updatedAt: new Date() }
-      });
-      setTimeout(async () => {
-        await req.db.patientJourney.update({
-          where: { id: updatedBill.PatientJourney.id },
-          data: { status: 'SENT_TO_DESTINATION', sentToDestinationAt: new Date(), updatedAt: new Date() }
-        });
-      }, 2000);
-    }
+        // NOTE: We do NOT auto-advance the journey here. The Records officer
+    // must explicitly advance the journey after verifying the bill is Paid.
+    const autoAdvanced = false;
 
     const receiptNumber = `RCP-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
     await req.db.auditLog.create({
@@ -4246,24 +4471,30 @@ app.post('/api/billing-officer/process-payment', authenticate, authorize('Admin'
         data: { billingRecordId: bill.id }
       });
     }
-    const updatedBill = await req.db.billingRecord.update({
+        const updatedBill = await req.db.billingRecord.update({
       where: { id: bill.id },
       data: { status: 'Paid', paymentMethod: paymentMethod || 'Cash', paymentDate: new Date() }
     });
-    const updatedJourney = await req.db.patientJourney.update({
-      where: { id: journeyId },
-      data: { status: 'BILLING_CLEARED' },
-      include: { Patient: true, Clinic: true, Ward: true }
-    });
+
+    // ✅ Do NOT advance the journey here.
+    // The Records officer will advance it from PENDING_BILLING → BILLING_CLEARED
+    // once they verify the bill is Paid.
+
     await req.db.auditLog.create({
       data: {
         staffId: req.user.id,
         action: 'BILLING_PAID',
         module: 'Billing',
-        details: `Marked bill ${updatedBill.invoiceNumber} as paid for patient ${updatedJourney.Patient.hospitalId}`
+        details: `Marked bill ${updatedBill.invoiceNumber} as paid for patient ${journey.Patient.hospitalId}. ` +
+          `Journey remains PENDING_BILLING until Records advances it.`
       }
     });
-    res.json({ bill: { ...updatedBill, patient: journey.Patient }, journey: updatedJourney });
+
+    res.json({
+      bill: { ...updatedBill, patient: journey.Patient },
+      journey, // unchanged — still PENDING_BILLING
+      message: 'Bill marked as Paid. Records officer must now advance the journey.'
+    });
   } catch (error) {
     console.error('Error processing payment:', error);
     res.status(500).json({ error: error.message });
@@ -5629,6 +5860,7 @@ app.patch('/api/patient-journeys/:id', authenticate, authorize('Admin', 'Records
   try {
     const { id } = req.params;
     const { destinationType, clinicId, wardId } = req.body;
+
     const existingJourney = await req.db.patientJourney.findUnique({
       where: { id },
       include: { Patient: true, Clinic: true, Ward: true }
@@ -5648,11 +5880,13 @@ app.patch('/api/patient-journeys/:id', authenticate, authorize('Admin', 'Records
       if (wardId !== undefined) updateData.wardId = wardId;
     }
 
+    // ✅ THE MISSING UPDATE CALL
     const updatedJourney = await req.db.patientJourney.update({
       where: { id },
       data: updateData,
       include: { Patient: true, Clinic: true, Ward: true, BillingRecord: true }
     });
+
     await req.db.auditLog.create({
       data: {
         staffId: req.user.id,
@@ -5661,6 +5895,7 @@ app.patch('/api/patient-journeys/:id', authenticate, authorize('Admin', 'Records
         details: `Updated destination for patient ${updatedJourney.Patient?.hospitalId || 'N/A'} to ${destinationType || 'updated'}`
       }
     });
+
     res.json({
       ...updatedJourney,
       patient: updatedJourney.Patient,
@@ -5674,10 +5909,14 @@ app.patch('/api/patient-journeys/:id', authenticate, authorize('Admin', 'Records
   }
 });
 
+// ============================================================
+// REVERSE A JOURNEY
+// ============================================================
 app.patch('/api/patient-journeys/:id/reverse', authenticate, authorize('Admin', 'Records'), async (req, res) => {
   try {
     const { id } = req.params;
     const { reason } = req.body;
+
     const journey = await req.db.patientJourney.findUnique({
       where: { id },
       include: { Patient: true, BillingRecord: true }
@@ -5687,13 +5926,13 @@ app.patch('/api/patient-journeys/:id/reverse', authenticate, authorize('Admin', 
       return res.status(400).json({ error: 'Only COMPLETED or SENT_TO_DESTINATION journeys can be reversed' });
     }
 
-    // If a bill exists and has been partially or fully paid, refund the wallet + reset items
+    // If a bill exists, snapshot → mark original txn reversed → refund → reset items
     if (journey.billingRecordId && journey.BillingRecord) {
       const bill = journey.BillingRecord;
       const amountPaid = bill.paidAmount || 0;
 
-      // ✅ 0) Snapshot the bill's pre-reversal state into the audit trail
-      //       BEFORE anything is modified, so history is preserved forever.
+      // ── 1) Snapshot the bill's pre-reversal state into the audit trail ──
+      //      BEFORE anything is modified, so history is preserved forever.
       await req.db.auditLog.create({
         data: {
           staffId: req.user.id,
@@ -5704,13 +5943,40 @@ app.patch('/api/patient-journeys/:id/reverse', authenticate, authorize('Admin', 
             priorStatus: bill.status,
             priorPaidAmount: bill.paidAmount,
             priorPaymentMethod: bill.paymentMethod,
-            priorItems: bill.items,
-            reversalReason: reason || 'Process correction'
+            priorItems: Array.isArray(bill.items) ? bill.items.map(i => ({
+              name: i.name,
+              category: i.category,
+              amount: i.amount,
+              status: i.status,
+              paidAmount: i.paidAmount,
+              serviceType: i.serviceType,
+            })) : bill.items,
+            priorWalletTransactionId: bill.walletTransactionId,
+            reversalReason: reason || 'Process correction',
+            reversedBy: req.user.id,
+            reversedAt: new Date().toISOString(),
           })
         }
       });
 
-      // 1) Refund wallet if the payment was made from wallet
+      // ── 2) Mark the original wallet transaction as Reversed ──
+      //      This must happen BEFORE the bill loses its walletTransactionId reference.
+      if (bill.isWalletPayment && bill.walletTransactionId) {
+        try {
+          await req.db.walletTransaction.update({
+            where: { id: bill.walletTransactionId },
+            data: {
+              status: 'Reversed',
+              notes: `Reversed due to journey reversal on ${new Date().toISOString()}. Reason: ${reason || 'Process correction'}`,
+              updatedAt: new Date()
+            }
+          });
+        } catch (err) {
+          console.warn('Could not mark original transaction as reversed:', err.message);
+        }
+      }
+
+      // ── 3) Refund wallet if the payment was made from wallet ──
       if (bill.isWalletPayment && amountPaid > 0) {
         const wallet = await req.db.patientWallet.findUnique({
           where: { patientId: journey.patientId }
@@ -5721,7 +5987,11 @@ app.patch('/api/patient-journeys/:id/reverse', authenticate, authorize('Admin', 
           await req.db.$transaction(async (tx) => {
             await tx.patientWallet.update({
               where: { id: wallet.id },
-              data: { balance: balanceAfter, lastTransactionAt: new Date(), updatedAt: new Date() }
+              data: {
+                balance: balanceAfter,
+                lastTransactionAt: new Date(),
+                updatedAt: new Date()
+              }
             });
             await tx.walletTransaction.create({
               data: {
@@ -5752,7 +6022,7 @@ app.patch('/api/patient-journeys/:id/reverse', authenticate, authorize('Admin', 
         }
       }
 
-      // 2) Reset every item back to Pending
+      // ── 4) Reset every bill item back to Pending ──
       const originalItems = Array.isArray(bill.items) ? bill.items : [];
       const resetItems = originalItems.map(item => ({
         ...item,
@@ -5761,7 +6031,11 @@ app.patch('/api/patient-journeys/:id/reverse', authenticate, authorize('Admin', 
         paidAmount: 0
       }));
 
-      // 3) Reset the bill
+      // ── 5) Reset the bill itself ──
+      //      Note: we do NOT set billingRecordId to null on the journey,
+      //      so the same bill keeps its full original set of items
+      //      (Registration + Card + Consultation) instead of getting
+      //      regenerated with just a single Consultation item.
       await req.db.billingRecord.update({
         where: { id: journey.billingRecordId },
         data: {
@@ -5786,7 +6060,8 @@ app.patch('/api/patient-journeys/:id/reverse', authenticate, authorize('Admin', 
       });
     }
 
-    // 4) Reverse the journey itself
+    // ── 6) Reverse the journey itself ──
+    //      We keep billingRecordId intact so the same bill is reused.
     const updatedJourney = await req.db.patientJourney.update({
       where: { id },
       data: {
@@ -5801,7 +6076,7 @@ app.patch('/api/patient-journeys/:id/reverse', authenticate, authorize('Admin', 
       include: { Patient: true, Clinic: true, Ward: true, BillingRecord: true }
     });
 
-    // 5) If admitted to a ward, discharge
+    // ── 7) If admitted to a ward, discharge ──
     if (journey.wardId) {
       const admission = await req.db.admission.findFirst({
         where: { patientId: journey.patientId, status: 'Admitted' }
@@ -5819,13 +6094,14 @@ app.patch('/api/patient-journeys/:id/reverse', authenticate, authorize('Admin', 
       }
     }
 
-    // 6) Audit log — the journey-level entry
+    // ── 8) Journey-level audit entry ──
     await req.db.auditLog.create({
       data: {
         staffId: req.user.id,
         action: 'REVERSE_JOURNEY',
         module: 'Records',
-        details: `Reversed journey for ${journey.Patient?.hospitalId}. ` +
+        details:
+          `Reversed journey for ${journey.Patient?.hospitalId}. ` +
           `Bill ${journey.BillingRecord?.invoiceNumber || 'N/A'} reset to Pending. ` +
           `Reason: ${reason || 'Process error'}`
       }
