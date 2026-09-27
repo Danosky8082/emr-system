@@ -52,4 +52,4 @@ EXPOSE 3000
 # On startup, push the Prisma schema to the DB (idempotent), then run.
 # We use `db push` instead of `migrate deploy` because the project has
 # no migrations folder yet — the schema is applied directly.
-CMD ["sh", "-c", "npx prisma db push --skip-generate && node server.js"]
+CMD ["node", "server.js"]
