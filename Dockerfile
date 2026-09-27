@@ -18,13 +18,21 @@ COPY package*.json ./
 COPY prisma ./prisma
 COPY prisma.config.ts ./prisma.config.ts
 
+# Prisma's config loader requires DATABASE_URL to be set, even during
+# `prisma generate` (which never actually connects to the DB).
+# Use a dummy URL here — Render overrides it at runtime.
+ENV DATABASE_URL="postgresql://build:build@localhost:5432/build"
+
 # Install ALL deps (including `prisma` from devDependencies — needed for generate)
 RUN npm ci
 
-# Generate Prisma Client explicitly (Prisma 7 requires this — no auto post-install hook)
+# Generate Prisma Client explicitly. Prisma 7 removed the auto
+# postinstall hook, so this must run.
 RUN npx prisma generate
 
-# Prune devDependencies to keep the runtime image lean
+# Prune devDependencies to keep the runtime image lean.
+# Prisma Client is already generated in node_modules/.prisma/client,
+# so it survives the prune.
 RUN npm prune --omit=dev
 
 # ---- Application layer -----------------------------------------
@@ -41,6 +49,7 @@ ENV NODE_ENV=production
 
 EXPOSE 3000
 
-# On every deploy: apply any pending migrations, then start.
-# `prisma migrate deploy` is idempotent — safe to run repeatedly.
-CMD ["sh", "-c", "npx prisma migrate deploy && node server.js"]
+# On startup, push the Prisma schema to the DB (idempotent), then run.
+# We use `db push` instead of `migrate deploy` because the project has
+# no migrations folder yet — the schema is applied directly.
+CMD ["sh", "-c", "npx prisma db push --skip-generate && node server.js"]
