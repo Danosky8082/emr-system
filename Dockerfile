@@ -18,9 +18,14 @@ COPY package*.json ./
 COPY prisma ./prisma
 COPY prisma.config.ts ./prisma.config.ts
 
-# Install production deps + generate Prisma client
-RUN npm ci --omit=dev && \
-    npx prisma generate
+# Install ALL deps (including `prisma` from devDependencies — needed for generate)
+RUN npm ci
+
+# Generate Prisma Client explicitly (Prisma 7 requires this — no auto post-install hook)
+RUN npx prisma generate
+
+# Prune devDependencies to keep the runtime image lean
+RUN npm prune --omit=dev
 
 # ---- Application layer -----------------------------------------
 # Copy the rest of the backend
