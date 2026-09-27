@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
+import api from '../api/client';
 
 const ServicePricingManager = () => {
   const { token } = useAuth();
@@ -45,9 +46,7 @@ const ServicePricingManager = () => {
   const fetchServices = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('http://localhost:3000/api/services', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/services');
       setServices(res.data);
     } catch (error) {
       console.error('Fetch services error:', error);
@@ -59,9 +58,7 @@ const ServicePricingManager = () => {
 
   const fetchCategories = async () => {
     try {
-      const res = await axios.get('http://localhost:3000/api/services/categories', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/services/categories');
       setCategories(res.data);
     } catch (error) {
       console.error('Fetch categories error:', error);
@@ -85,14 +82,10 @@ const ServicePricingManager = () => {
     e.preventDefault();
     try {
       if (editingService) {
-        await axios.put(`http://localhost:3000/api/services/${editingService.id}`, formData, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        await api.put(`/services/${editingService.id}`, formData);
         toast.success('Service updated successfully!');
       } else {
-        await axios.post('http://localhost:3000/api/services', formData, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        await api.post('/services', formData);
         toast.success('Service created successfully!');
       }
       setShowModal(false);
@@ -120,9 +113,7 @@ const ServicePricingManager = () => {
         return;
       }
 
-      const res = await axios.post('http://localhost:3000/api/services/bulk', { services: servicesData }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.post('/services/bulk', { services: servicesData });
 
       toast.success(`Bulk import: ${res.data.created} created, ${res.data.updated} updated`);
       setShowBulkModal(false);
@@ -152,9 +143,7 @@ const ServicePricingManager = () => {
   const handleDelete = async (id) => {
     if (!window.confirm('Are you sure you want to delete this service?')) return;
     try {
-      await axios.delete(`http://localhost:3000/api/services/${id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.delete(`/services/${id}`);
       toast.success('Service deleted successfully');
       fetchServices();
     } catch (error) {

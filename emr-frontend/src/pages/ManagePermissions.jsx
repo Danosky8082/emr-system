@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
+import api from '../api/client';
 
 const ManagePermissions = () => {
   const { token, user } = useAuth();
@@ -639,9 +640,7 @@ const ManagePermissions = () => {
     setLoading(true);
     try {
       console.log('📋 Fetching permissions...');
-      const res = await axios.get('http://localhost:3000/api/permissions', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/permissions');
       console.log('✅ Permissions fetched:', res.data.length);
       setPermissions(res.data);
     } catch (error) { 
@@ -667,10 +666,8 @@ const ManagePermissions = () => {
         [moduleKey]: !currentValue
       };
       
-      await axios.patch(`http://localhost:3000/api/permissions/${role}`, 
-        payload,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.patch(`/permissions/${role}`, 
+        payload);
       toast.success(`Updated ${role} permissions`);
       fetchPermissions();
     } catch (error) {

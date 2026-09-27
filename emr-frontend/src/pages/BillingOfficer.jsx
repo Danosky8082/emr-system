@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
+import api from '../api/client';
 
 const BillingOfficer = () => {
   const { token, user } = useAuth();
@@ -36,7 +37,7 @@ const BillingOfficer = () => {
   // ✅ FETCH PENDING BILLS
   const fetchPendingBills = async () => {
     try {
-      const res = await axios.get('http://localhost:3000/api/billing', {
+      const res = await api.get('/billing', {
         headers: { Authorization: `Bearer ${token}` },
         params: { 
           status: 'Pending',
@@ -53,10 +54,7 @@ const BillingOfficer = () => {
         const patient = bill.patient || bill.Patient;
         if (patient?.id) {
           try {
-            const walletRes = await axios.get(
-              `http://localhost:3000/api/patients/${patient.id}/wallet`,
-              { headers: { Authorization: `Bearer ${token}` } }
-            );
+            const walletRes = await api.get(`/patients/${patient.id}/wallet`);
             balances[patient.id] = walletRes.data.balance || 0;
           } catch (e) {
             balances[patient.id] = 0;
@@ -73,7 +71,7 @@ const BillingOfficer = () => {
   // ✅ FETCH TRANSACTION HISTORY (All paid bills)
   const fetchTransactionHistory = async () => {
     try {
-      const res = await axios.get('http://localhost:3000/api/billing', {
+      const res = await api.get('/billing', {
         headers: { Authorization: `Bearer ${token}` },
         params: { 
           status: 'Paid',
@@ -140,16 +138,13 @@ const BillingOfficer = () => {
     setProcessingId(selectedBill.id);
 
     try {
-      const response = await axios.post(
-        'http://localhost:3000/api/billing/process-payment',
+      const response = await api.post('/billing/process-payment',
         {
           billingRecordId: selectedBill.id,
           paymentMethod,
           amount,
           paymentReference: paymentMethod === 'Transfer' ? prompt('Enter payment reference:') : null
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+        });
 
       toast.success(`✅ Payment of ₦${amount.toLocaleString()} processed successfully!`);
       
@@ -169,9 +164,7 @@ const BillingOfficer = () => {
   // ✅ REGENERATE RECEIPT FOR A TRANSACTION
   const handleRegenerateReceipt = async (billId) => {
     try {
-      const res = await axios.get(`http://localhost:3000/api/billing/${billId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get(`/billing/${billId}`);
       
       const bill = res.data;
       

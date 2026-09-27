@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import './Dashboard.css';
 import { useSearch } from '../components/Layout'; // <--- IMPORT
+import api from '../api/client';
 
 const Appointments = () => {
   const { token } = useAuth();
@@ -13,9 +14,7 @@ const Appointments = () => {
   // ✅ Declare fetch function FIRST
   const fetchAppointments = async () => {
     try {
-      const res = await axios.get('http://localhost:3000/api/appointments', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/appointments');
       setAppointments(res.data);
     } catch (error) {
       console.error('Error fetching appointments:', error);

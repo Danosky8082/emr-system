@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
+import api from '../api/client';
 
 const ManageWards = () => {
   const { token } = useAuth();
@@ -14,9 +15,7 @@ const ManageWards = () => {
 
   const fetchWards = async () => {
     try {
-      const res = await axios.get('http://localhost:3000/api/wards', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/wards');
       setWards(res.data);
     } catch (error) { toast.error('Failed to load wards'); } finally { setLoading(false); }
   };
@@ -33,9 +32,7 @@ const ManageWards = () => {
         capacity: newWard.capacity ? parseInt(newWard.capacity) : null
       };
 
-      await axios.post('http://localhost:3000/api/wards', payload, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.post('/wards', payload);
       toast.success('Ward created!');
       setShowModal(false);
       setNewWard({ name: '', description: '', capacity: '' });
@@ -48,9 +45,7 @@ const ManageWards = () => {
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this ward?')) return;
     try {
-      await axios.delete(`http://localhost:3000/api/wards/${id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.delete(`/wards/${id}`);
       toast.success('Ward deleted');
       fetchWards();
     } catch (error) { toast.error('Cannot delete ward with active admissions'); }

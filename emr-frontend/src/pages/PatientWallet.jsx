@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import './PatientWallet.css';
+import api from '../api/client';
 
 const PatientWallet = () => {
   const navigate = useNavigate();
@@ -27,12 +28,8 @@ const PatientWallet = () => {
     setLoading(true);
     try {
       const [walletRes, txRes] = await Promise.all([
-        axios.get('http://localhost:3000/api/patient/wallet', {
-          headers: { Authorization: `Bearer ${token}` }
-        }),
-        axios.get('http://localhost:3000/api/patient/wallet/transactions?limit=50', {
-          headers: { Authorization: `Bearer ${token}` }
-        })
+        api.get('/patient/wallet'),
+        api.get('/patient/wallet/transactions?limit=50')
       ]);
       setWallet(walletRes.data);
       setTransactions(txRes.data.transactions || []);

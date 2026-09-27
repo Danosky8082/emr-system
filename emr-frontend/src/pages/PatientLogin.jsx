@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import './PatientLogin.css';
+import api from '../api/client';
 
 const PatientLogin = () => {
   const navigate = useNavigate();
@@ -30,7 +31,7 @@ const PatientLogin = () => {
 
       console.log('🔐 Sending login payload:', payload);
 
-      const res = await axios.post('http://localhost:3000/api/patient/login', payload);
+      const res = await api.post('/patient/login', payload);
 
       console.log('🔐 Login Response:', res.data);
       console.log('🔐 Status:', res.status);

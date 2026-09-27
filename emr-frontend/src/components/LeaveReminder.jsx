@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import api from '../api/client';
 
 const LeaveReminder = () => {
   const { token, user } = useAuth();
@@ -31,9 +32,7 @@ const LeaveReminder = () => {
   const fetchReminders = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('http://localhost:3000/api/hr/leave-reminders', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/hr/leave-reminders');
       setReminders(res.data);
     } catch (error) {
       console.error('Fetch reminders error:', error);
@@ -45,9 +44,7 @@ const LeaveReminder = () => {
 
   const fetchNotifications = async () => {
     try {
-      const res = await axios.get('http://localhost:3000/api/hr/notifications', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/hr/notifications');
       setNotifications(res.data.notifications || []);
       setUnreadCount(res.data.unreadCount || 0);
     } catch (error) {
@@ -57,9 +54,7 @@ const LeaveReminder = () => {
 
   const markAsRead = async (notificationId) => {
     try {
-      await axios.patch(`http://localhost:3000/api/hr/notifications/${notificationId}/read`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.patch(`/hr/notifications/${notificationId}/read`, {});
       fetchNotifications();
     } catch (error) {
       console.error('Mark as read error:', error);
@@ -68,9 +63,7 @@ const LeaveReminder = () => {
 
   const markAllAsRead = async () => {
     try {
-      await axios.patch('http://localhost:3000/api/hr/notifications/read-all', {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.patch('/hr/notifications/read-all', {});
       toast.success('All notifications marked as read');
       fetchNotifications();
     } catch (error) {
@@ -81,10 +74,8 @@ const LeaveReminder = () => {
 
   const sendReminders = async () => {
     try {
-      await axios.post('http://localhost:3000/api/hr/leave-reminders/send', 
-        { daysBefore: 7 },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.post('/hr/leave-reminders/send', 
+        { daysBefore: 7 });
       toast.success('Leave reminders sent successfully!');
       fetchReminders();
     } catch (error) {

@@ -5,6 +5,7 @@ import axios from 'axios';
 import './Dashboard.css';
 import { useSearch } from '../components/Layout';
 import toast from 'react-hot-toast';
+import api from '../api/client';
 
 const ROIRequests = () => {
   const { token } = useAuth();
@@ -14,9 +15,7 @@ const ROIRequests = () => {
 
   const fetchRequests = async () => {
     try {
-      const res = await axios.get('http://localhost:3000/api/roi', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/roi');
       setRequests(res.data);
     } catch (error) {
       console.error('Error fetching ROI:', error);
@@ -36,9 +35,7 @@ const ROIRequests = () => {
 
   const handleStatusChange = async (id, newStatus) => {
     try {
-      await axios.patch(`http://localhost:3000/api/roi/${id}`, { status: newStatus }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.patch(`/roi/${id}`, { status: newStatus });
       toast.success(`Request ${newStatus} successfully`);
       fetchRequests(); // Refresh list
     } catch (error) {

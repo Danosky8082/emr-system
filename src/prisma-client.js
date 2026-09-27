@@ -1,7 +1,25 @@
 // src/prisma-client.js
+//
+// Prisma client singleton + multi-tenant extension.
+//
+// This module loads .env itself so that ANY script which requires it
+// (server.js, seed scripts, one-off test scripts, cron jobs) gets a
+// working DATABASE_URL without having to remember to call dotenv.config().
+
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+
 const { PrismaClient } = require('@prisma/client');
 const { PrismaPg } = require('@prisma/adapter-pg');
 const { Pool } = require('pg');
+
+if (!process.env.DATABASE_URL) {
+  console.warn('');
+  console.warn('⚠️  DATABASE_URL is not set. Prisma will fail to connect.');
+  console.warn('   Check that .env exists at the project root and contains:');
+  console.warn('     DATABASE_URL=postgresql://user:pass@host:port/dbname');
+  console.warn('');
+}
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);

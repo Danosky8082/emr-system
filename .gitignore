@@ -11,3 +11,6 @@ emr-frontend/.vite/
 # OS files
 .DS_Store
 Thumbs.db
+node_modules/
+uploads/
+backups/

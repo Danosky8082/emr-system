@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
+import api from '../api/client';
 
 const HRDepartments = () => {
   const { token } = useAuth();
@@ -23,9 +24,7 @@ const HRDepartments = () => {
   const fetchDepartments = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('http://localhost:3000/api/hr/departments', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/hr/departments');
       setDepartments(res.data);
     } catch (error) {
       toast.error('Failed to load departments');
@@ -36,9 +35,7 @@ const HRDepartments = () => {
 
   const fetchEmployees = async () => {
     try {
-      const res = await axios.get('http://localhost:3000/api/hr/employees', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/hr/employees');
       setEmployees(res.data.filter(e => e.isActive));
     } catch (error) {
       toast.error('Failed to load employees');
@@ -59,14 +56,10 @@ const HRDepartments = () => {
     e.preventDefault();
     try {
       if (editingDept) {
-        await axios.put(`http://localhost:3000/api/hr/departments/${editingDept.id}`, formData, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        await api.put(`/hr/departments/${editingDept.id}`, formData);
         toast.success('Department updated successfully!');
       } else {
-        await axios.post('http://localhost:3000/api/hr/departments', formData, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        await api.post('/hr/departments', formData);
         toast.success('Department created successfully!');
       }
       setShowModal(false);
@@ -103,9 +96,7 @@ const HRDepartments = () => {
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this department? This will remove all associated data.')) return;
     try {
-      await axios.delete(`http://localhost:3000/api/hr/departments/${id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.delete(`/hr/departments/${id}`);
       toast.success('Department deleted successfully');
       fetchDepartments();
     } catch (error) {

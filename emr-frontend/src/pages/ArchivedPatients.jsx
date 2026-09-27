@@ -6,6 +6,7 @@ import axios from 'axios';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
 import { Link } from 'react-router-dom';
+import api from '../api/client';
 
 const ArchivedPatients = () => {
   const { token, user } = useAuth();
@@ -24,11 +25,11 @@ const ArchivedPatients = () => {
   const fetchArchivedPatients = async () => {
     setLoading(true);
     try {
-      let endpoint = 'http://localhost:3000/api/patients/archived';
+      let endpoint = '/api/patients/archived';
       
       // If user is Doctor or Obstetrician, use view-only endpoint
       if (canViewOnly) {
-        endpoint = 'http://localhost:3000/api/patients/archived-view';
+        endpoint = '/api/patients/archived-view';
         setIsViewOnly(true);
       } else {
         setIsViewOnly(false);
@@ -63,10 +64,8 @@ const ArchivedPatients = () => {
     if (!window.confirm(`Unarchive ${patient.firstName} ${patient.lastName}? This will restore them to active patients.`)) return;
     
     try {
-      await axios.post(`http://localhost:3000/api/patients/${patient.id}/unarchive`, 
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.post(`/patients/${patient.id}/unarchive`, 
+        {});
       toast.success(`${patient.firstName} ${patient.lastName} unarchived successfully!`);
       fetchArchivedPatients();
     } catch (error) {
@@ -82,10 +81,8 @@ const ArchivedPatients = () => {
     const reason = prompt('Reason for reactivation (optional):');
 
     try {
-      await axios.post(`http://localhost:3000/api/patients/${patient.id}/activate`, {
+      await api.post(`/patients/${patient.id}/activate`, {
         reason: reason || 'Manual reactivation'
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
       });
       toast.success(`✅ ${patient.firstName} ${patient.lastName} activated successfully!`);
       fetchArchivedPatients();
@@ -102,11 +99,9 @@ const ArchivedPatients = () => {
 
     try {
       // Send notification to Records department
-      await axios.post(`http://localhost:3000/api/patients/${patient.id}/request-reactivation`, {
+      await api.post(`/patients/${patient.id}/request-reactivation`, {
         reason: reason,
         requestedBy: user?.id
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
       });
       toast.success(`✅ Reactivation request sent for ${patient.firstName} ${patient.lastName}. Records department will review.`);
     } catch (error) {

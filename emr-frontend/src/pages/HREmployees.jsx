@@ -5,6 +5,7 @@ import axios from 'axios';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
 import { Link } from 'react-router-dom';
+import api from '../api/client';
 
 const HREmployees = () => {
   const { token } = useAuth();
@@ -53,9 +54,7 @@ const HREmployees = () => {
   const fetchEmployees = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('http://localhost:3000/api/hr/employees', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/hr/employees');
       setEmployees(res.data);
     } catch (error) {
       toast.error('Failed to load employees');
@@ -66,9 +65,7 @@ const HREmployees = () => {
 
   const fetchDepartments = async () => {
     try {
-      const res = await axios.get('http://localhost:3000/api/hr/departments', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/hr/departments');
       setDepartments(res.data);
     } catch (error) {
       toast.error('Failed to load departments');
@@ -92,18 +89,14 @@ const HREmployees = () => {
     e.preventDefault();
     try {
       if (editingEmployee) {
-        await axios.put(`http://localhost:3000/api/hr/employees/${editingEmployee.id}`, formData, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        await api.put(`/hr/employees/${editingEmployee.id}`, formData);
         toast.success('Employee updated successfully!');
       } else {
         // Create new employee (uses existing staff creation)
-        await axios.post('http://localhost:3000/api/staff', {
+        await api.post('/staff', {
           ...formData,
           username: formData.email.split('@')[0],
           password: 'TempPass123!'
-        }, {
-          headers: { Authorization: `Bearer ${token}` }
         });
         toast.success('Employee added successfully!');
       }

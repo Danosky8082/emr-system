@@ -5,6 +5,7 @@ import axios from 'axios';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
 import ImageUpload from '../components/ImageUpload';
+import api from '../api/client';
 
 const RadiologyDashboard = () => {
   const { token, user } = useAuth();
@@ -31,9 +32,7 @@ const RadiologyDashboard = () => {
     setLoading(true);
     try {
       console.log('📡 Fetching imaging orders...');
-      const res = await axios.get('http://localhost:3000/api/imaging-orders', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/imaging-orders');
       
       const orders = res.data || [];
       console.log(`✅ Received ${orders.length} orders`);
@@ -61,10 +60,8 @@ const RadiologyDashboard = () => {
 
   const handleUpdateStatus = async (orderId, status) => {
     try {
-      await axios.patch(`http://localhost:3000/api/imaging-orders/${orderId}/status`, 
-        { status },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.patch(`/imaging-orders/${orderId}/status`, 
+        { status });
       toast.success(`Order status updated to ${status}`);
       fetchOrders();
     } catch (error) {
@@ -77,10 +74,8 @@ const RadiologyDashboard = () => {
     if (!selectedOrder) return;
     
     try {
-      await axios.post(`http://localhost:3000/api/imaging-orders/${selectedOrder.id}/results`,
-        resultForm,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.post(`/imaging-orders/${selectedOrder.id}/results`,
+        resultForm);
       toast.success('Results submitted successfully!');
       setShowResultModal(false);
       setResultForm({
@@ -106,7 +101,7 @@ const RadiologyDashboard = () => {
     }
     // Just a filename — construct full URL
     const filename = cleanUrl.split('/').pop().split('?')[0];
-    return `http://localhost:3000/images/${filename}`;
+    return `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/images/${filename}`;
   };
 
   // ✅ Helper: extract valid image URLs from an order (supports images + imagesUrl)

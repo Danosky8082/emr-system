@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import './Dashboard.css';
+import api from '../api/client';
 
 const Billing = () => {
   const { token } = useAuth();
@@ -12,7 +13,7 @@ const Billing = () => {
   // ✅ Declare fetch function FIRST
   const fetchBills = async () => {
     try {
-      const res = await axios.get('http://localhost:3000/api/billing', {
+      const res = await api.get('/billing', {
         headers: { Authorization: `Bearer ${token}` },
         params: { limit: 100 } // Add limit parameter
       });

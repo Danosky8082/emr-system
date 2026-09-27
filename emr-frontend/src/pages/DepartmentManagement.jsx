@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import './Dashboard.css';
+import api from '../api/client';
 
 const DepartmentManagement = () => {
   const { token, user } = useAuth();
@@ -26,9 +27,7 @@ const DepartmentManagement = () => {
   const fetchDepartments = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('http://localhost:3000/api/departments', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/departments');
       setDepartments(res.data.departments || []);
     } catch (error) {
       console.error('Error fetching departments:', error);
@@ -41,9 +40,7 @@ const DepartmentManagement = () => {
   // Fetch staff for manager selection
   const fetchStaff = async () => {
     try {
-      const res = await axios.get('http://localhost:3000/api/staff', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/staff');
       setStaff(res.data || []);
     } catch (error) {
       console.error('Error fetching staff:', error);
@@ -75,18 +72,12 @@ const DepartmentManagement = () => {
     try {
       let response;
       if (editingDepartment) {
-        response = await axios.put(
-          `http://localhost:3000/api/departments/${editingDepartment.id}`,
-          formData,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
+        response = await api.put(`/departments/${editingDepartment.id}`,
+          formData);
         toast.success('Department updated successfully!');
       } else {
-        response = await axios.post(
-          'http://localhost:3000/api/departments',
-          formData,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
+        response = await api.post('/departments',
+          formData);
         toast.success('Department created successfully!');
       }
 
@@ -117,9 +108,7 @@ const DepartmentManagement = () => {
     if (!window.confirm(`Are you sure you want to deactivate "${department.name}"? This will hide it from the system.`)) return;
     
     try {
-      await axios.delete(`http://localhost:3000/api/departments/${department.id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.delete(`/departments/${department.id}`);
       toast.success(`Department "${department.name}" deactivated`);
       fetchDepartments();
     } catch (error) {

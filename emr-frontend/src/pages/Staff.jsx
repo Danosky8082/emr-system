@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import './Dashboard.css';
+import api from '../api/client';
 
 const Staff = () => {
   const { token } = useAuth();
@@ -14,9 +15,7 @@ const Staff = () => {
 
   const fetchStaff = async () => {
     try {
-      const res = await axios.get('http://localhost:3000/api/staff', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/staff');
       setStaff(res.data);
     } catch (error) {
       console.error('Error fetching staff:', error);

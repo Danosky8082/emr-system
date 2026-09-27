@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
+import api from '../api/client';
 
 const OptometryDashboard = () => {
   const { token, user } = useAuth();
@@ -47,9 +48,7 @@ const OptometryDashboard = () => {
   const fetchPatients = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('http://localhost:3000/api/optometry/patients', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/optometry/patients');
       setPatients(res.data);
     } catch (error) {
       console.error('Fetch patients error:', error);
@@ -61,9 +60,7 @@ const OptometryDashboard = () => {
 
   const fetchExamRecords = async (patientId) => {
     try {
-      const res = await axios.get(`http://localhost:3000/api/optometry/exam/${patientId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get(`/optometry/exam/${patientId}`);
       setExamRecords(res.data);
       setSelectedPatient(patients.find(p => p.id === patientId));
       setShowExamModal(true);
@@ -76,9 +73,7 @@ const OptometryDashboard = () => {
   const handleExamSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:3000/api/optometry/exam', examForm, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.post('/optometry/exam', examForm);
       
       toast.success('Eye exam recorded successfully!');
       setShowExamModal(false);
@@ -104,9 +99,7 @@ const OptometryDashboard = () => {
   const handlePrescriptionSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:3000/api/optometry/prescription', prescriptionForm, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.post('/optometry/prescription', prescriptionForm);
       
       toast.success('Prescription issued successfully!');
       setShowPrescriptionModal(false);

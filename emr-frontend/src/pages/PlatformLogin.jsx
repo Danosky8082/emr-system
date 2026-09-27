@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import axios from 'axios';
 import { usePlatformAuth } from '../context/PlatformAuthContext';
 import './Login.css';
+import api from '../api/client';
 
 const PlatformLogin = () => {
   const [identifier, setIdentifier] = useState('');
@@ -17,7 +18,7 @@ const PlatformLogin = () => {
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await axios.post('http://localhost:3000/api/platform/login', {
+      const res = await api.post('/platform/login', {
         identifier: identifier.trim(),
         password,
       });

@@ -6,6 +6,7 @@ import axios from 'axios';
 import './Dashboard.css';
 import { useSearch } from '../components/Layout';
 import toast from 'react-hot-toast';
+import api from '../api/client';
 
 const Admissions = () => {
   const { token, user } = useAuth();
@@ -30,10 +31,10 @@ const Admissions = () => {
     setLoading(true);
     try {
       const [adRes, wardRes, patientRes, staffRes] = await Promise.all([
-        axios.get('http://localhost:3000/api/admissions', { headers: { Authorization: `Bearer ${token}` } }),
-        axios.get('http://localhost:3000/api/wards', { headers: { Authorization: `Bearer ${token}` } }),
-        axios.get('http://localhost:3000/api/patients', { headers: { Authorization: `Bearer ${token}` } }),
-        axios.get('http://localhost:3000/api/staff', { headers: { Authorization: `Bearer ${token}` } })
+        api.get('/admissions'),
+        api.get('/wards'),
+        api.get('/patients'),
+        api.get('/staff')
       ]);
       setAdmissions(adRes.data);
       setWards(wardRes.data);
@@ -53,9 +54,7 @@ const Admissions = () => {
   const handleCreateWard = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:3000/api/wards', newWard, { 
-        headers: { Authorization: `Bearer ${token}` } 
-      });
+      await api.post('/wards', newWard);
       toast.success('Ward created successfully!');
       setShowWardModal(false);
       setNewWard({ name: '', description: '', capacity: '' });
@@ -69,9 +68,7 @@ const Admissions = () => {
   const handleEditWard = async (e) => {
     e.preventDefault();
     try {
-      await axios.put(`http://localhost:3000/api/wards/${editingWard.id}`, editingWard, { 
-        headers: { Authorization: `Bearer ${token}` } 
-      });
+      await api.put(`/wards/${editingWard.id}`, editingWard);
       toast.success('Ward updated successfully!');
       setShowWardModal(false);
       setEditingWard(null);
@@ -86,9 +83,7 @@ const Admissions = () => {
   const handleDeleteWard = async (id) => {
     if (!window.confirm('Delete this ward? This will also remove all associated data.')) return;
     try {
-      await axios.delete(`http://localhost:3000/api/wards/${id}`, { 
-        headers: { Authorization: `Bearer ${token}` } 
-      });
+      await api.delete(`/wards/${id}`);
       toast.success('Ward deleted successfully');
       fetchData();
     } catch (error) { 
@@ -100,9 +95,7 @@ const Admissions = () => {
   const handleCreateAdmission = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:3000/api/admissions', newAdmission, { 
-        headers: { Authorization: `Bearer ${token}` } 
-      });
+      await api.post('/admissions', newAdmission);
       toast.success('Patient admitted successfully!');
       setShowAdmissionModal(false);
       setNewAdmission({ patientId: '', staffId: '', wardId: '', notes: '' });
@@ -116,10 +109,8 @@ const Admissions = () => {
   const handleDischarge = async (id) => {
     if (!window.confirm('Discharge this patient?')) return;
     try {
-      await axios.patch(`http://localhost:3000/api/admissions/${id}/discharge`, 
-        { notes: 'Discharged by staff' },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.patch(`/admissions/${id}/discharge`, 
+        { notes: 'Discharged by staff' });
       toast.success('Patient discharged successfully');
       fetchData();
     } catch (error) { 

@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
+import api from '../api/client';
 
 const ServiceFeeManager = () => {
   const { token } = useAuth();
@@ -22,9 +23,7 @@ const ServiceFeeManager = () => {
   const fetchFees = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('http://localhost:3000/api/admin/service-fees', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/admin/service-fees');
       setFees(res.data);
     } catch (error) {
       console.error('Error fetching fees:', error);
@@ -56,24 +55,20 @@ const ServiceFeeManager = () => {
 
     try {
       if (editingFee) {
-        await axios.put(`http://localhost:3000/api/admin/service-fees/${editingFee.id}`, {
+        await api.put(`/admin/service-fees/${editingFee.id}`, {
           name: formData.name,
           description: formData.description,
           baseAmount: parseFloat(formData.baseAmount),
           isActive: formData.isActive
-        }, {
-          headers: { Authorization: `Bearer ${token}` }
         });
         toast.success('Service fee updated successfully!');
       } else {
-        await axios.post('http://localhost:3000/api/admin/service-fees', {
+        await api.post('/admin/service-fees', {
           serviceType: formData.serviceType.toUpperCase(),
           name: formData.name,
           description: formData.description,
           baseAmount: parseFloat(formData.baseAmount),
           isActive: formData.isActive
-        }, {
-          headers: { Authorization: `Bearer ${token}` }
         });
         toast.success('Service fee created successfully!');
       }
@@ -98,15 +93,13 @@ const ServiceFeeManager = () => {
     setShowModal(true);
   };
 
-  const handleToggleActive = async (fee) => {
+    const handleToggleActive = async (fee) => {
     try {
-      await axios.put(`http://localhost:3000/api/admin/service-fees/${fee.id}`, {
+      await api.put(`/admin/service-fees/${fee.id}`, {
         name: fee.name,
         description: fee.description,
         baseAmount: fee.baseAmount,
         isActive: !fee.isActive
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
       });
       toast.success(`Service ${fee.isActive ? 'deactivated' : 'activated'} successfully`);
       fetchFees();
@@ -114,6 +107,51 @@ const ServiceFeeManager = () => {
       toast.error('Failed to update service status');
     }
   };
+
+  // 👇👇👇 PASTE handleDelete RIGHT HERE 👇👇👇
+  const handleDelete = async (fee) => {
+    const isProtected = ['REGISTRATION', 'CARD', 'CONSULTATION'].includes(fee.serviceType);
+
+    const confirmMessage = isProtected
+      ? `⚠️ "${fee.serviceType}" is a system service fee.\n\n` +
+        `Deleting it will make the app fall back to hardcoded defaults:\n` +
+        `  • REGISTRATION → ₦2,000\n` +
+        `  • CARD → ₦1,000\n` +
+        `  • CONSULTATION → ₦5,000\n\n` +
+        `Recommended: click "Deactivate" instead.\n\n` +
+        `Type OK to force-delete anyway.`
+      : `Permanently delete "${fee.name}" (${fee.serviceType})?\n\nThis cannot be undone.`;
+
+    if (!window.confirm(confirmMessage)) return;
+
+    try {
+      const url = isProtected
+        ? `/api/admin/service-fees/${fee.id}?force=true`
+        : `/api/admin/service-fees/${fee.id}`;
+
+      const res = await axios.delete(url, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (res.data._meta?.warning) {
+        // Forced delete of a protected type — show the warning explicitly
+        toast.success(res.data.message, { duration: 4000 });
+        toast(res.data._meta.warning, { icon: '⚠️', duration: 6000 });
+      } else {
+        toast.success(res.data.message || 'Service fee deleted successfully');
+      }
+
+      fetchFees();
+    } catch (error) {
+      // Server returns 409 for protected types without force — surface the hint
+      if (error.response?.status === 409) {
+        toast.error(error.response.data.error, { duration: 6000 });
+      } else {
+        toast.error(error.response?.data?.error || 'Failed to delete service fee');
+      }
+    }
+  };
+  // 👆👆👆 END OF handleDelete 👆👆👆
 
   const resetForm = () => {
     setFormData({
@@ -191,29 +229,46 @@ const ServiceFeeManager = () => {
                   </td>
                   <td>
                     <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-                      <button 
-                        className="btn btn-sm btn-secondary"
-                        onClick={() => handleEdit(fee)}
-                      >
-                        ✏️ Edit
-                      </button>
-                      <button 
-                        className="btn btn-sm"
-                        style={{
-                          background: fee.isActive ? '#ef4444' : '#10b981',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '4px',
-                          padding: '4px 10px',
-                          cursor: 'pointer',
-                          fontSize: '11px',
-                          fontWeight: '600'
-                        }}
-                        onClick={() => handleToggleActive(fee)}
-                      >
-                        {fee.isActive ? '🔴 Deactivate' : '🟢 Activate'}
-                      </button>
-                    </div>
+  <button 
+    className="btn btn-sm btn-secondary"
+    onClick={() => handleEdit(fee)}
+  >
+    ✏️ Edit
+  </button>
+  <button 
+    className="btn btn-sm"
+    style={{
+      background: fee.isActive ? '#ef4444' : '#10b981',
+      color: 'white',
+      border: 'none',
+      borderRadius: '4px',
+      padding: '4px 10px',
+      cursor: 'pointer',
+      fontSize: '11px',
+      fontWeight: '600'
+    }}
+    onClick={() => handleToggleActive(fee)}
+  >
+    {fee.isActive ? '🔴 Deactivate' : '🟢 Activate'}
+  </button>
+  <button 
+    className="btn btn-sm"
+    style={{
+      background: '#6b7280',
+      color: 'white',
+      border: 'none',
+      borderRadius: '4px',
+      padding: '4px 10px',
+      cursor: 'pointer',
+      fontSize: '11px',
+      fontWeight: '600'
+    }}
+    onClick={() => handleDelete(fee)}
+    title="Permanently delete this service fee"
+  >
+    🗑️ Delete
+  </button>
+</div>
                   </td>
                 </tr>
               ))

@@ -1,5 +1,6 @@
 // src/context/TenantContext.jsx
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import api from '../api/client';
 
 const TenantContext = createContext(null);
 
@@ -73,10 +74,7 @@ export const TenantProvider = ({ children }) => {
     if (!tenantId) return;
     try {
       const axios = (await import('axios')).default;
-      const res = await axios.get(
-        `http://localhost:3000/api/hospitals/${tenantId}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const res = await api.get(`/hospitals/${tenantId}`);
       setTenant(tenantId, res.data, res.data.settings);
     } catch (error) {
       console.error('Failed to refresh hospital data:', error);

@@ -132,6 +132,7 @@ model HospitalSettings {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
   Hospital            Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+  autoAdvanceBillingAfterMinutes Int?
 }
 
 model ServiceConfiguration {
@@ -239,14 +240,14 @@ model AppointmentReminder {
 
 model AuditLog {
   id        String   @id @default(cuid())
-  staffId   String
+  staffId   String?                                       // ← was String
   action    String
   module    String
   details   String?
   ipAddress String?
   createdAt DateTime @default(now())
   tenantId  String
-  Staff     Staff    @relation(fields: [staffId], references: [id])
+  Staff     Staff?   @relation(fields: [staffId], references: [id])   // ← was Staff
   Hospital  Hospital @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])

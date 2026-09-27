@@ -6,6 +6,7 @@ import './Dashboard.css';
 import { useSearch } from '../components/Layout';
 import toast from 'react-hot-toast';
 import { Link, Navigate } from 'react-router-dom';
+import api from '../api/client';
 
 const Patients = () => {
   const { token, user } = useAuth();
@@ -40,13 +41,13 @@ const Patients = () => {
   const fetchPatients = useCallback(async () => {
     setLoading(true);
     try {
-      let url = 'http://localhost:3000/api/patients';
+      let url = '/api/patients';
       
       // ✅ FIXED: Include Paediatrician in role checks
       if (['Nurse', 'Midwife'].includes(user?.role)) {
-        url = 'http://localhost:3000/api/nurse/patients';
+        url = '/api/nurse/patients';
       } else if (['Doctor', 'Obstetrician', 'Paediatrician'].includes(user?.role)) {
-        url = 'http://localhost:3000/api/doctor/patients';
+        url = '/api/doctor/patients';
       }
 
       const res = await axios.get(url, { 
@@ -104,18 +105,12 @@ const Patients = () => {
       
       if (editingPatient) {
         console.log('📤 Updating patient:', formData);
-        response = await axios.put(
-          `http://localhost:3000/api/patients/${editingPatient.id}`, 
-          formData, 
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
+        response = await api.put(`/patients/${editingPatient.id}`, 
+          formData);
         toast.success('Patient updated successfully!');
       } else {
-        response = await axios.post(
-          'http://localhost:3000/api/patients', 
-          formData, 
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
+        response = await api.post('/patients', 
+          formData);
         toast.success('Patient registered successfully!');
       }
       
@@ -169,9 +164,7 @@ const Patients = () => {
   const handleDelete = async (id) => {
     if (!window.confirm('Are you sure you want to permanently delete this patient?')) return;
     try {
-      await axios.delete(`http://localhost:3000/api/patients/${id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.delete(`/patients/${id}`);
       toast.success('Patient deleted successfully');
       setRefreshKey(prev => prev + 1);
     } catch (error) {
@@ -238,9 +231,7 @@ const Patients = () => {
         payload.password = credential;
       }
 
-      await axios.post('http://localhost:3000/api/patient/setup-portal', payload, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.post('/patient/setup-portal', payload);
       
       toast.success(`✅ Portal access enabled for ${patient.firstName} ${patient.lastName}`);
       toast.success(`🔑 ${isPin ? 'PIN' : 'Password'} set: ${credential}`);
@@ -267,10 +258,8 @@ const Patients = () => {
     )) return;
 
     try {
-      await axios.post('http://localhost:3000/api/patient/reset-portal', {
+      await api.post('/patient/reset-portal', {
         patientId: patient.id
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
       });
       
       toast.success(`Portal access reset for ${patient.firstName} ${patient.lastName}`);

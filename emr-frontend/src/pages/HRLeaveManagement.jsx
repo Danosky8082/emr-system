@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
+import api from '../api/client';
 
 const HRLeaveManagement = () => {
   const { token, user } = useAuth();
@@ -27,9 +28,7 @@ const HRLeaveManagement = () => {
   const fetchLeaves = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`http://localhost:3000/api/hr/leaves?status=${filterStatus === 'all' ? '' : filterStatus}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get(`/api/hr/leaves?status=${filterStatus === 'all' ? '' : filterStatus}`);
       setLeaves(res.data);
     } catch (error) {
       toast.error('Failed to load leave requests');
@@ -40,9 +39,7 @@ const HRLeaveManagement = () => {
 
   const fetchEmployees = async () => {
     try {
-      const res = await axios.get('http://localhost:3000/api/hr/employees', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/hr/employees');
       setEmployees(res.data);
     } catch (error) {
       toast.error('Failed to load employees');
@@ -62,9 +59,7 @@ const HRLeaveManagement = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:3000/api/hr/leaves', formData, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.post('/hr/leaves', formData);
       toast.success('Leave request created successfully!');
       setShowModal(false);
       resetForm();
@@ -88,9 +83,7 @@ const HRLeaveManagement = () => {
 
   const handleApproval = async (id, status) => {
     try {
-      await axios.patch(`http://localhost:3000/api/hr/leaves/${id}`, { status }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.patch(`/hr/leaves/${id}`, { status });
       toast.success(`Leave ${status.toLowerCase()} successfully`);
       fetchLeaves();
     } catch (error) {

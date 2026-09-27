@@ -7,6 +7,7 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import './Dashboard.css';
 import './PregnancyProfile.css';
+import api from '../api/client';
 // ✅ Only import if you actually use LaborDeliveryTab
 // If not, remove this import
 // import LaborDeliveryTab from '../components/LaborDeliveryTab';
@@ -174,7 +175,7 @@ const PregnancyProfile = () => {
     }
 
     try {
-      const res = await axios.get(`http://localhost:3000/api/pregnancies/${id}`, {
+      const res = await api.get(`/pregnancies/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setPregnancy(res.data);
@@ -221,7 +222,7 @@ const PregnancyProfile = () => {
         riskLevel: newPregnancy.riskLevel,
         notes: newPregnancy.notes,
       };
-      await axios.post('http://localhost:3000/api/pregnancies', payload, {
+      await api.post('/pregnancies', payload, {
         headers: { Authorization: `Bearer ${token}` },
       });
       toast.success('Pregnancy registered successfully!');
@@ -260,8 +261,7 @@ const PregnancyProfile = () => {
         }
       }
 
-      await axios.post(
-        `http://localhost:3000/api/pregnancies/${id}/visits`,
+      await api.post(`/pregnancies/${id}/visits`,
         {
           visitDate: newVisit.visitDate,
           gestationalWeeks: parseInt(newVisit.gestationalWeeks) || null,
@@ -271,9 +271,7 @@ const PregnancyProfile = () => {
           fundalHeight: parseFloat(newVisit.fundalHeight) || null,
           notes: newVisit.fetalHeartRate ? `FHR: ${newVisit.fetalHeartRate} bpm. ${newVisit.notes || ''}` : newVisit.notes,
           staffId: user?.id,
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+        });
       toast.success('Visit recorded successfully!');
       setShowVisitModal(false);
       setNewVisit({
@@ -309,8 +307,7 @@ const PregnancyProfile = () => {
     e.preventDefault();
     setSaving(true);
     try {
-      await axios.post(
-        'http://localhost:3000/api/deliveries',
+      await api.post('/deliveries',
         {
           pregnancyId: id,
           ...newDelivery,
@@ -318,9 +315,7 @@ const PregnancyProfile = () => {
           babyWeight: parseFloat(newDelivery.babyWeight) || null,
           babyApgar: parseInt(newDelivery.babyApgar) || null,
           staffId: user?.id,
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+        });
       toast.success('Delivery recorded successfully');
       setShowDeliveryModal(false);
       setNewDelivery({
@@ -349,11 +344,8 @@ const PregnancyProfile = () => {
       return;
     }
     try {
-      await axios.put(
-        `http://localhost:3000/api/pregnancies/${id}`,
-        { status: newStatus },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.put(`/pregnancies/${id}`,
+        { status: newStatus });
       toast.success('Status updated successfully!');
       fetchPregnancy();
     } catch (error) {

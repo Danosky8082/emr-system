@@ -1,4 +1,4 @@
-// src/pages/PatientProfile.jsx — COMPLETE ROLE-SCOPED VERSION
+// src/pages/PatientProfile.jsx — COMPLETE ROLE-SCOPED VERSION + WALLET
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -7,6 +7,8 @@ import axios from 'axios';
 import './PatientProfile.css';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
+import api from '../api/client';
+
 
 const PatientProfile = () => {
   const { id } = useParams();
@@ -33,6 +35,7 @@ const PatientProfile = () => {
   const canViewPrescriptions = isClinical || isPharmacist || isAdmin;
   const canViewLabOrders = isClinical || isLabStaff || isAdmin;
   const canViewImaging = isClinical || isRadiologist || isAdmin;
+  const canViewWallet = isAdmin || isRecords || isBilling;
 
   // Who can CREATE / MUTATE
   const canCreatePrescription = isClinical || isAdmin;
@@ -43,6 +46,7 @@ const PatientProfile = () => {
   const canDispense = isPharmacist || isAdmin;
   const canDischarge = isClinical || isAdmin || isRecords || isBilling;
   const canScheduleAppointment = isDoctor || isAdmin;
+  const canManageWallet = isAdmin || isBilling; // deposit / pay / freeze
 
   // ============================================================
   // COMPONENT STATE
@@ -58,6 +62,11 @@ const PatientProfile = () => {
   const [notes, setNotes] = useState([]);
   const [prescriptions, setPrescriptions] = useState([]);
   const [labOrders, setLabOrders] = useState([]);
+
+  // ✅ WALLET
+  const [wallet, setWallet] = useState(null);
+  const [walletTransactions, setWalletTransactions] = useState([]);
+  const [walletLoading, setWalletLoading] = useState(false);
 
   // Medication autocomplete
   const [allMedications, setAllMedications] = useState([]);
@@ -263,14 +272,32 @@ const PatientProfile = () => {
   };
 
   const getImageUrl = (url) => {
-    if (!url) return '';
-    let cleanUrl = url.trim();
-    if (!cleanUrl.startsWith('http')) {
-      const filename = cleanUrl.split('/').pop();
-      cleanUrl = `http://localhost:3000/images/${filename}`;
-    }
+  if (!url) return '';
+  const cleanUrl = String(url).trim();
+  if (!cleanUrl) return '';
+
+  // Case 1: Full URL (Cloudinary, S3, R2, etc.) → use as-is
+  if (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://')) {
     return cleanUrl;
-  };
+  }
+
+  // Case 2: Already a path starting with /images/ → prepend the backend host (no /api)
+  const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+  // Strip a trailing /api or /api/ so we get the backend root
+  const backendRoot = apiBase.replace(/\/api\/?$/, '').replace(/\/+$/, '');
+
+  if (cleanUrl.startsWith('/images/')) {
+    return `${backendRoot}${cleanUrl}`;
+  }
+
+  // Case 3: Just a filename or relative path → assume it's under /images/
+  // Extract the imaging key if there's one in the path
+  const key = cleanUrl
+    .replace(/^\/+/, '')       // strip leading slashes
+    .replace(/^images\//, ''); // strip a leading "images/"
+
+  return `${backendRoot}/images/${key}`;
+};
 
   const getActivityIcon = (type) => {
     const icons = {
@@ -304,6 +331,8 @@ const PatientProfile = () => {
     });
   };
 
+  const formatCurrency = (amount) => `₦${(amount || 0).toLocaleString()}`;
+
   const getCategoryBadge = (cat) => {
     const map = {
       'FPP': { label: '💰 FPP', bg: '#d1fae5', color: '#065f46', icon: '💰' },
@@ -312,6 +341,15 @@ const PatientProfile = () => {
       'CORPORATE': { label: '🏢 Corporate', bg: '#fef3c7', color: '#92400e', icon: '🏢' }
     };
     return map[cat] || map['FPP'];
+  };
+
+  const getWalletStatusInfo = (status) => {
+    const map = {
+      'Active': { bg: '#d1fae5', color: '#065f46', icon: '✅' },
+      'Frozen': { bg: '#dbeafe', color: '#1e40af', icon: '🧊' },
+      'Closed': { bg: '#fee2e2', color: '#991b1b', icon: '🔒' }
+    };
+    return map[status] || map['Active'];
   };
 
   const canModifyNote = (note) => user?.role === 'Admin' || note.authorId === user?.id;
@@ -332,9 +370,7 @@ const PatientProfile = () => {
   const fetchMedications = async () => {
     if (!canCreatePrescription) return;
     try {
-      const res = await axios.get('http://localhost:3000/api/medications', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/medications');
       const meds = res.data.map(m => m.name);
       setAllMedications([...new Set([...meds, ...COMMON_MEDICATIONS])]);
     } catch (error) {
@@ -345,9 +381,7 @@ const PatientProfile = () => {
   const fetchLabTests = async () => {
     if (!canCreateLabOrder) return;
     try {
-      const res = await axios.get('http://localhost:3000/api/services', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/services');
       const tests = res.data
         .filter(s => s.category === 'Lab' || s.category === 'Lab Test')
         .map(s => s.name);
@@ -359,9 +393,7 @@ const PatientProfile = () => {
 
   const fetchAvailableDoctors = async () => {
     try {
-      const res = await axios.get('http://localhost:3000/api/doctors/available', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/doctors/available');
       setAvailableDoctors(res.data);
     } catch (error) {
       toast.error('Failed to load doctors');
@@ -371,10 +403,7 @@ const PatientProfile = () => {
   const fetchStockForDispense = async (medicationName) => {
     setDispenseStockLoading(true);
     try {
-      const res = await axios.get(
-        `http://localhost:3000/api/medications/stock/${encodeURIComponent(medicationName)}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const res = await api.get(`/medications/stock/${encodeURIComponent(medicationName)}`);
       setDispenseStockInfo(res.data);
       return res.data;
     } catch (error) {
@@ -386,6 +415,22 @@ const PatientProfile = () => {
       return null;
     } finally {
       setDispenseStockLoading(false);
+    }
+  };
+
+  // ✅ WALLET FETCH
+  const fetchWallet = async () => {
+    if (!canViewWallet) return;
+    setWalletLoading(true);
+    try {
+      const res = await api.get(`/patients/${id}/wallet`);
+      setWallet(res.data);
+      setWalletTransactions(res.data.transactions || []);
+    } catch (error) {
+      console.error('Failed to load wallet:', error);
+      // Don't show toast — wallet might not exist yet for new patients
+    } finally {
+      setWalletLoading(false);
     }
   };
 
@@ -483,21 +528,21 @@ const PatientProfile = () => {
       const authHeader = { Authorization: `Bearer ${token}` };
 
       const requests = [
-        axios.get(`http://localhost:3000/api/patients/${id}`, { headers: authHeader }),
+        api.get(`/patients/${id}`, { headers: authHeader }),
         canViewVitals
-          ? axios.get(`http://localhost:3000/api/patients/${id}/vitals`, { headers: authHeader }).catch(() => ({ data: [] }))
+          ? api.get(`/patients/${id}/vitals`, { headers: authHeader }).catch(() => ({ data: [] }))
           : Promise.resolve({ data: [] }),
         canViewImaging
-          ? axios.get(`http://localhost:3000/api/patients/${id}/imaging-orders`, { headers: authHeader }).catch(() => ({ data: [] }))
+          ? api.get(`/patients/${id}/imaging-orders`, { headers: authHeader }).catch(() => ({ data: [] }))
           : Promise.resolve({ data: [] }),
         canViewNotes
-          ? axios.get(`http://localhost:3000/api/patients/${id}/notes`, { headers: authHeader }).catch(() => ({ data: [] }))
+          ? api.get(`/patients/${id}/notes`, { headers: authHeader }).catch(() => ({ data: [] }))
           : Promise.resolve({ data: [] }),
         canViewPrescriptions
-          ? axios.get('http://localhost:3000/api/prescriptions', { headers: authHeader }).catch(() => ({ data: [] }))
+          ? api.get('/prescriptions', { headers: authHeader }).catch(() => ({ data: [] }))
           : Promise.resolve({ data: [] }),
         canViewLabOrders
-          ? axios.get('http://localhost:3000/api/lab-orders', { headers: authHeader }).catch(() => ({ data: [] }))
+          ? api.get('/lab-orders', { headers: authHeader }).catch(() => ({ data: [] }))
           : Promise.resolve({ data: [] })
       ];
 
@@ -517,6 +562,11 @@ const PatientProfile = () => {
       setPrescriptions(prescriptionsData);
       setLabOrders(labData);
       setPatientCategory(patientData.patientCategory || 'FPP');
+
+      // ✅ Fetch wallet (uses the patient id — safe because we already verified access above)
+      if (canViewWallet) {
+        fetchWallet();
+      }
 
       buildRecentActivities(patientData, vitalsData, imagingData, notesData, prescriptionsData, labData);
     } catch (err) {
@@ -538,17 +588,20 @@ const PatientProfile = () => {
 
   // Main data fetch effect
   useEffect(() => {
-    if (id) {
-      fetchAllData();
-      fetchMedications();
-      fetchLabTests();
+  // Wait until both the patient ID and the user object are available.
+  // On a hard refresh, AuthContext loads `user` from localStorage in a
+  // useEffect, so it's null on the first render. Without this guard,
+  // the initial fetch runs with `user = null` → canViewImaging = false
+  // → empty arrays, and the effect never re-runs.
+  if (!id || !user) return;
 
-      // Mark accessed to update lastAccessedAt (prevents idle auto-archive)
-      axios.post(`http://localhost:3000/api/patients/${id}/mark-accessed`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      }).catch(err => console.error('Failed to mark accessed:', err));
-    }
-  }, [id, token]);
+  fetchAllData();
+  fetchMedications();
+  fetchLabTests();
+
+  // Mark accessed to update lastAccessedAt (prevents idle auto-archive)
+  api.post(`/patients/${id}/mark-accessed`, {}).catch(err => console.error('Failed to mark accessed:', err));
+}, [id, token, user?.role]);
 
   // Default tab based on role — pharmacist → Prescriptions, Lab → Lab Orders, Radiologist → Imaging
   useEffect(() => {
@@ -596,16 +649,13 @@ const PatientProfile = () => {
     setPatientCategory(patient.patientCategory || 'FPP');
 
     try {
-      const checkRes = await axios.post(
-        'http://localhost:3000/api/services/check-payment',
+      const checkRes = await api.post('/services/check-payment',
         {
           patientId: patient.id,
           serviceName: prescription.medication,
           serviceType: 'MEDICATION',
           quantity: 1
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+        });
       setPaymentCheck(checkRes.data);
     } catch (error) {
       console.error('Payment check error:', error);
@@ -617,24 +667,16 @@ const PatientProfile = () => {
   const performDispense = async (quantity) => {
     setDispensing(true);
     try {
-      // 1. Update stock
-      const stockResponse = await axios.patch(
-        `http://localhost:3000/api/medications/${dispenseStockInfo.id}/stock`,
+      const stockResponse = await api.patch(`/medications/${dispenseStockInfo.id}/stock`,
         {
           quantity: quantity,
           transactionType: 'Dispensed',
           note: `Dispensed to ${patient.firstName} ${patient.lastName} (${patient.hospitalId}) - ${quantity} unit(s)`,
           patientId: patient.id
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+        });
 
-      // 2. Mark prescription dispensed
-      const prescResponse = await axios.patch(
-        `http://localhost:3000/api/prescriptions/${dispensingPrescription.id}/dispense`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const prescResponse = await api.patch(`/prescriptions/${dispensingPrescription.id}/dispense`,
+        {});
 
       setDispenseStockInfo(prev => ({ ...prev, stockQuantity: stockResponse.data.newStock }));
 
@@ -649,6 +691,9 @@ const PatientProfile = () => {
 
       setShowDispenseSuccess(true);
       toast.success(`✅ ${quantity} unit(s) of ${dispensingPrescription.medication} dispensed!`);
+
+      // ✅ Refresh wallet too (in case a wallet payment occurred)
+      if (canViewWallet) fetchWallet();
 
       setTimeout(() => fetchAllData(), 500);
     } catch (error) {
@@ -675,27 +720,21 @@ const PatientProfile = () => {
     setProcessingPayment(true);
 
     try {
-      // 1. Re-check payment inline
-      const checkRes = await axios.post(
-        'http://localhost:3000/api/services/check-payment',
+      const checkRes = await api.post('/services/check-payment',
         {
           patientId: patient.id,
           serviceName: dispensingPrescription.medication,
           serviceType: 'MEDICATION',
           quantity: quantity
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+        });
 
       const check = checkRes.data;
       setPaymentCheck(check);
 
       const path = check.decision.paymentPath;
 
-      // 2. Handle by payment path
       if (path === 'WALLET' || check.decision.canUseWallet) {
-        const payRes = await axios.post(
-          'http://localhost:3000/api/services/process-and-authorize',
+        const payRes = await api.post('/services/process-and-authorize',
           {
             patientId: patient.id,
             serviceName: dispensingPrescription.medication,
@@ -703,18 +742,16 @@ const PatientProfile = () => {
             quantity: quantity,
             paymentMethod: 'WALLET',
             referenceId: dispensingPrescription.id
-          },
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
+          });
 
         if (payRes.data.success) {
           setPaymentReceipt(payRes.data.receipt);
+          if (canViewWallet) fetchWallet();
           await performDispense(quantity);
         }
       } else if (path === 'NO_PAYMENT') {
         await performDispense(quantity);
       } else {
-        // BILLING or PARTIAL_WALLET_OR_CASH → show billing modal
         setShowBillingModal(true);
         setProcessingPayment(false);
         return;
@@ -731,8 +768,7 @@ const PatientProfile = () => {
     const quantity = parseInt(dispenseQuantity);
     setProcessingPayment(true);
     try {
-      const payRes = await axios.post(
-        'http://localhost:3000/api/services/process-and-authorize',
+      const payRes = await api.post('/services/process-and-authorize',
         {
           patientId: patient.id,
           serviceName: dispensingPrescription.medication,
@@ -740,13 +776,12 @@ const PatientProfile = () => {
           quantity: quantity,
           paymentMethod: paymentMethod,
           referenceId: dispensingPrescription.id
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+        });
 
       if (payRes.data.success) {
         setPaymentReceipt(payRes.data.receipt);
         setShowBillingModal(false);
+        if (canViewWallet) fetchWallet();
         await performDispense(quantity);
       }
     } catch (error) {
@@ -765,10 +800,7 @@ const PatientProfile = () => {
       return;
     }
     try {
-      const res = await axios.get(
-        `http://localhost:3000/api/patients/${id}/discharge-check`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const res = await api.get(`/patients/${id}/discharge-check`);
       setDischargeCheck(res.data);
       setShowDischargeModal(true);
     } catch (error) {
@@ -783,15 +815,13 @@ const PatientProfile = () => {
     }
     setDischarging(true);
     try {
-      const res = await axios.post(
-        `http://localhost:3000/api/patients/${id}/discharge`,
-        { notes: dischargeNotes, dischargeType },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const res = await api.post(`/patients/${id}/discharge`,
+        { notes: dischargeNotes, dischargeType });
       toast.success(res.data.message);
       setShowDischargeModal(false);
       setDischargeNotes('');
       fetchAllData();
+      if (canViewWallet) fetchWallet();
     } catch (error) {
       const data = error.response?.data;
       if (data?.code === 'OUTSTANDING_BALANCE') {
@@ -853,14 +883,14 @@ const PatientProfile = () => {
   const handleCreateAppointment = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:3000/api/appointments', {
+      await api.post('/appointments', {
         patientId: patient.id,
         staffId: appointmentForm.staffId,
         dateTime: appointmentForm.dateTime,
         duration: appointmentForm.duration,
         type: appointmentForm.type,
         notes: appointmentForm.notes
-      }, { headers: { Authorization: `Bearer ${token}` } });
+      });
 
       toast.success('✅ Appointment scheduled successfully!');
       setShowAppointmentModal(false);
@@ -875,14 +905,10 @@ const PatientProfile = () => {
     e.preventDefault();
     try {
       if (editingNote) {
-        await axios.put(`http://localhost:3000/api/clinical-notes/${editingNote.id}`, noteForm, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        await api.put(`/clinical-notes/${editingNote.id}`, noteForm);
         toast.success('Note updated successfully!');
       } else {
-        await axios.post('http://localhost:3000/api/clinical-notes', { patientId: id, ...noteForm }, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        await api.post('/clinical-notes', { patientId: id, ...noteForm });
         toast.success('Note added successfully!');
       }
       setShowNoteModal(false);
@@ -910,9 +936,7 @@ const PatientProfile = () => {
   const handleDeleteNote = async (noteId) => {
     if (!window.confirm('Are you sure you want to permanently delete this note?')) return;
     try {
-      await axios.delete(`http://localhost:3000/api/clinical-notes/${noteId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.delete(`/clinical-notes/${noteId}`);
       toast.success('Note deleted successfully');
       fetchAllData();
     } catch (error) {
@@ -923,9 +947,7 @@ const PatientProfile = () => {
   const handleVitalSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:3000/api/vitals', { patientId: id, ...vitalsForm }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.post('/vitals', { patientId: id, ...vitalsForm });
       toast.success('Vitals recorded successfully!');
       setShowVitalModal(false);
       setVitalsForm({
@@ -945,9 +967,7 @@ const PatientProfile = () => {
       return;
     }
     try {
-      await axios.post('http://localhost:3000/api/prescriptions', { patientId: id, ...prescriptionForm }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.post('/prescriptions', { patientId: id, ...prescriptionForm });
       toast.success('Prescription created successfully!');
       setShowPrescriptionModal(false);
       setPrescriptionForm({ medication: '', dosage: '', frequency: '', duration: '', instructions: '' });
@@ -965,9 +985,7 @@ const PatientProfile = () => {
       return;
     }
     try {
-      await axios.post('http://localhost:3000/api/lab-orders', { patientId: id, ...labOrderForm }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.post('/lab-orders', { patientId: id, ...labOrderForm });
       toast.success('Lab order created successfully!');
       setShowLabOrderModal(false);
       setLabOrderForm({ testName: '', testType: 'Haematology', priority: 'Routine', notes: '' });
@@ -981,9 +999,7 @@ const PatientProfile = () => {
   const handleImagingSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:3000/api/imaging-orders', { patientId: id, ...imagingForm }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.post('/imaging-orders', { patientId: id, ...imagingForm });
       toast.success('Imaging order created successfully!');
       setShowImagingModal(false);
       setImagingForm({
@@ -1048,6 +1064,7 @@ const PatientProfile = () => {
   const catBadge = getCategoryBadge(patientCategory);
   const archiveCountdown = getArchiveCountdown();
   const isDischarged = patient.isDischarged || false;
+  const walletStatus = getWalletStatusInfo(wallet?.status);
 
   // ============================================================
   // RENDER
@@ -1092,6 +1109,13 @@ const PatientProfile = () => {
         {canViewImaging && (
           <button className={`profile-tab-btn ${currentTab === 'imaging' ? 'active' : ''}`} onClick={() => setCurrentTab('imaging')}>
             <span className="icon">📷</span> Imaging/X-Ray
+          </button>
+        )}
+
+        {/* ✅ WALLET TAB — finance/admin/records only */}
+        {canViewWallet && (
+          <button className={`profile-tab-btn ${currentTab === 'wallet' ? 'active' : ''}`} onClick={() => setCurrentTab('wallet')}>
+            <span className="icon">💳</span> Wallet
           </button>
         )}
 
@@ -1174,6 +1198,33 @@ const PatientProfile = () => {
                 🚪 DISCHARGED
               </span>
             )}
+            {/* ✅ WALLET BALANCE BADGE */}
+            {canViewWallet && wallet && (
+              <span
+                onClick={() => setCurrentTab('wallet')}
+                style={{
+                  padding: '4px 14px',
+                  borderRadius: '12px',
+                  background: 'linear-gradient(135deg, #0f3460, #1a4a7a)',
+                  color: 'white',
+                  fontSize: '13px',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 2px 6px rgba(15, 52, 96, 0.25)'
+                }}
+                title="Click to view wallet details"
+              >
+                💳 {formatCurrency(wallet.balance)}
+                {wallet.status !== 'Active' && (
+                  <span style={{ fontSize: '10px', opacity: 0.8 }}>
+                    ({wallet.status})
+                  </span>
+                )}
+              </span>
+            )}
             <span style={{
               padding: '4px 12px',
               borderRadius: '12px',
@@ -1193,6 +1244,14 @@ const PatientProfile = () => {
                 style={{ background: '#0f3460', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}
               >
                 📅 Schedule Appointment
+              </button>
+            )}
+            {canManageWallet && (
+              <button
+                onClick={() => navigate(`/wallet?patientId=${patient.id}`)}
+                style={{ background: '#10b981', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}
+              >
+                💳 Manage Wallet
               </button>
             )}
             {canDischarge && !isDischarged && (
@@ -1231,6 +1290,15 @@ const PatientProfile = () => {
           <div className="profile-grid-item"><span className="label">Address</span><span className="value">{patient.address || '-'}</span></div>
           <div className="profile-grid-item"><span className="label">Emergency Contact</span><span className="value">{patient.emergencyContact || '-'}</span></div>
           <div className="profile-grid-item"><span className="label">Allergies</span><span className="value" style={{ color: patient.allergies ? '#ef4444' : 'inherit' }}>{patient.allergies || 'None'}</span></div>
+          {/* ✅ WALLET BALANCE IN GRID */}
+          {canViewWallet && wallet && (
+            <div className="profile-grid-item">
+              <span className="label">💳 Wallet Balance</span>
+              <span className="value" style={{ color: wallet.balance > 0 ? '#10b981' : '#6b7280', fontWeight: '700' }}>
+                {formatCurrency(wallet.balance)}
+              </span>
+            </div>
+          )}
           <div className="profile-grid-item" style={{ gridColumn: '1 / -1' }}>
             <span className="label">Next of Kin</span>
             <span className="value">
@@ -1324,6 +1392,32 @@ const PatientProfile = () => {
               <div className="profile-grid-item"><span className="label">File Status</span><span className="value">{patient.fileStatus || 'ACTIVE'}</span></div>
               <div className="profile-grid-item"><span className="label">Registered</span><span className="value">{new Date(patient.createdAt).toLocaleDateString()}</span></div>
               <div className="profile-grid-item"><span className="label">Last Updated</span><span className="value">{new Date(patient.updatedAt).toLocaleDateString()}</span></div>
+              {/* ✅ WALLET IN PROFILE TAB */}
+              {canViewWallet && wallet && (
+                <div className="profile-grid-item">
+                  <span className="label">💳 Wallet Balance</span>
+                  <span className="value" style={{ color: wallet.balance > 0 ? '#10b981' : '#6b7280', fontWeight: '700' }}>
+                    {formatCurrency(wallet.balance)}
+                  </span>
+                </div>
+              )}
+              {canViewWallet && wallet && (
+                <div className="profile-grid-item">
+                  <span className="label">Wallet Status</span>
+                  <span className="value">
+                    <span style={{
+                      padding: '2px 12px',
+                      borderRadius: '12px',
+                      background: walletStatus.bg,
+                      color: walletStatus.color,
+                      fontSize: '12px',
+                      fontWeight: '600'
+                    }}>
+                      {walletStatus.icon} {wallet.status}
+                    </span>
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1665,6 +1759,228 @@ const PatientProfile = () => {
           </div>
         )}
 
+        {/* ============ WALLET TAB ============ */}
+        {currentTab === 'wallet' && canViewWallet && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+              <h3 style={{ border: 'none', padding: 0, margin: 0 }}>💳 Patient Wallet</h3>
+              <button
+                onClick={fetchWallet}
+                disabled={walletLoading}
+                style={{
+                  background: '#f3f4f6',
+                  color: '#1f2937',
+                  border: '1px solid #d1d5db',
+                  padding: '6px 16px',
+                  borderRadius: '6px',
+                  cursor: walletLoading ? 'not-allowed' : 'pointer',
+                  fontWeight: '600'
+                }}
+              >
+                {walletLoading ? '⏳ Loading...' : '🔄 Refresh'}
+              </button>
+            </div>
+
+            {walletLoading && !wallet ? (
+              <div style={{ textAlign: 'center', padding: '40px' }}>
+                <div className="spinner" />
+                <p style={{ color: '#6b7280', marginTop: '12px' }}>Loading wallet...</p>
+              </div>
+            ) : wallet ? (
+              <>
+                {/* Balance Card */}
+                <div style={{
+                  background: 'linear-gradient(135deg, #0f3460, #1a4a7a)',
+                  borderRadius: '16px',
+                  padding: '28px 32px',
+                  color: 'white',
+                  marginBottom: '24px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '16px',
+                  boxShadow: '0 4px 12px rgba(15, 52, 96, 0.25)'
+                }}>
+                  <div>
+                    <span style={{ fontSize: '13px', opacity: 0.8, display: 'block', marginBottom: '4px' }}>
+                      Available Balance
+                    </span>
+                    <div style={{ fontSize: '36px', fontWeight: '700', lineHeight: 1.1 }}>
+                      {formatCurrency(wallet.balance)}
+                    </div>
+                    <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <span style={{
+                        padding: '3px 12px',
+                        borderRadius: '12px',
+                        background: walletStatus.bg,
+                        color: walletStatus.color,
+                        fontSize: '12px',
+                        fontWeight: '600'
+                      }}>
+                        {walletStatus.icon} {wallet.status}
+                      </span>
+                      {wallet.lastTransactionAt && (
+                        <span style={{ fontSize: '12px', opacity: 0.75 }}>
+                          Last activity: {new Date(wallet.lastTransactionAt).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {canManageWallet && (
+                    <button
+                      onClick={() => navigate(`/wallet?patientId=${patient.id}`)}
+                      style={{
+                        background: 'white',
+                        color: '#0f3460',
+                        border: 'none',
+                        padding: '12px 24px',
+                        borderRadius: '10px',
+                        fontWeight: '700',
+                        fontSize: '14px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      💳 Go to Wallet Dashboard
+                    </button>
+                  )}
+                </div>
+
+                {/* Quick Stats */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                  gap: '12px',
+                  marginBottom: '20px'
+                }}>
+                  <div style={{ background: '#f0fdf4', border: '1px solid #10b981', borderRadius: '10px', padding: '16px' }}>
+                    <div style={{ fontSize: '12px', color: '#065f46', textTransform: 'uppercase', fontWeight: '600' }}>
+                      Total Deposits
+                    </div>
+                    <div style={{ fontSize: '22px', fontWeight: '700', color: '#065f46', marginTop: '4px' }}>
+                      {formatCurrency(
+                        walletTransactions
+                          .filter(t => t.transactionType === 'Deposit')
+                          .reduce((sum, t) => sum + t.amount, 0)
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ background: '#fef2f2', border: '1px solid #ef4444', borderRadius: '10px', padding: '16px' }}>
+                    <div style={{ fontSize: '12px', color: '#991b1b', textTransform: 'uppercase', fontWeight: '600' }}>
+                      Total Payments
+                    </div>
+                    <div style={{ fontSize: '22px', fontWeight: '700', color: '#991b1b', marginTop: '4px' }}>
+                      {formatCurrency(
+                        walletTransactions
+                          .filter(t => t.transactionType === 'Payment')
+                          .reduce((sum, t) => sum + t.amount, 0)
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ background: '#eff6ff', border: '1px solid #3b82f6', borderRadius: '10px', padding: '16px' }}>
+                    <div style={{ fontSize: '12px', color: '#1e40af', textTransform: 'uppercase', fontWeight: '600' }}>
+                      Transactions
+                    </div>
+                    <div style={{ fontSize: '22px', fontWeight: '700', color: '#1e40af', marginTop: '4px' }}>
+                      {walletTransactions.length}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Transaction History */}
+                <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+                  <h4 style={{ margin: '0 0 16px 0', fontSize: '15px' }}>📋 Recent Transactions</h4>
+                  {walletTransactions.length > 0 ? (
+                    <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
+                      {walletTransactions.slice(0, 30).map(t => {
+                        const isCredit = t.transactionType === 'Deposit' || t.transactionType === 'Refund';
+                        return (
+                          <div key={t.id} style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '12px',
+                            padding: '12px 14px',
+                            borderRadius: '10px',
+                            background: '#f8fafc',
+                            marginBottom: '8px',
+                            borderLeft: `4px solid ${isCredit ? '#10b981' : '#ef4444'}`
+                          }}>
+                            <span style={{ fontSize: '22px' }}>
+                              {t.transactionType === 'Deposit' ? '📥' :
+                               t.transactionType === 'Payment' ? '📤' :
+                               t.transactionType === 'Refund' ? '↩️' :
+                               t.transactionType === 'Adjustment' ? '⚙️' : '📋'}
+                            </span>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontWeight: '600', color: '#1f2937', fontSize: '14px' }}>
+                                {t.description}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>
+                                {new Date(t.createdAt).toLocaleString()}
+                                {t.reference && <span style={{ marginLeft: '8px' }}>• {t.reference}</span>}
+                                {t.status && t.status !== 'Completed' && (
+                                  <span style={{ marginLeft: '8px', color: '#ef4444', fontWeight: '600' }}>
+                                    • {t.status}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div style={{
+                              fontSize: '16px',
+                              fontWeight: '700',
+                              color: isCredit ? '#10b981' : '#ef4444',
+                              whiteSpace: 'nowrap'
+                            }}>
+                              {isCredit ? '+' : '-'} {formatCurrency(t.amount)}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div style={{ textAlign: 'center', padding: '40px 20px', color: '#6b7280' }}>
+                      <span style={{ fontSize: '48px' }}>📭</span>
+                      <p style={{ marginTop: '12px', fontSize: '15px' }}>No transactions yet</p>
+                      <p style={{ fontSize: '13px' }}>Transactions will appear here once the patient makes a deposit or payment.</p>
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div style={{
+                background: '#fef3c7',
+                border: '2px solid #f59e0b',
+                borderRadius: '12px',
+                padding: '24px',
+                textAlign: 'center'
+              }}>
+                <span style={{ fontSize: '48px' }}>💳</span>
+                <h4 style={{ margin: '12px 0 8px 0', color: '#92400e' }}>No Wallet Found</h4>
+                <p style={{ color: '#78350f', margin: 0 }}>
+                  This patient doesn't have a wallet yet.
+                </p>
+                {canManageWallet && (
+                  <button
+                    onClick={() => navigate(`/wallet?patientId=${patient.id}`)}
+                    style={{
+                      marginTop: '16px',
+                      background: '#0f3460',
+                      color: 'white',
+                      border: 'none',
+                      padding: '10px 24px',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      fontWeight: '600'
+                    }}
+                  >
+                    ➕ Create Wallet
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
       </div>
 
       {/* ============================================================
@@ -1697,7 +2013,6 @@ const PatientProfile = () => {
             </div>
 
             <div style={{ padding: '24px', maxHeight: '65vh', overflowY: 'auto' }}>
-              {/* CATEGORY BADGE */}
               <div style={{
                 display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px',
                 padding: '8px 12px', background: catBadge.bg, borderRadius: '8px',
@@ -1710,7 +2025,6 @@ const PatientProfile = () => {
                 </span>
               </div>
 
-              {/* PRESCRIPTION INFO */}
               <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '16px', marginBottom: '16px', border: '1px solid #e2e8f0' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px' }}>
                   <div>
@@ -1732,7 +2046,6 @@ const PatientProfile = () => {
                 </div>
               </div>
 
-              {/* STOCK */}
               <div style={{
                 background: dispenseStockInfo?.stockQuantity <= 0 ? '#fee2e2' :
                   dispenseStockInfo?.stockQuantity <= (dispenseStockInfo?.reorderLevel || 10) ? '#fef3c7' : '#f0fdf4',
@@ -1767,7 +2080,6 @@ const PatientProfile = () => {
 
               {!showDispenseSuccess ? (
                 <>
-                  {/* QUANTITY */}
                   <div style={{ marginBottom: '16px' }}>
                     <label style={{ display: 'block', fontWeight: '600', marginBottom: '6px', fontSize: '14px' }}>
                       Quantity to Dispense *
@@ -1815,7 +2127,6 @@ const PatientProfile = () => {
                     </div>
                   </div>
 
-                  {/* PAYMENT BREAKDOWN */}
                   {paymentCheck && (
                     <div style={{ background: '#eff6ff', border: '2px solid #3b82f6', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
                       <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#1e3a5f' }}>💰 Payment Details</h4>
@@ -1853,7 +2164,6 @@ const PatientProfile = () => {
                         </div>
                       </div>
 
-                      {/* WALLET */}
                       <div style={{
                         padding: '10px 12px', borderRadius: '8px',
                         background: paymentCheck.wallet?.hasEnoughBalance ? '#d1fae5' : '#fee2e2',
@@ -1877,7 +2187,6 @@ const PatientProfile = () => {
                         )}
                       </div>
 
-                      {/* PATH MESSAGE */}
                       <div style={{
                         marginTop: '12px', padding: '10px 12px', borderRadius: '8px',
                         background: '#fef3c7', border: '1px solid #f59e0b',
@@ -1900,7 +2209,6 @@ const PatientProfile = () => {
                   )}
                 </>
               ) : (
-                // SUCCESS STATE
                 <div style={{ textAlign: 'center', padding: '20px 0' }}>
                   <span style={{ fontSize: '64px' }}>✅</span>
                   <h3 style={{ margin: '12px 0 4px 0', color: '#065f46' }}>Dispense Successful!</h3>
@@ -1999,7 +2307,7 @@ const PatientProfile = () => {
       )}
 
       {/* ============================================================
-          BILLING PAYMENT MODAL — canDispense only
+          BILLING PAYMENT MODAL
           ============================================================ */}
       {canDispense && showBillingModal && paymentCheck && (
         <div className="modal-overlay" onClick={() => setShowBillingModal(false)}>
@@ -2106,7 +2414,7 @@ const PatientProfile = () => {
       )}
 
       {/* ============================================================
-          DISCHARGE MODAL — canDischarge only
+          DISCHARGE MODAL
           ============================================================ */}
       {canDischarge && showDischargeModal && dischargeCheck && (
         <div className="modal-overlay" onClick={() => setShowDischargeModal(false)}>
@@ -2231,7 +2539,7 @@ const PatientProfile = () => {
       )}
 
       {/* ============================================================
-          APPOINTMENT MODAL — clinical/admin only
+          APPOINTMENT MODAL
           ============================================================ */}
       {canScheduleAppointment && showAppointmentModal && (
         <div className="modal-overlay" onClick={() => setShowAppointmentModal(false)}>
@@ -2310,7 +2618,7 @@ const PatientProfile = () => {
       )}
 
       {/* ============================================================
-          VITALS MODAL — canRecordVitals only
+          VITALS MODAL
           ============================================================ */}
       {canRecordVitals && showVitalModal && (
         <div className="modal-overlay" onClick={() => setShowVitalModal(false)}>
@@ -2385,7 +2693,7 @@ const PatientProfile = () => {
       )}
 
       {/* ============================================================
-          NOTES MODAL — canWriteNotes only
+          NOTES MODAL
           ============================================================ */}
       {canWriteNotes && showNoteModal && (
         <div className="modal-overlay" onClick={() => setShowNoteModal(false)}>
@@ -2436,7 +2744,7 @@ const PatientProfile = () => {
       )}
 
       {/* ============================================================
-          PRESCRIPTION MODAL — canCreatePrescription only
+          PRESCRIPTION MODAL
           ============================================================ */}
       {canCreatePrescription && showPrescriptionModal && (
         <div className="modal-overlay" onClick={() => setShowPrescriptionModal(false)}>
@@ -2521,7 +2829,7 @@ const PatientProfile = () => {
       )}
 
       {/* ============================================================
-          LAB ORDER MODAL — canCreateLabOrder only
+          LAB ORDER MODAL
           ============================================================ */}
       {canCreateLabOrder && showLabOrderModal && (
         <div className="modal-overlay" onClick={() => setShowLabOrderModal(false)}>
@@ -2607,7 +2915,7 @@ const PatientProfile = () => {
       )}
 
       {/* ============================================================
-          IMAGING DETAILS MODAL — canViewImaging only
+          IMAGING DETAILS MODAL
           ============================================================ */}
       {canViewImaging && showOrderModal && selectedOrder && (
         <div className="modal-overlay" onClick={() => setShowOrderModal(false)}>
@@ -2704,7 +3012,7 @@ const PatientProfile = () => {
       )}
 
       {/* ============================================================
-          IMAGING ORDER MODAL — canCreateImagingOrder only
+          IMAGING ORDER MODAL
           ============================================================ */}
       {canCreateImagingOrder && showImagingModal && (
         <div className="modal-overlay" onClick={() => setShowImagingModal(false)}>

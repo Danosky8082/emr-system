@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
+import api from '../api/client';
 
 const NHISDrugManagement = () => {
   const { token } = useAuth();
@@ -38,12 +39,8 @@ const NHISDrugManagement = () => {
     setLoading(true);
     try {
       const [nhisRes, medsRes] = await Promise.all([
-        axios.get('http://localhost:3000/api/pharmacy/nhis-prices', {
-          headers: { Authorization: `Bearer ${token}` }
-        }),
-        axios.get('http://localhost:3000/api/medications', {
-          headers: { Authorization: `Bearer ${token}` }
-        })
+        api.get('/pharmacy/nhis-prices'),
+        api.get('/medications')
       ]);
       setNhisDrugs(nhisRes.data);
       setMedications(medsRes.data);
@@ -58,9 +55,7 @@ const NHISDrugManagement = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:3000/api/pharmacy/nhis-prices', formData, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.post('/pharmacy/nhis-prices', formData);
       toast.success('NHIS drug pricing saved successfully');
       setShowModal(false);
       resetForm();

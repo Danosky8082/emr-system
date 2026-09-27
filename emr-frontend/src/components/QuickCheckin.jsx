@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import api from '../api/client';
 
 const QuickCheckin = ({ onPatientCheckedIn }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -46,10 +47,7 @@ const QuickCheckin = ({ onPatientCheckedIn }) => {
 
       setLoading(true);
       try {
-        const res = await axios.get(
-          `http://localhost:3000/api/patient/search/quick?query=${encodeURIComponent(searchQuery)}`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
+        const res = await api.get(`/patient/search/quick?query=${encodeURIComponent(searchQuery)}`);
         setPatients(res.data);
       } catch (error) {
         console.error('Search error:', error);
@@ -65,14 +63,11 @@ const QuickCheckin = ({ onPatientCheckedIn }) => {
   const handleCheckin = async (patient) => {
     setLoading(true);
     try {
-      const res = await axios.post(
-        'http://localhost:3000/api/patient/checkin',
+      const res = await api.post('/patient/checkin',
         {
           patientId: patient.id,
           checkInMethod: 'manual_entry'
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+        });
 
       toast.success(`✅ ${patient.firstName} ${patient.lastName} checked in successfully!`);
       setSelectedPatient(null);

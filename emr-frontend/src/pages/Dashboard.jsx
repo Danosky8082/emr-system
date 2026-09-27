@@ -8,6 +8,7 @@ import { useSearch } from '../components/Layout';
 import { Link } from 'react-router-dom';
 import { PieChart, Pie, Tooltip, Legend, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
 import toast from 'react-hot-toast';
+import api from '../api/client';
 
 const Dashboard = () => {
   const { token, user } = useAuth();
@@ -26,9 +27,7 @@ const Dashboard = () => {
     try {
       // If HR role, fetch HR dashboard stats
       if (user?.role === 'HR') {
-        const hrRes = await axios.get('http://localhost:3000/api/hr/dashboard', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const hrRes = await api.get('/hr/dashboard');
         setStats(hrRes.data.statistics);
         setPatientsError(false);
         setLoading(false);
@@ -38,12 +37,8 @@ const Dashboard = () => {
       // If Radiologist, fetch imaging stats specifically
       if (user?.role === 'Radiologist') {
         const [imagingRes, statsRes] = await Promise.all([
-          axios.get('http://localhost:3000/api/imaging-orders', {
-            headers: { Authorization: `Bearer ${token}` }
-          }),
-          axios.get('http://localhost:3000/api/dashboard/stats', {
-            headers: { Authorization: `Bearer ${token}` }
-          })
+          api.get('/imaging-orders'),
+          api.get('/dashboard/stats')
         ]);
         
         const orders = imagingRes.data || [];
@@ -54,9 +49,7 @@ const Dashboard = () => {
           completedImagingOrders: orders.filter(o => o.status === 'Completed').length
         });
       } else {
-        const statsRes = await axios.get('http://localhost:3000/api/dashboard/stats', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const statsRes = await api.get('/dashboard/stats');
         setStats(statsRes.data);
       }
       setPatientsError(false);

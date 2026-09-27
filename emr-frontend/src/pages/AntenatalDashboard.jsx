@@ -5,6 +5,7 @@ import axios from 'axios';
 import { Link } from 'react-router-dom';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
+import api from '../api/client';
 
 const AntenatalDashboard = () => {
   const { token, user } = useAuth();
@@ -60,7 +61,7 @@ const AntenatalDashboard = () => {
     
     try {
       console.log('📡 Fetching pregnancies...');
-      const pregnancyRes = await axios.get('http://localhost:3000/api/pregnancies', {
+      const pregnancyRes = await api.get('/pregnancies', {
         headers: { Authorization: `Bearer ${token}` },
         timeout: 15000
       });
@@ -77,12 +78,12 @@ const AntenatalDashboard = () => {
         let patientsData = [];
         
         try {
-          let url = 'http://localhost:3000/api/patients';
+          let url = '/api/patients';
           
           if (user?.role === 'Midwife' || user?.role === 'Nurse') {
-            url = 'http://localhost:3000/api/nurse/patients';
+            url = '/api/nurse/patients';
           } else if (user?.role === 'Doctor' || user?.role === 'Obstetrician') {
-            url = 'http://localhost:3000/api/doctor/patients';
+            url = '/api/doctor/patients';
           }
           
           const patientRes = await axios.get(url, {

@@ -6,6 +6,7 @@ import axios from 'axios';
 import { Link } from 'react-router-dom';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
+import api from '../api/client';
 
 const NurseDashboard = () => {
   const { token, user } = useAuth();
@@ -29,9 +30,7 @@ const NurseDashboard = () => {
   // ✅ FETCH PATIENTS
   const fetchPatients = async () => {
     try {
-      const res = await axios.get('http://localhost:3000/api/nurse/patients', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/nurse/patients');
       setPatients(res.data);
     } catch (error) {
       console.error('Error fetching patients:', error);
@@ -50,10 +49,7 @@ const NurseDashboard = () => {
       console.log('📅 Fetching appointments from:', today.toISOString(), 'to:', tomorrow.toISOString());
 
       // ✅ Get ALL appointments for today (not filtered by nurse yet)
-      const res = await axios.get(
-        `http://localhost:3000/api/appointments?dateFrom=${today.toISOString()}&dateTo=${tomorrow.toISOString()}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const res = await api.get(`/appointments?dateFrom=${today.toISOString()}&dateTo=${tomorrow.toISOString()}`);
 
       console.log('📅 All appointments today:', res.data.length);
 
@@ -111,11 +107,9 @@ const NurseDashboard = () => {
     e.preventDefault();
     if (!selectedPatient) return;
     try {
-      await axios.post('http://localhost:3000/api/vitals', {
+      await api.post('/vitals', {
         patientId: selectedPatient.patient.id,
         ...vitalsForm
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
       });
       toast.success('Vitals recorded successfully!');
       setShowVitalModal(false);

@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
+import api from '../api/client';
 
 const DentalDashboard = () => {
   const { token, user } = useAuth();
@@ -28,9 +29,7 @@ const DentalDashboard = () => {
   const fetchPatients = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('http://localhost:3000/api/dental/patients', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/dental/patients');
       setPatients(res.data);
     } catch (error) {
       console.error('Fetch patients error:', error);
@@ -42,9 +41,7 @@ const DentalDashboard = () => {
 
   const fetchProcedures = async () => {
     try {
-      const res = await axios.get('http://localhost:3000/api/dental/procedures', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/dental/procedures');
       setProcedures(res.data);
     } catch (error) {
       console.error('Fetch procedures error:', error);
@@ -53,9 +50,7 @@ const DentalDashboard = () => {
 
   const fetchDentalChart = async (patientId) => {
     try {
-      const res = await axios.get(`http://localhost:3000/api/dental/chart/${patientId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get(`/dental/chart/${patientId}`);
       setDentalChart(res.data.chart);
       setSelectedPatient(patients.find(p => p.id === patientId));
       setShowChartModal(true);
@@ -68,15 +63,13 @@ const DentalDashboard = () => {
   const handleProcedureSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:3000/api/dental', {
+      await api.post('/dental', {
         patientId: procedureForm.patientId,
         teethNumber: procedureForm.teethNumber,
         condition: procedureForm.condition,
         procedure: procedureForm.procedure,
         treatmentPlan: procedureForm.treatmentPlan,
         notes: procedureForm.notes
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
       });
       
       toast.success('Dental procedure recorded successfully!');

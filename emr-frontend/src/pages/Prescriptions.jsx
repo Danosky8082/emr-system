@@ -6,6 +6,7 @@ import axios from 'axios';
 import './Dashboard.css';
 import { useSearch } from '../components/Layout';
 import toast from 'react-hot-toast';
+import api from '../api/client';
 
 const Prescriptions = () => {
   const { token, user } = useAuth();
@@ -18,9 +19,7 @@ const Prescriptions = () => {
 
   const fetchPrescriptions = async () => {
     try {
-      const res = await axios.get('http://localhost:3000/api/prescriptions', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/prescriptions');
       setPrescriptions(res.data);
     } catch (error) {
       console.error('Error fetching prescriptions:', error);
@@ -39,11 +38,8 @@ const Prescriptions = () => {
     if (!window.confirm('Dispense this prescription?')) return;
     
     try {
-      await axios.patch(
-        `http://localhost:3000/api/prescriptions/${prescriptionId}/dispense`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.patch(`/prescriptions/${prescriptionId}/dispense`,
+        {});
       toast.success('✅ Prescription dispensed successfully!');
       fetchPrescriptions();
     } catch (error) {

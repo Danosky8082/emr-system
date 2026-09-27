@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import './PatientChangeCredentials.css';
+import api from '../api/client';
 
 const PatientChangeCredentials = () => {
   const navigate = useNavigate();
@@ -36,18 +37,13 @@ const PatientChangeCredentials = () => {
     setLoading(true);
 
     try {
-      const response = await axios.post(
-        'http://localhost:3000/api/patient/change-credentials',
+      const response = await api.post('/patient/change-credentials',
         {
           currentCredential: formData.currentCredential,
           newCredential: formData.newCredential,
           confirmCredential: formData.confirmCredential,
           type: type,
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` }
-        }
-      );
+        });
 
       console.log('✅ Credentials changed:', response.data);
 

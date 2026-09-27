@@ -5,6 +5,7 @@ import axios from 'axios';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
 import QuickCheckin from '../components/QuickCheckin';
+import api from '../api/client';
 
 const QueueDashboard = () => {
   const { token, user } = useAuth();
@@ -26,10 +27,7 @@ const QueueDashboard = () => {
 
   const fetchQueue = useCallback(async () => {
     try {
-      const res = await axios.get(
-        `http://localhost:3000/api/patient/queue?destinationType=${destinationFilter}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const res = await api.get(`/patient/queue?destinationType=${destinationFilter}`);
       setQueue(res.data.queue || []);
       setStats({
         total: res.data.total || 0,
@@ -58,11 +56,8 @@ const QueueDashboard = () => {
 
   const handleCallNext = async () => {
     try {
-      const res = await axios.post(
-        'http://localhost:3000/api/patient/queue/next',
-        { destinationType: destinationFilter },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const res = await api.post('/patient/queue/next',
+        { destinationType: destinationFilter });
       
       toast.success(`📢 Called: ${res.data.patient.patient.firstName} ${res.data.patient.patient.lastName}`);
       fetchQueue();
@@ -82,11 +77,8 @@ const QueueDashboard = () => {
 
   const handleCompleteVisit = async (queueId) => {
     try {
-      await axios.patch(
-        `http://localhost:3000/api/patient/queue/${queueId}/complete`,
-        { notes: 'Visit completed' },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.patch(`/patient/queue/${queueId}/complete`,
+        { notes: 'Visit completed' });
       toast.success('Visit completed');
       fetchQueue();
     } catch (error) {

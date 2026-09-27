@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
+import api from '../api/client';
 
 const ServiceConfig = () => {
   const { token } = useAuth();
@@ -28,9 +29,7 @@ const ServiceConfig = () => {
   const fetchConfigs = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('http://localhost:3000/api/services/config', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/services/config');
       setConfigs(res.data);
     } catch (error) {
       console.error('Error fetching configs:', error);
@@ -58,8 +57,7 @@ const ServiceConfig = () => {
 
   const handleSave = async (serviceType) => {
     try {
-      await axios.put(
-        `http://localhost:3000/api/services/config/${serviceType}`,
+      await api.put(`/services/config/${serviceType}`,
         {
           name: formData.name,
           description: formData.description,
@@ -67,9 +65,7 @@ const ServiceConfig = () => {
           nhisAmount: formData.nhisAmount ? parseFloat(formData.nhisAmount) : null,
           corporateAmount: formData.corporateAmount ? parseFloat(formData.corporateAmount) : null,
           isActive: formData.isActive
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+        });
       
       toast.success(`Service configuration updated successfully!`);
       setEditing(null);

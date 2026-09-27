@@ -1,5 +1,9 @@
 // server.js - COMPLETE MULTI-TENANT EMR SYSTEM
 
+// Silence dotenv's log output
+process.env.DOTENV_CONFIG_QUIET = 'true';
+require('dotenv').config();
+
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -14,12 +18,55 @@ const fs = require('fs');
 
 require('dotenv').config();
 
+const storage = require('./src/storage');
+
 // ✅ Multi-tenant Prisma client
 const { prisma, getTenantPrisma } = require('./src/prisma-client');
 const { backupDatabase } = require('./scripts/backup-db');
 const { createDefaultHospitalData } = require('./src/hospital-templates');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-this-in-production';
+// ============================================================
+// JWT SECRET — hard-fail in production if missing
+// ============================================================
+//
+// In development we fall back to a known string so the app boots
+// without extra setup. In production we refuse to start — a
+// missing secret means any user can forge tokens for any tenant.
+//
+const DEV_FALLBACK_SECRET = 'dev-only-secret-not-for-production-use-0000';
+
+let JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET) {
+  if (process.env.NODE_ENV === 'production') {
+    console.error('');
+    console.error('❌ FATAL: JWT_SECRET is not set.');
+    console.error('   Tokens cannot be signed or verified securely.');
+    console.error('');
+    console.error('   Set it in your host\'s environment variables:');
+    console.error('     JWT_SECRET=<long-random-string>');
+    console.error('');
+    console.error('   Generate one with:');
+    console.error('     node -e "console.log(require(\'crypto\').randomBytes(48).toString(\'hex\'))"');
+    console.error('');
+    process.exit(1);
+  }
+
+  // Dev only — noisy warning so it's obvious the secret is weak
+  console.warn('');
+  console.warn('⚠️  JWT_SECRET is not set. Using a development-only fallback.');
+  console.warn('   DO NOT deploy this to production.');
+  console.warn('');
+  JWT_SECRET = DEV_FALLBACK_SECRET;
+}
+
+if (JWT_SECRET === 'your-super-secret-jwt-key-change-this-in-production') {
+  console.warn('');
+  console.warn('⚠️  JWT_SECRET is the example value from the docs.');
+  console.warn('   Change it before deploying.');
+  console.warn('');
+}
+
 const SALT_ROUNDS = 10;
 const DEFAULT_TENANT_ID = 'default-hospital-id';
 
@@ -172,13 +219,58 @@ async function createDefaultRolePermissions(tx, hospitalId) {
 // ============================================================
 // 2. CORS — before routes
 // ============================================================
+//
+// In production we allow only the deployed frontend origin(s).
+// In development we also allow localhost on common Vite/React ports.
+//
+// To add more origins, set FRONTEND_URL as a comma-separated list:
+//   FRONTEND_URL=https://app.example.com,https://staging.example.com
+//
+const ALLOWED_ORIGINS = (() => {
+  const raw = process.env.FRONTEND_URL || '';
+  const fromEnv = raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  // Always allow localhost in dev (Vite default: 5173, CRA: 3000, alt: 5174)
+  const devDefaults = [
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://localhost:3000',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:5174',
+  ];
+
+  return process.env.NODE_ENV === 'production' ? fromEnv : [...fromEnv, ...devDefaults];
+})();
+
 app.use(cors({
-  origin: '*',
+  origin: (origin, callback) => {
+    // Allow same-origin requests (curl, Postman, SSR, health checks)
+    // which send no Origin header at all.
+    if (!origin) return callback(null, true);
+
+    if (ALLOWED_ORIGINS.includes(origin)) {
+      return callback(null, true);
+    }
+
+    // Also allow any hospital subdomain path on the same host, e.g.:
+    //   https://yourapp.vercel.app/h/st-marys/login
+    // will send Origin=https://yourapp.vercel.app — which is already in the list.
+    // But if a hospital wants their own domain (e.g. emr.stmarys.health),
+    // they must be added to FRONTEND_URL.
+
+    // Log a short line instead of throwing — avoids a full stack trace
+// for what is a normal "this origin isn't allowed" rejection.
+console.warn(`🌐 CORS: rejected origin ${origin}`);
+return callback(null, false);
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
   exposedHeaders: ['Content-Length', 'Content-Type'],
   credentials: true,
-  maxAge: 86400
+  maxAge: 86400,
 }));
 
 // ============================================================
@@ -187,7 +279,27 @@ app.use(cors({
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
   crossOriginOpenerPolicy: { policy: 'unsafe-none' },
-  crossOriginEmbedderPolicy: false
+  crossOriginEmbedderPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      // Allow images from self, data URIs, blobs, and any HTTPS origin
+      // (covers Cloudinary, S3, R2, and any CDN you add later)
+      imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+      // Allow fonts and styles from self + https
+      fontSrc: ["'self'", 'https:', 'data:'],
+      styleSrc: ["'self'", 'https:', "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      scriptSrcAttr: ["'none'"],
+      // Allow XHR/fetch to any https origin (for Cloudinary, APIs, etc.)
+      connectSrc: ["'self'", 'https:', 'wss:'],
+      frameAncestors: ["'self'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      objectSrc: ["'none'"],
+      upgradeInsecureRequests: [],
+    },
+  },
 }));
 
 // ============================================================
@@ -427,39 +539,45 @@ const checkPermission = (permissionKey) => {
 // 5. ROUTES — after all middleware
 // ============================================================
 
-// ---------- 5a. Uploads directory (MUST be ready before serving) ----------
-const uploadDir = path.join(__dirname, 'uploads', 'imaging');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-  console.log(`✅ Created upload directory: ${uploadDir}`);
-} else {
-  console.log(`✅ Upload directory ready: ${uploadDir}`);
-}
-
-// ---------- 5b. Static file serving ----------
-app.use('/uploads/imaging', express.static(uploadDir, {
-  setHeaders: (res) => {
-    res.set('Access-Control-Allow-Origin', '*');
-    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
-  }
-}));
-
 // ---------- 5c. Image proxy endpoint ----------
-app.get('/images/:filename', async (req, res) => {
+//
+// Uses a regex path instead of the Express 5 wildcard syntax.
+// Works identically in Express 4 and 5.
+//
+// For Cloudinary: 302 redirect to the CDN URL.
+// For local disk: stream the file.
+//
+app.get(/^\/images\/(.+)$/, async (req, res) => {
   try {
-    const { filename } = req.params;
-    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
-      return res.status(400).json({ error: 'Invalid filename' });
+    const key = req.params[0];
+
+    if (!key || key.includes('..')) {
+      return res.status(400).json({ error: 'Invalid image path' });
     }
-    const imagePath = path.join(uploadDir, filename);
-    if (!fs.existsSync(imagePath)) {
-      return res.status(404).json({ error: 'Image not found' });
+
+    // Cloudinary → 302 redirect to CDN (saves server bandwidth)
+    const cdnUrl = storage.getCdnUrl(key);
+    if (cdnUrl) return res.redirect(302, cdnUrl);
+
+    // Local disk → stream
+    if (!key.startsWith('imaging/')) {
+      return res.status(400).json({ error: 'Invalid image path' });
     }
+    const stream = await storage.getFileStream(key);
+    if (!stream) return res.status(404).json({ error: 'Image not found' });
+
+    const ext = path.extname(key).toLowerCase();
+    const mimeMap = {
+      '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+      '.gif': 'image/gif', '.webp': 'image/webp', '.dcm': 'application/dicom',
+    };
+    res.setHeader('Content-Type', mimeMap[ext] || 'application/octet-stream');
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-    res.sendFile(imagePath);
+    res.setHeader('Cache-Control', 'private, max-age=31536000');
+    stream.pipe(res);
   } catch (error) {
-    console.error('Image error:', error);
+    console.error('Image proxy error:', error);
     res.status(500).json({ error: 'Failed to serve image' });
   }
 });
@@ -962,6 +1080,8 @@ app.post('/api/public/register-hospital', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+
 
 // ============================================================
 // DEBUG ENDPOINT
@@ -1571,6 +1691,91 @@ app.get('/api/patient/billing', authenticatePatient, async (req, res) => {
     res.json(bills);
   } catch (error) {
     console.error('Get patient billing error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================================
+// PATIENT PORTAL — WALLET
+// The staff routes at /api/patients/:id/wallet require a staff token.
+// These patient-portal variants use authenticatePatient instead, so the
+// logged-in patient can see their own wallet + transactions.
+// ============================================================
+app.get('/api/patient/wallet', authenticatePatient, async (req, res) => {
+  try {
+    const patientId = req.patient.id;
+
+    let wallet = await req.db.patientWallet.findUnique({
+      where: { patientId }
+    });
+
+    // Auto-create a wallet if it doesn't exist yet (so the UI never 404s)
+    if (!wallet) {
+      wallet = await req.db.patientWallet.create({
+        data: {
+          patientId,
+          balance: 0,
+          currency: 'NGN',
+          status: 'Active',
+          updatedAt: new Date()
+        }
+      });
+    }
+
+    res.json({
+      id: wallet.id,
+      balance: wallet.balance,
+      currency: wallet.currency,
+      status: wallet.status,
+      lastTransactionAt: wallet.lastTransactionAt,
+      patientId: wallet.patientId
+    });
+  } catch (error) {
+    console.error('Patient wallet fetch error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/patient/wallet/transactions', authenticatePatient, async (req, res) => {
+  try {
+    const patientId = req.patient.id;
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const offset = parseInt(req.query.offset) || 0;
+
+    const wallet = await req.db.patientWallet.findUnique({
+      where: { patientId },
+      select: { id: true }
+    });
+
+    if (!wallet) {
+      return res.json({
+        transactions: [],
+        total: 0,
+        limit,
+        offset,
+        hasMore: false
+      });
+    }
+
+    const [transactions, total] = await Promise.all([
+      req.db.walletTransaction.findMany({
+        where: { walletId: wallet.id },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset
+      }),
+      req.db.walletTransaction.count({ where: { walletId: wallet.id } })
+    ]);
+
+    res.json({
+      transactions,
+      total,
+      limit,
+      offset,
+      hasMore: total > offset + limit
+    });
+  } catch (error) {
+    console.error('Patient wallet transactions error:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -3367,6 +3572,157 @@ app.get('/api/paediatric/growth/:patientId', authenticate, authorize('Paediatric
 });
 
 // ============================================================
+// PAEDIATRIC — Immunization schedule alias
+// PaediatricDashboard.jsx calls /api/paediatric/immunizations/:id
+// but the canonical route is /api/immunizations/patient/:id.
+// This alias lets the frontend stay as-is.
+// ============================================================
+app.get('/api/paediatric/immunizations/:patientId',
+  authenticate,
+  authorize('Paediatrician', 'Admin', 'Doctor', 'Nurse', 'ITAdmin'),
+  async (req, res) => {
+    try {
+      const { patientId } = req.params;
+
+      const patient = await req.db.patient.findUnique({
+        where: { id: patientId },
+        select: { id: true, dateOfBirth: true }
+      });
+      if (!patient) return res.status(404).json({ error: 'Patient not found' });
+
+      // Pull every immunization already recorded for this patient
+      const given = await req.db.immunizations.findMany({
+        where: { patientId },
+        orderBy: { administrationDate: 'asc' }
+      });
+
+      // Compute the WHO/EPI Nigeria paediatric schedule based on age
+      // and mark each item as given/pending.
+      const dob = new Date(patient.dateOfBirth);
+      const ageInDays = Math.floor((Date.now() - dob.getTime()) / (1000 * 60 * 60 * 24));
+
+      const EPI_SCHEDULE = [
+        { vaccine: 'BCG',                    dueAge: 'At birth',       dueDays: 0   },
+        { vaccine: 'Hepatitis B (birth dose)', dueAge: 'At birth',     dueDays: 0   },
+        { vaccine: 'OPV 0',                  dueAge: 'At birth',       dueDays: 0   },
+        { vaccine: 'OPV 1',                  dueAge: '6 weeks',        dueDays: 42  },
+        { vaccine: 'Pentavalent 1',          dueAge: '6 weeks',        dueDays: 42  },
+        { vaccine: 'PCV 1',                  dueAge: '6 weeks',        dueDays: 42  },
+        { vaccine: 'Rotavirus 1',            dueAge: '6 weeks',        dueDays: 42  },
+        { vaccine: 'OPV 2',                  dueAge: '10 weeks',       dueDays: 70  },
+        { vaccine: 'Pentavalent 2',          dueAge: '10 weeks',       dueDays: 70  },
+        { vaccine: 'PCV 2',                  dueAge: '10 weeks',       dueDays: 70  },
+        { vaccine: 'Rotavirus 2',            dueAge: '10 weeks',       dueDays: 70  },
+        { vaccine: 'OPV 3',                  dueAge: '14 weeks',       dueDays: 98  },
+        { vaccine: 'Pentavalent 3',          dueAge: '14 weeks',       dueDays: 98  },
+        { vaccine: 'PCV 3',                  dueAge: '14 weeks',       dueDays: 98  },
+        { vaccine: 'IPV',                    dueAge: '14 weeks',       dueDays: 98  },
+        { vaccine: 'Vitamin A (1st dose)',   dueAge: '6 months',       dueDays: 180 },
+        { vaccine: 'Measles (MR) 1',         dueAge: '9 months',       dueDays: 270 },
+        { vaccine: 'Yellow Fever',           dueAge: '9 months',       dueDays: 270 },
+        { vaccine: 'Meningococcal A',        dueAge: '9 months',       dueDays: 270 },
+        { vaccine: 'Vitamin A (2nd dose)',   dueAge: '12 months',      dueDays: 365 },
+        { vaccine: 'Measles (MR) 2',         dueAge: '15 months',      dueDays: 456 },
+      ];
+
+      // Mark each item given/pending by matching on vaccine name (case-insensitive)
+      const schedule = EPI_SCHEDULE.map(item => {
+        const match = given.find(g =>
+          g.vaccineName.toLowerCase().includes(item.vaccine.toLowerCase().split(' ')[0])
+        );
+        return {
+          vaccine: item.vaccine,
+          dueAge: item.dueAge,
+          dueDate: new Date(dob.getTime() + item.dueDays * 24 * 60 * 60 * 1000),
+          given: !!match,
+          givenDate: match?.administrationDate || null,
+          doseNumber: match?.doseNumber || null
+        };
+      });
+
+      res.json({
+        patient: { id: patient.id, ageInDays },
+        schedule,
+        givenCount: given.length,
+        totalCount: schedule.length
+      });
+    } catch (error) {
+      console.error('Paediatric immunization schedule error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
+
+// ============================================================
+// PAEDIATRIC — Developmental milestones
+// NOTE: There is no Prisma model for milestones yet, so we
+// record them as a special ClinicalNote with type "Milestone".
+// This gives you full audit history and no schema migration.
+// If you later want a dedicated table, swap the implementation.
+// ============================================================
+app.post('/api/paediatric/milestone',
+  authenticate,
+  authorize('Paediatrician', 'Admin', 'Doctor', 'Nurse', 'ITAdmin'),
+  async (req, res) => {
+    try {
+      const { patientId, milestone, ageInMonths, achieved, notes } = req.body;
+
+      if (!patientId || !milestone) {
+        return res.status(400).json({ error: 'patientId and milestone are required' });
+      }
+
+      const patient = await req.db.patient.findUnique({ where: { id: patientId } });
+      if (!patient) return res.status(404).json({ error: 'Patient not found' });
+
+      const isAchieved = achieved !== false;
+      const achievedText = isAchieved ? 'Achieved' : 'Not yet achieved';
+      const ageText = ageInMonths ? ` at ${ageInMonths} months` : '';
+
+      const note = await req.db.clinicalNote.create({
+        data: {
+          patientId,
+          authorId: req.user.id,
+          type: 'Milestone',
+          subjective: `Developmental milestone: ${milestone}`,
+          objective: `${achievedText}${ageText}`,
+          assessment: isAchieved ? 'Milestone achieved' : 'Milestone delayed',
+          plan: notes || '',
+          fullContent: `📋 DEVELOPMENTAL MILESTONE\n\n` +
+                       `Milestone: ${milestone}\n` +
+                       `Status: ${achievedText}${ageText}\n` +
+                       `Notes: ${notes || 'None'}\n` +
+                       `Recorded by: ${req.user.firstName || ''} ${req.user.lastName || ''} (${req.user.role})`,
+          updatedAt: new Date()
+        },
+        include: {
+          Staff: { select: { id: true, firstName: true, lastName: true, role: true } }
+        }
+      });
+
+      await req.db.auditLog.create({
+        data: {
+          staffId: req.user.id,
+          action: 'RECORD_MILESTONE',
+          module: 'Paediatrics',
+          details: `Recorded milestone "${milestone}" (${achievedText}) for patient ${patient.hospitalId}`
+        }
+      });
+
+      res.status(201).json({
+        message: 'Milestone recorded successfully',
+        note: {
+          ...note,
+          author: note.Staff
+        }
+      });
+    } catch (error) {
+      console.error('Record milestone error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
+
+// ============================================================
 // CLINICAL NOTES (SOAP)
 // ============================================================
 app.get('/api/patients/:patientId/notes', authenticate, async (req, res) => {
@@ -3881,15 +4237,26 @@ app.patch('/api/imaging-orders/:id/status', authenticate, authorize('Admin', 'Ra
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ error: `Invalid status. Valid statuses: ${validStatuses.join(', ')}` });
     }
+
+    // Look at the current order so we can preserve the original radiologist
+    const existing = await req.db.imagingOrder.findUnique({
+      where: { id },
+      select: { radiologistId: true },
+    });
+
     const order = await req.db.imagingOrder.update({
       where: { id },
       data: {
-        status, notes: notes || undefined,
+        status,
+        notes: notes || undefined,
         ...(status === 'Completed' && { resultDate: new Date() }),
-        ...(status === 'Scheduled' && { radiologistId: req.user.id }),
+        // Assign the radiologist when work starts, and keep whoever was
+        // first assigned if the status changes again later.
+        ...(['Scheduled', 'In Progress', 'Completed'].includes(status) && {
+          radiologistId: existing?.radiologistId || req.user.id,
+        }),
         updatedAt: new Date()
-      },
-      include: {
+      },   include: {
         Patient: { select: { id: true, hospitalId: true, firstName: true, lastName: true } },
         Staff_ImagingOrder_orderingStaffIdToStaff: { select: { id: true, firstName: true, lastName: true, role: true } },
         Staff_ImagingOrder_radiologistIdToStaff: { select: { id: true, firstName: true, lastName: true, role: true } }
@@ -4040,21 +4407,17 @@ app.patch('/api/imaging-orders/:id/cancel', authenticate, authorize('Doctor', 'O
 // ============================================================
 // IMAGING IMAGE UPLOAD
 // ============================================================
-const storage2 = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, `img-${uniqueSuffix}${path.extname(file.originalname)}`);
-  }
+const upload2 = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = [
+      'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/dicom',
+    ];
+    if (allowedTypes.includes(file.mimetype)) cb(null, true);
+    else cb(new Error('Invalid file type. Only images are allowed.'), false);
+  },
 });
-
-const fileFilter2 = (req, file, cb) => {
-  const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/dicom'];
-  if (allowedTypes.includes(file.mimetype)) cb(null, true);
-  else cb(new Error('Invalid file type. Only images are allowed.'), false);
-};
-
-const upload2 = multer({ storage: storage2, limits: { fileSize: 10 * 1024 * 1024 }, fileFilter: fileFilter2 });
 
 app.post('/api/imaging-orders/:id/upload-images',
   authenticate, authorize('Radiologist', 'Admin'),
@@ -4062,16 +4425,56 @@ app.post('/api/imaging-orders/:id/upload-images',
   async (req, res) => {
     try {
       const { id } = req.params;
+
+      console.log(`\n📥 Upload request for imaging order ${id}`);
+
       if (!req.files || req.files.length === 0) {
         return res.status(400).json({ error: 'No images uploaded' });
       }
+
+      // --- DEBUG: what did multer hand us? ---
+      console.log('📎 Files received from multer:', req.files.map(f => ({
+        name: f.originalname,
+        size: f.size,
+        mime: f.mimetype,
+        hasBuffer: !!f.buffer,
+        bufferLength: f.buffer?.length,
+      })));
+
       const order = await req.db.imagingOrder.findUnique({ where: { id } });
       if (!order) return res.status(404).json({ error: 'Imaging order not found' });
 
-      const baseUrl = `${req.protocol}://${req.get('host')}`;
-      const imageUrls = req.files.map(file => `${baseUrl}/images/${file.filename}`);
-      const existingImages = order.images && order.images.length > 0 ? order.images.split(',') : [];
-      const allImages = [...existingImages, ...imageUrls];
+      const uploaded = [];
+      for (const file of req.files) {
+        try {
+          // --- DEBUG: handing off to storage ---
+          console.log(`📤 Handing off to storage: ${file.originalname} (${file.buffer?.length || 0} bytes)`);
+
+          const result = await storage.uploadFile(
+            file.buffer,
+            file.originalname,
+            file.mimetype
+          );
+
+          // --- DEBUG: storage returned successfully ---
+          console.log(`✅ Storage returned: ${result.url}`);
+
+          uploaded.push(result.url);
+        } catch (uploadErr) {
+          console.error(`❌ Upload failed for ${file.originalname}:`, uploadErr);
+          for (const url of uploaded) {
+            try { await storage.deleteFile(url); } catch {}
+          }
+          return res.status(500).json({
+            error: `Upload failed for ${file.originalname}: ${uploadErr.message}`,
+          });
+        }
+      }
+
+      const existingImages = order.images && order.images.length > 0
+        ? order.images.split(',').filter((s) => s.trim() !== '')
+        : [];
+      const allImages = [...existingImages, ...uploaded];
       const imagesString = allImages.join(',');
 
       await req.db.imagingOrder.update({
@@ -4080,8 +4483,8 @@ app.post('/api/imaging-orders/:id/upload-images',
           images: imagesString,
           imageCount: allImages.length,
           hasImages: true,
-          updatedAt: new Date()
-        }
+          updatedAt: new Date(),
+        },
       });
 
       const completeOrder = await req.db.imagingOrder.findUnique({
@@ -4090,8 +4493,8 @@ app.post('/api/imaging-orders/:id/upload-images',
           Patient: { select: { id: true, hospitalId: true, firstName: true, lastName: true } },
           Staff_ImagingOrder_orderingStaffIdToStaff: { select: { id: true, firstName: true, lastName: true, role: true } },
           Staff_ImagingOrder_radiologistIdToStaff: { select: { id: true, firstName: true, lastName: true, role: true } },
-          ImagingResult: true
-        }
+          ImagingResult: true,
+        },
       });
 
       await req.db.auditLog.create({
@@ -4099,9 +4502,11 @@ app.post('/api/imaging-orders/:id/upload-images',
           staffId: req.user.id,
           action: 'UPLOAD_IMAGING_IMAGES',
           module: 'Radiology',
-          details: `Uploaded ${req.files.length} images for imaging order ${order.orderNumber}`
-        }
+          details: `Uploaded ${req.files.length} image(s) to ${storage.backend} for imaging order ${order.orderNumber}`,
+        },
       });
+
+      console.log(`✅ Imaging order ${id} updated with ${uploaded.length} new image(s)\n`);
 
       res.json({
         message: `${req.files.length} image(s) uploaded successfully`,
@@ -4113,11 +4518,11 @@ app.post('/api/imaging-orders/:id/upload-images',
           imagingResults: completeOrder.ImagingResult,
           images: imagesString,
           imageCount: allImages.length,
-          hasImages: true
-        }
+          hasImages: true,
+        },
       });
     } catch (error) {
-      console.error('Image upload error:', error);
+      console.error('❌ Image upload error:', error);
       res.status(500).json({ error: error.message });
     }
   }
@@ -5391,6 +5796,210 @@ app.get('/api/audit-logs', authenticate, authorize('Admin', 'ITAdmin'), async (r
   } catch (error) {
     console.error('Get audit logs error:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================================
+// ADMIN — Service Fees (used by ServiceFeeManager.jsx)
+// These are a thin wrapper over ServiceConfiguration.
+// ============================================================
+app.get('/api/admin/service-fees', authenticate, authorize('Admin', 'ITAdmin', 'Accountant'), async (req, res) => {
+  try {
+    const fees = await req.db.serviceConfiguration.findMany({
+      orderBy: { serviceType: 'asc' }
+    });
+    res.json(fees);
+  } catch (error) {
+    console.error('Get service fees error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/service-fees', authenticate, authorize('Admin', 'ITAdmin', 'Accountant'), async (req, res) => {
+  try {
+    const { serviceType, name, description, baseAmount, isActive } = req.body;
+
+    if (!serviceType || !name || baseAmount === undefined) {
+      return res.status(400).json({ error: 'serviceType, name, and baseAmount are required' });
+    }
+
+    const normalizedType = String(serviceType).toUpperCase().trim();
+
+    // Guard against duplicate service types (schema has @@unique([tenantId, serviceType]))
+    const existing = await req.db.serviceConfiguration.findFirst({
+      where: { serviceType: normalizedType }
+    });
+    if (existing) {
+      return res.status(400).json({ error: `A service fee with type "${normalizedType}" already exists. Use PUT to update it.` });
+    }
+
+    const fee = await req.db.serviceConfiguration.create({
+      data: {
+        serviceType: normalizedType,
+        name: name.trim(),
+        description: description || null,
+        baseAmount: parseFloat(baseAmount) || 0,
+        isActive: isActive !== false
+      }
+    });
+
+    await req.db.auditLog.create({
+      data: {
+        staffId: req.user.id,
+        action: 'CREATE_SERVICE_FEE',
+        module: 'Pricing',
+        details: `Created service fee ${normalizedType} (${name}) at ₦${baseAmount}`
+      }
+    });
+
+    res.status(201).json(fee);
+  } catch (error) {
+    console.error('Create service fee error:', error);
+    if (error.code === 'P2002') {
+      return res.status(400).json({ error: 'Service fee already exists' });
+    }
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.put('/api/admin/service-fees/:id', authenticate, authorize('Admin', 'ITAdmin', 'Accountant'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, baseAmount, isActive } = req.body;
+
+    const existing = await req.db.serviceConfiguration.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ error: 'Service fee not found' });
+
+    const fee = await req.db.serviceConfiguration.update({
+      where: { id },
+      data: {
+        name: name !== undefined ? name.trim() : undefined,
+        description: description !== undefined ? description : undefined,
+        baseAmount: baseAmount !== undefined ? (parseFloat(baseAmount) || 0) : undefined,
+        isActive: isActive !== undefined ? isActive : undefined,
+        updatedAt: new Date()
+      }
+    });
+
+    await req.db.auditLog.create({
+      data: {
+        staffId: req.user.id,
+        action: 'UPDATE_SERVICE_FEE',
+        module: 'Pricing',
+        details: `Updated service fee ${fee.serviceType} (${fee.name}) to ₦${fee.baseAmount}${isActive === false ? ' [inactive]' : ''}`
+      }
+    });
+
+    res.json(fee);
+  } catch (error) {
+    console.error('Update service fee error:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+
+// ============================================================
+// ADMIN — Delete service fee
+//
+// Three-tier behavior:
+//   1. Unknown service types (LAB_FEE, XRAY_FEE, etc.) → hard delete
+//   2. Known system types (REGISTRATION, CARD, CONSULTATION) → blocked
+//      unless ?force=true is passed
+//   3. Every delete (or forced delete) is audit-logged with the
+//      full row snapshot so it can be restored manually if needed
+// ============================================================
+app.delete('/api/admin/service-fees/:id', authenticate, authorize('Admin', 'ITAdmin', 'Accountant'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const force = String(req.query.force).toLowerCase() === 'true';
+
+    // System types that billing/kiosk/intake look up by type name.
+    // Deleting these without force=true is almost always a mistake —
+    // the safer action is to deactivate them via PUT isActive=false.
+    const PROTECTED_TYPES = ['REGISTRATION', 'CARD', 'CONSULTATION'];
+
+    const existing = await req.db.serviceConfiguration.findUnique({ where: { id } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Service fee not found' });
+    }
+
+    // Guard: protected type
+    if (PROTECTED_TYPES.includes(existing.serviceType) && !force) {
+      return res.status(409).json({
+        error:
+          `"${existing.serviceType}" is a system service fee that other parts of the app ` +
+          `(kiosk check-in, patient intake, billing) look up by name. Deleting it will ` +
+          `fall back to hardcoded defaults, silently changing how much you charge.`,
+        hint:
+          `Deactivate it instead (PUT with isActive=false), or resend the DELETE with ` +
+          `?force=true to override.`,
+        serviceType: existing.serviceType,
+        protectedTypes: PROTECTED_TYPES,
+        forceable: true
+      });
+    }
+
+    // Snapshot BEFORE deleting — audit log FK requires a real Staff row,
+    // so we log the snapshot with the full row for manual recovery.
+    const snapshot = {
+      id: existing.id,
+      serviceType: existing.serviceType,
+      name: existing.name,
+      description: existing.description,
+      baseAmount: existing.baseAmount,
+      nhisAmount: existing.nhisAmount,
+      corporateAmount: existing.corporateAmount,
+      isActive: existing.isActive,
+      createdAt: existing.createdAt,
+      deletedAt: new Date().toISOString(),
+      deletedBy: req.user.id,
+      deletedByRole: req.user.role,
+      forced: force
+    };
+
+    await req.db.serviceConfiguration.delete({ where: { id } });
+
+    await req.db.auditLog.create({
+      data: {
+        staffId: req.user.id,
+        action: force ? 'FORCE_DELETE_SERVICE_FEE' : 'DELETE_SERVICE_FEE',
+        module: 'Pricing',
+        details: JSON.stringify(snapshot)
+      }
+    });
+
+    const affectedDefaults = PROTECTED_TYPES.includes(existing.serviceType)
+      ? {
+          warning:
+            `This was a system-protected type. Kiosk check-in, patient intake, and ` +
+            `billing will now fall back to the hardcoded default amount until a new ` +
+            `"${existing.serviceType}" configuration is created.`,
+          fallbackDefaults: {
+            REGISTRATION: 2000,
+            CARD: 1000,
+            CONSULTATION: 5000
+          }
+        }
+      : null;
+
+    res.json({
+      success: true,
+      message: `Service fee "${existing.name}" (${existing.serviceType}) deleted successfully`,
+      deleted: {
+        id: existing.id,
+        serviceType: existing.serviceType,
+        name: existing.name,
+        baseAmount: existing.baseAmount,
+        forced: force
+      },
+      ...(affectedDefaults ? { _meta: affectedDefaults } : {})
+    });
+  } catch (error) {
+    console.error('Delete service fee error:', error);
+    if (error.code === 'P2025') {
+      return res.status(404).json({ error: 'Service fee not found' });
+    }
+    res.status(400).json({ error: error.message });
   }
 });
 
@@ -8830,6 +9439,191 @@ app.get('/api/dashboard/stats', authenticate, async (req, res) => {
 });
 
 // ============================================================
+// DEPARTMENTS (generic alias — used by DepartmentManagement.jsx)
+// Mirrors the HR department endpoints but lives at /api/departments
+// ============================================================
+app.get('/api/departments', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
+  try {
+    const departments = await req.db.department.findMany({
+      include: {
+        staff: {
+          select: { id: true, firstName: true, lastName: true, role: true, employeeId: true }
+        },
+        manager: {
+          select: { id: true, firstName: true, lastName: true, employeeId: true }
+        }
+      },
+      orderBy: { name: 'asc' }
+    });
+    res.json({ departments });
+  } catch (error) {
+    console.error('Get departments error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/departments', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
+  try {
+    const { name, description, managerId, location, costCenter } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Department name is required' });
+    }
+
+    // Guard: unique name per tenant
+    const existing = await req.db.department.findFirst({
+      where: { name: name.trim() }
+    });
+    if (existing) {
+      return res.status(400).json({ error: 'A department with this name already exists' });
+    }
+
+    // If a manager is being assigned, make sure they aren't already managing another dept
+    if (managerId) {
+      const conflict = await req.db.department.findFirst({
+        where: { managerId }
+      });
+      if (conflict) {
+        return res.status(400).json({
+          error: `This staff member already manages "${conflict.name}". A staff member can only manage one department.`
+        });
+      }
+    }
+
+    const department = await req.db.department.create({
+      data: {
+        name: name.trim(),
+        description: description || null,
+        managerId: managerId || null,
+        location: location || null,
+        costCenter: costCenter || null,
+        isActive: true
+      },
+      include: {
+        manager: { select: { id: true, firstName: true, lastName: true, employeeId: true } },
+        staff: { select: { id: true, firstName: true, lastName: true, role: true, employeeId: true } }
+      }
+    });
+
+    await req.db.auditLog.create({
+      data: {
+        staffId: req.user.id,
+        action: 'CREATE_DEPARTMENT',
+        module: 'HR',
+        details: `Created department: ${department.name}`
+      }
+    });
+
+    res.status(201).json(department);
+  } catch (error) {
+    console.error('Create department error:', error);
+    if (error.code === 'P2002') {
+      return res.status(400).json({ error: 'Department name already exists' });
+    }
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.put('/api/departments/:id', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, managerId, location, costCenter, isActive } = req.body;
+
+    const existing = await req.db.department.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ error: 'Department not found' });
+
+    // If name is changing, ensure no other dept has it
+    if (name && name.trim() !== existing.name) {
+      const conflict = await req.db.department.findFirst({
+        where: { name: name.trim(), NOT: { id } }
+      });
+      if (conflict) {
+        return res.status(400).json({ error: 'Another department already uses this name' });
+      }
+    }
+
+    // If a manager is being assigned, ensure they don't manage another dept
+    if (managerId && managerId !== existing.managerId) {
+      const conflict = await req.db.department.findFirst({
+        where: { managerId, NOT: { id } }
+      });
+      if (conflict) {
+        return res.status(400).json({
+          error: `This staff member already manages "${conflict.name}". A staff member can only manage one department.`
+        });
+      }
+    }
+
+    const department = await req.db.department.update({
+      where: { id },
+      data: {
+        name: name !== undefined ? name.trim() : undefined,
+        description: description !== undefined ? description : undefined,
+        managerId: managerId !== undefined ? (managerId || null) : undefined,
+        location: location !== undefined ? location : undefined,
+        costCenter: costCenter !== undefined ? costCenter : undefined,
+        isActive: isActive !== undefined ? isActive : undefined
+      },
+      include: {
+        manager: { select: { id: true, firstName: true, lastName: true, employeeId: true } },
+        staff: { select: { id: true, firstName: true, lastName: true, role: true, employeeId: true } }
+      }
+    });
+
+    await req.db.auditLog.create({
+      data: {
+        staffId: req.user.id,
+        action: 'UPDATE_DEPARTMENT',
+        module: 'HR',
+        details: `Updated department: ${department.name}`
+      }
+    });
+
+    res.json(department);
+  } catch (error) {
+    console.error('Update department error:', error);
+    if (error.code === 'P2002') {
+      return res.status(400).json({ error: 'Department name already exists' });
+    }
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.delete('/api/departments/:id', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const department = await req.db.department.findUnique({
+      where: { id },
+      include: { _count: { select: { staff: true } } }
+    });
+    if (!department) return res.status(404).json({ error: 'Department not found' });
+
+    // Block delete if any staff still assigned
+    if (department._count.staff > 0) {
+      return res.status(400).json({
+        error: `Cannot delete "${department.name}". ${department._count.staff} staff member(s) are still assigned to it. Reassign or deactivate them first.`
+      });
+    }
+
+    await req.db.department.delete({ where: { id } });
+
+    await req.db.auditLog.create({
+      data: {
+        staffId: req.user.id,
+        action: 'DELETE_DEPARTMENT',
+        module: 'HR',
+        details: `Deleted department: ${department.name} (${id})`
+      }
+    });
+
+    res.json({ message: 'Department deleted successfully', department: { id, name: department.name } });
+  } catch (error) {
+    console.error('Delete department error:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// ============================================================
 // HR MODULE
 // ============================================================
 app.get('/api/hr/departments', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
@@ -9879,23 +10673,176 @@ app.get('/api/patients/:id/discharge-check', authenticate, async (req, res) => {
 });
 
 // ============================================================
+// CRON LOCK HELPERS
+// ============================================================
+//
+// Each cron job is guarded by a PostgreSQL advisory lock. This means
+// even if the app is running on N instances (e.g. 3 Render dynos),
+// only ONE instance will execute each job per tick. The others skip
+// quietly.
+//
+// We use two-argument pg_try_advisory_lock(key1, key2):
+//   key1 = a fixed class ID unique to this app (must fit in int32)
+//   key2 = a job-specific int32 hash (billing, backup, cleanup)
+//
+// The lock is session-scoped, so as long as we hold the same Prisma
+// connection, the lock stays held. We release it in a `finally` block
+// so a crash mid-job doesn't block the next tick forever.
+//
+// Cost: one extra query per cron tick per instance (negligible).
+// Dependencies: none — Postgres already has advisory locks built in.
+//
+const CRON_LOCK_CLASS_ID = 0x454D52; // "EMR" as a 32-bit int
+
+async function withCronLock(jobName, jobFn) {
+  // Hash jobName to a stable int32 so different jobs use different lock IDs
+  let hash = 0;
+  for (let i = 0; i < jobName.length; i++) {
+    hash = ((hash << 5) - hash + jobName.charCodeAt(i)) | 0;
+  }
+  const lockId = Math.abs(hash);
+
+  let lockAcquired = false;
+
+  try {
+    // Try to acquire the lock, non-blocking
+    const result = await prisma.$queryRaw`
+      SELECT pg_try_advisory_lock(${CRON_LOCK_CLASS_ID}::int, ${lockId}::int) AS acquired
+    `;
+    lockAcquired = Boolean(result?.[0]?.acquired);
+
+    if (!lockAcquired) {
+      // Another instance is running this job right now — skip quietly
+      return;
+    }
+
+    // We hold the lock — run the job
+    await jobFn();
+  } catch (error) {
+    console.error(`❌ [CRON ${jobName}] Error:`, error);
+  } finally {
+    if (lockAcquired) {
+      try {
+        await prisma.$queryRaw`
+          SELECT pg_advisory_unlock(${CRON_LOCK_CLASS_ID}::int, ${lockId}::int)
+        `;
+      } catch (unlockErr) {
+        console.warn(`⚠️  [CRON ${jobName}] Failed to release lock:`, unlockErr.message);
+      }
+    }
+  }
+}
+
+// ============================================================
+// CRON: Auto-advance PENDING_BILLING → BILLING_CLEARED
+// Runs every 60 seconds. For each tenant that has
+// autoAdvanceBillingAfterMinutes set, finds journeys that:
+//   1. Are in PENDING_BILLING status
+//   2. Have a BillingRecord with status = 'Paid'
+//   3. Have been in that state for > autoAdvanceBillingAfterMinutes
+// …and advances them automatically.
+// ============================================================
+cron.schedule('* * * * *', async () => {
+  await withCronLock('auto-advance-billing', async () => {
+  
+    // Get all tenants that have auto-advance enabled
+    const settingsWithAutoAdvance = await prisma.hospitalSettings.findMany({
+      where: {
+        autoAdvanceBillingAfterMinutes: { not: null },
+      },
+      select: {
+        tenantId: true,
+        autoAdvanceBillingAfterMinutes: true,
+      },
+    });
+
+    if (settingsWithAutoAdvance.length === 0) return;
+
+    let totalAdvanced = 0;
+
+    for (const settings of settingsWithAutoAdvance) {
+      const cutoff = new Date(
+        Date.now() - settings.autoAdvanceBillingAfterMinutes * 60 * 1000
+      );
+
+      // Find stuck journeys in this tenant
+      const stuck = await prisma.patientJourney.findMany({
+        where: {
+          tenantId: settings.tenantId,
+          status: 'PENDING_BILLING',
+          billingRecord: {
+            status: 'Paid',
+            paymentDate: { lt: cutoff },
+          },
+        },
+        select: {
+          id: true,
+          patientId: true,
+          billingRecordId: true,
+          Patient: { select: { hospitalId: true, firstName: true, lastName: true } },
+          BillingRecord: { select: { invoiceNumber: true, paymentDate: true } },
+        },
+      });
+
+      for (const journey of stuck) {
+        await prisma.$transaction(async (tx) => {
+          // Advance the journey
+          await tx.patientJourney.update({
+            where: { id: journey.id },
+            data: {
+              status: 'BILLING_CLEARED',
+              updatedAt: new Date(),
+            },
+          });
+
+          // Audit the auto-advance
+          await tx.auditLog.create({
+  data: {
+    tenantId: settings.tenantId,
+    staffId: null,                              // ← was 'system'
+    action: 'AUTO_ADVANCE_JOURNEY_TIMEOUT',
+    module: 'Billing',
+    details:
+      `Auto-advanced journey ${journey.id} from PENDING_BILLING → BILLING_CLEARED ` +
+      `after ${settings.autoAdvanceBillingAfterMinutes} min (invoice ${journey.BillingRecord?.invoiceNumber}, ` +
+      `patient ${journey.Patient?.hospitalId} ${journey.Patient?.firstName} ${journey.Patient?.lastName})`,
+  },
+});
+        });
+
+        totalAdvanced++;
+      }
+    }
+
+    if (totalAdvanced > 0) {
+      console.log(`✅ [CRON] Auto-advanced ${totalAdvanced} journey(ies) past PENDING_BILLING`);
+    }
+  });
+}, { timezone: 'Africa/Lagos' });
+
+console.log('✅ Auto-advance billing cron scheduled: every minute (Africa/Lagos)');
+
+// ============================================================
 // CRON JOBS
 // ============================================================
 cron.schedule('0 2 * * *', async () => {
-  console.log('\n🔄 [CRON] Daily backup starting...');
-  try {
-    await backupDatabase();
-  } catch (error) {
-    console.error('❌ [CRON] Backup failed:', error.message);
-  }
+  await withCronLock('daily-backup', async () => {
+    console.log('\n🔄 [CRON] Daily backup starting...');
+    try {
+      await backupDatabase();
+    } catch (error) {
+      console.error('❌ [CRON] Backup failed:', error.message);
+    }
+  });
 }, { timezone: 'Africa/Lagos' });
 
 console.log('✅ Backup cron scheduled: 2:00 AM daily (Africa/Lagos)');
 
 cron.schedule('0 3 * * *', async () => {
-  console.log('\n🧹 [CRON] Imaging file cleanup starting...');
-  const startedAt = Date.now();
-  try {
+  await withCronLock('imaging-cleanup', async () => {
+    console.log('\n🧹 [CRON] Imaging file cleanup starting...');
+    const startedAt = Date.now();
+    try {
     const files = fs.readdirSync(uploadDir);
     const cutoff = Date.now() - (7 * 24 * 60 * 60 * 1000);
     let scanned = 0, orphaned = 0, kept = 0, skipped = 0;
@@ -9930,9 +10877,10 @@ cron.schedule('0 3 * * *', async () => {
     console.log(`   Kept:     ${kept} (referenced)`);
     console.log(`   Deleted:  ${orphaned} orphaned files`);
     console.log(`   Skipped:  ${skipped} (newer than 7 days)`);
-  } catch (error) {
-    console.error('❌ [CRON] Imaging cleanup failed:', error.message);
-  }
+   } catch (error) {
+      console.error('❌ [CRON] Imaging cleanup failed:', error.message);
+    }
+  });
 }, { timezone: 'Africa/Lagos' });
 
 console.log('✅ Imaging cleanup cron scheduled: 3:00 AM daily (Africa/Lagos)');

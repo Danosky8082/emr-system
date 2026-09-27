@@ -2,6 +2,7 @@
 import React, { useState, useRef } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import api from '../api/client';
 
 const ImageUpload = ({ orderId, onUploadComplete, token }) => {
   const [uploading, setUploading] = useState(false);
@@ -32,8 +33,7 @@ const ImageUpload = ({ orderId, onUploadComplete, token }) => {
     formData.append('orderId', orderId);
 
     try {
-      const res = await axios.post(
-        `http://localhost:3000/api/imaging-orders/${orderId}/upload-images`,
+      const res = await api.post(`/imaging-orders/${orderId}/upload-images`,
         formData,
         {
           headers: {

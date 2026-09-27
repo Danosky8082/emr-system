@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
+import api from '../api/client';
 
 const ManageClinics = () => {
   const { token } = useAuth();
@@ -19,9 +20,7 @@ const ManageClinics = () => {
 
   const fetchClinics = async () => {
     try {
-      const res = await axios.get('http://localhost:3000/api/clinics', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/clinics');
       setClinics(res.data);
     } catch (error) { 
       toast.error('Failed to load clinics'); 
@@ -50,19 +49,13 @@ const ManageClinics = () => {
     try {
       if (editingClinic) {
         // UPDATE existing clinic
-        await axios.put(
-          `http://localhost:3000/api/clinics/${editingClinic.id}`, 
-          formData, 
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
+        await api.put(`/clinics/${editingClinic.id}`, 
+          formData);
         toast.success('Clinic updated successfully!');
       } else {
         // CREATE new clinic
-        await axios.post(
-          'http://localhost:3000/api/clinics', 
-          formData, 
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
+        await api.post('/clinics', 
+          formData);
         toast.success('Clinic created successfully!');
       }
       
@@ -88,9 +81,7 @@ const ManageClinics = () => {
   const handleDelete = async (id) => {
     if (!window.confirm('Are you sure you want to delete this clinic?')) return;
     try {
-      await axios.delete(`http://localhost:3000/api/clinics/${id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.delete(`/clinics/${id}`);
       toast.success('Clinic deleted successfully');
       fetchClinics();
     } catch (error) { 

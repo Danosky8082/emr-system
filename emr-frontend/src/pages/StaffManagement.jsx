@@ -9,6 +9,7 @@ import toast from 'react-hot-toast';
 import './StaffManagement.css';
 import { useSearch } from '../components/Layout';
 import Modal from '../components/Modal';
+import api from '../api/client';
 
 const StaffManagement = () => {
   const { token } = useAuth();
@@ -149,17 +150,14 @@ const StaffManagement = () => {
   const fetchStaff = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('http://localhost:3000/api/staff', {
+      const res = await api.get('/staff', {
         headers: { Authorization: `Bearer ${token}` },
       });
 
       const staffWithAssignments = await Promise.all(
         res.data.map(async (staffMember) => {
           try {
-            const assignRes = await axios.get(
-              `http://localhost:3000/api/staff/${staffMember.id}/assignments`,
-              { headers: { Authorization: `Bearer ${token}` } }
-            );
+            const assignRes = await api.get(`/staff/${staffMember.id}/assignments`);
             return {
               ...staffMember,
               StaffClinic: assignRes.data.clinics || [],
@@ -184,10 +182,10 @@ const StaffManagement = () => {
   const fetchClinicsAndWards = async () => {
     try {
       const [clinicRes, wardRes] = await Promise.all([
-        axios.get('http://localhost:3000/api/clinics', {
+        api.get('/clinics', {
           headers: { Authorization: `Bearer ${token}` },
         }),
-        axios.get('http://localhost:3000/api/wards', {
+        api.get('/wards', {
           headers: { Authorization: `Bearer ${token}` },
         }),
       ]);
@@ -201,10 +199,7 @@ const StaffManagement = () => {
 
   const fetchAssignments = async (staffId) => {
     try {
-      const res = await axios.get(
-        `http://localhost:3000/api/staff/${staffId}/assignments`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const res = await api.get(`/staff/${staffId}/assignments`);
       setAssignedClinicIds(res.data.clinicIds || []);
       setAssignedWardIds(res.data.wardIds || []);
     } catch (error) {
@@ -281,54 +276,36 @@ const StaffManagement = () => {
       if (editingStaff) {
         // -------- EDIT PATH --------
         const { password, ...updateData } = formData;
-        await axios.put(
-          `http://localhost:3000/api/staff/${editingStaff.id}`,
-          updateData,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
+        await api.put(`/staff/${editingStaff.id}`,
+          updateData);
         toast.success('Staff updated successfully!');
 
         if (rolesRequiringAssignment.includes(formData.role) && editingStaff) {
           try {
-            const currentAssignments = await axios.get(
-              `http://localhost:3000/api/staff/${editingStaff.id}/assignments`,
-              { headers: { Authorization: `Bearer ${token}` } }
-            );
+            const currentAssignments = await api.get(`/staff/${editingStaff.id}/assignments`);
             const oldClinicIds = currentAssignments.data.clinicIds || [];
             const oldWardIds = currentAssignments.data.wardIds || [];
 
             for (const clinicId of oldClinicIds) {
               try {
-                await axios.delete(
-                  `http://localhost:3000/api/staff/${editingStaff.id}/clinics/${clinicId}`,
-                  { headers: { Authorization: `Bearer ${token}` } }
-                );
+                await api.delete(`/staff/${editingStaff.id}/clinics/${clinicId}`);
               } catch (err) {}
             }
             for (const wardId of oldWardIds) {
               try {
-                await axios.delete(
-                  `http://localhost:3000/api/staff/${editingStaff.id}/wards/${wardId}`,
-                  { headers: { Authorization: `Bearer ${token}` } }
-                );
+                await api.delete(`/staff/${editingStaff.id}/wards/${wardId}`);
               } catch (err) {}
             }
             for (const clinicId of assignedClinicIds) {
               try {
-                await axios.post(
-                  `http://localhost:3000/api/staff/${editingStaff.id}/clinics`,
-                  { clinicId },
-                  { headers: { Authorization: `Bearer ${token}` } }
-                );
+                await api.post(`/staff/${editingStaff.id}/clinics`,
+                  { clinicId });
               } catch (err) {}
             }
             for (const wardId of assignedWardIds) {
               try {
-                await axios.post(
-                  `http://localhost:3000/api/staff/${editingStaff.id}/wards`,
-                  { wardId },
-                  { headers: { Authorization: `Bearer ${token}` } }
-                );
+                await api.post(`/staff/${editingStaff.id}/wards`,
+                  { wardId });
               } catch (err) {}
             }
             toast.success('Assignments updated successfully!');
@@ -339,11 +316,8 @@ const StaffManagement = () => {
       } else {
         // -------- CREATE PATH --------
         // The server generates the username. We do NOT send one.
-        const response = await axios.post(
-          'http://localhost:3000/api/staff',
-          formData,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
+        const response = await api.post('/staff',
+          formData);
 
         const createdStaff = response.data;
 
@@ -420,7 +394,7 @@ const StaffManagement = () => {
     )
       return;
     try {
-      await axios.delete(`http://localhost:3000/api/staff/${staffMember.id}`, {
+      await api.delete(`/staff/${staffMember.id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       toast.success('Staff deactivated successfully');
@@ -432,11 +406,8 @@ const StaffManagement = () => {
 
   const handleReactivate = async (staffMember) => {
     try {
-      await axios.patch(
-        `http://localhost:3000/api/staff/${staffMember.id}/reactivate`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.patch(`/staff/${staffMember.id}/reactivate`,
+        {});
       toast.success('Staff reactivated successfully');
       fetchStaff();
     } catch (error) {
@@ -454,11 +425,8 @@ const StaffManagement = () => {
       return;
     }
     try {
-      await axios.post(
-        `http://localhost:3000/api/staff/${staffMember.id}/reset-password`,
-        { newPassword },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.post(`/staff/${staffMember.id}/reset-password`,
+        { newPassword });
       toast.success('Password reset successfully');
     } catch (error) {
       toast.error(error.response?.data?.error || 'Failed to reset password');

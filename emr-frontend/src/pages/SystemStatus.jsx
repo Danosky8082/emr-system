@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import './Dashboard.css';
+import api from '../api/client';
 
 const SystemStatus = () => {
   const { token } = useAuth();
@@ -17,9 +18,7 @@ const SystemStatus = () => {
   const fetchSystemStatus = async () => {
     setLoading(true); // ✅ FIX: Set loading true
     try {
-      const res = await axios.get('http://localhost:3000/api/system/status', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/system/status');
       setSystemInfo(res.data);
     } catch (error) {
       console.error('Error fetching system status:', error);

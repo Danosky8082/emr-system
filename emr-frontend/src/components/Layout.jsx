@@ -7,6 +7,7 @@ import { useTenant } from '../context/TenantContext';  // ✅ NEW
 import axios from 'axios';
 import './Layout.css';
 import { clearAllSessions } from '../utils/clearAllSessions';
+import api from '../api/client';
 
 // ============================================================
 // LAYOUT — Main authenticated shell
@@ -159,9 +160,7 @@ const Layout = () => {
       setLoadingPermissions(true);
       try {
         const token = localStorage.getItem('emr_token');
-        const res = await axios.get('http://localhost:3000/api/permissions', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const res = await api.get('/permissions');
         const rolePerm = res.data.find(p => p.role === user.role);
         if (rolePerm) {
           setPermissions(rolePerm);

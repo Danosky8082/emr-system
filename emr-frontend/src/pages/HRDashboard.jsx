@@ -5,6 +5,7 @@ import axios from 'axios';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
 import { Link } from 'react-router-dom';
+import api from '../api/client';
 
 const HRDashboard = () => {
   const { token, user } = useAuth();
@@ -24,9 +25,7 @@ const HRDashboard = () => {
   const fetchDashboard = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('http://localhost:3000/api/hr/dashboard', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/hr/dashboard');
       
       setStats(res.data.statistics);
       setRecentLeaves(res.data.recentLeaves || []);

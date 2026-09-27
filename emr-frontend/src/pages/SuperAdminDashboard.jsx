@@ -9,21 +9,15 @@
 //
 // When you're ready to launch (see docs/trial-enforcement.md):
 //   1. Add enforceTenantStatus() middleware in server.js
-//      → blocks API calls with 402 TRIAL_EXPIRED
 //   2. Add a trial banner to Layout.jsx
-//      → warns staff when days remaining <= 7
 //   3. Add a 402 interceptor to axios
-//      → redirects to /upgrade when trial expires
-//
-// Nothing in THIS file needs to change for enforcement to work —
-// it already surfaces trial status correctly.
 // ============================================================
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
 import toast from 'react-hot-toast';
 import { usePlatformAuth } from '../context/PlatformAuthContext';
+import api from '../api/client';
 import './Dashboard.css';
 import { clearAllSessions } from '../utils/clearAllSessions';
 
@@ -34,7 +28,7 @@ const SuperAdminDashboard = () => {
   // ============================================================
   // TAB STATE
   // ============================================================
-  const [activeTab, setActiveTab] = useState('hospitals'); // 'hospitals' | 'users'
+  const [activeTab, setActiveTab] = useState('hospitals');
 
   // ============================================================
   // HOSPITAL STATE
@@ -64,32 +58,13 @@ const SuperAdminDashboard = () => {
   });
 
   // ============================================================
-  // AXIOS CLIENT (single instance + request interceptor)
-  //
-  // ✅ useMemo ensures ONE axios instance lives for the component's
-  //    lifetime — so every request (GET, POST, PATCH, DELETE) uses
-  //    the same client.
-  //
-  // ✅ The request interceptor reads the token FRESH on every request,
-  //    so even after state updates / re-renders, the Authorization
-  //    header is always attached.
+  // API CLIENT
   // ============================================================
-  const apiClient = useMemo(() => {
-    const client = axios.create({
-      baseURL: 'http://localhost:3000/api/platform',
-    });
-
-    client.interceptors.request.use((config) => {
-      // Prefer the in-memory token, fall back to localStorage
-      const currentToken = token || localStorage.getItem('platform_token');
-      if (currentToken) {
-        config.headers.Authorization = `Bearer ${currentToken}`;
-      }
-      return config;
-    });
-
-    return client;
-  }, [token]);
+  //
+  // The shared `api` client in /src/api/client.js auto-attaches the
+  // platform token for any URL starting with `/platform/`, so we just
+  // alias it here. Call sites below use `/platform/<route>`.
+  const apiClient = api;
 
   // ============================================================
   // HOSPITAL DATA
@@ -98,8 +73,8 @@ const SuperAdminDashboard = () => {
     setLoading(true);
     try {
       const [hospitalsRes, statsRes] = await Promise.all([
-        apiClient.get('/hospitals'),
-        apiClient.get('/stats'),
+        apiClient.get('/platform/hospitals'),
+        apiClient.get('/platform/stats'),
       ]);
       setHospitals(hospitalsRes.data);
       setStats(statsRes.data);
@@ -122,7 +97,7 @@ const SuperAdminDashboard = () => {
   const fetchUsers = async () => {
     setUsersLoading(true);
     try {
-      const res = await apiClient.get('/users');
+      const res = await apiClient.get('/platform/users');
       setUsers(res.data);
     } catch (error) {
       if (error.response?.status === 401 || error.response?.status === 403) {
@@ -153,8 +128,10 @@ const SuperAdminDashboard = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await apiClient.post('/hospitals', formData);
-      toast.success(`Hospital created with ${res.data?._meta?.rolesCreated ?? 20} role permissions!`);
+      const res = await apiClient.post('/platform/hospitals', formData);
+      toast.success(
+        `Hospital created with ${res.data?._meta?.rolesCreated ?? 20} role permissions!`
+      );
       setShowModal(false);
       setFormData({
         name: '', slug: '', code: '', email: '', phone: '',
@@ -169,7 +146,7 @@ const SuperAdminDashboard = () => {
   const handleSuspend = async (id) => {
     if (!window.confirm('Suspend this hospital? Staff will be unable to log in.')) return;
     try {
-      await apiClient.patch(`/hospitals/${id}/suspend`);
+      await apiClient.patch(`/platform/hospitals/${id}/suspend`);
       toast.success('Hospital suspended');
       fetchData();
     } catch (error) {
@@ -179,11 +156,35 @@ const SuperAdminDashboard = () => {
 
   const handleReactivate = async (id) => {
     try {
-      await apiClient.patch(`/hospitals/${id}/reactivate`);
+      await apiClient.patch(`/platform/hospitals/${id}/reactivate`);
       toast.success('Hospital reactivated');
       fetchData();
     } catch (error) {
       toast.error('Failed to reactivate');
+    }
+  };
+
+  // ✅ Update auto-advance setting
+  const handleAutoAdvanceChange = async (hospitalId, value) => {
+    const normalized = value === '' ? null : parseInt(value, 10);
+
+    if (normalized !== null && (isNaN(normalized) || normalized < 1 || normalized > 1440)) {
+      toast.error('Must be between 1 and 1440 minutes');
+      return;
+    }
+
+    try {
+      await apiClient.patch(`/platform/hospitals/${hospitalId}/settings`, {
+        autoAdvanceBillingAfterMinutes: normalized,
+      });
+      toast.success(
+        normalized
+          ? `Auto-advance set to ${normalized} minute(s)`
+          : 'Auto-advance disabled (manual click required)'
+      );
+      fetchData();
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to update setting');
     }
   };
 
@@ -196,9 +197,28 @@ const SuperAdminDashboard = () => {
     )) return;
 
     try {
-      const res = await apiClient.post('/backfill-permissions');
+      const res = await apiClient.post('/platform/backfill-permissions');
       const total = res.data.results.reduce((sum, r) => sum + r.rolesCreated, 0);
       toast.success(`Fixed permissions for ${res.data.results.length} hospitals (${total} roles recreated)`);
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Backfill failed');
+    }
+  };
+
+  const handleBackfillStarterData = async () => {
+    if (!window.confirm(
+      'Recreate clinics, wards, departments, services, and configs for ALL hospitals?\n\n' +
+      'This will DELETE and recreate all starter data using the canonical templates.\n\n' +
+      'Use this only if a hospital is missing starter data.'
+    )) return;
+
+    try {
+      const res = await apiClient.post('/platform/backfill-starter-data');
+      const summary = res.data.results
+        .map(r => `  • ${r.hospital}: ${r.clinics}c / ${r.wards}w / ${r.departments}d / ${r.services}s / ${r.configs}cfg`)
+        .join('\n');
+      toast.success(`Fixed starter data for ${res.data.results.length} hospitals`);
+      console.log('Starter data backfill results:\n' + summary);
     } catch (error) {
       toast.error(error.response?.data?.error || 'Backfill failed');
     }
@@ -221,7 +241,7 @@ const SuperAdminDashboard = () => {
     }
 
     try {
-      await apiClient.post('/users', userForm);
+      await apiClient.post('/platform/users', userForm);
       toast.success(`✅ Platform user "${userForm.username}" created!`);
       setShowUserModal(false);
       setUserForm({
@@ -241,7 +261,7 @@ const SuperAdminDashboard = () => {
     }
     if (!window.confirm(`${u.isActive ? 'Deactivate' : 'Activate'} ${u.username}?`)) return;
     try {
-      await apiClient.patch(`/users/${u.id}`, { isActive: !u.isActive });
+      await apiClient.patch(`/platform/users/${u.id}`, { isActive: !u.isActive });
       toast.success(`User ${u.isActive ? 'deactivated' : 'activated'}`);
       fetchUsers();
     } catch (error) {
@@ -255,7 +275,7 @@ const SuperAdminDashboard = () => {
       return;
     }
     try {
-      await apiClient.patch(`/users/${u.id}`, { role: newRole });
+      await apiClient.patch(`/platform/users/${u.id}`, { role: newRole });
       toast.success(`Role updated to ${newRole}`);
       fetchUsers();
     } catch (error) {
@@ -273,7 +293,7 @@ const SuperAdminDashboard = () => {
       return;
     }
     try {
-      await apiClient.post(`/users/${u.id}/reset-password`, { newPassword });
+      await apiClient.post(`/platform/users/${u.id}/reset-password`, { newPassword });
       toast.success(`Password reset for ${u.username}`);
     } catch (error) {
       toast.error(error.response?.data?.error || 'Failed to reset password');
@@ -300,12 +320,6 @@ const SuperAdminDashboard = () => {
     });
   };
 
-  // ────────────────────────────────────────────────────────────
-  // Trial status — INFORMATIONAL ONLY while developing.
-  // Currently just renders a colored badge (Xd left / expired).
-  // When enforcement is enabled, this same data will drive the
-  // trial banner in Layout.jsx and the 402 interceptor.
-  // ────────────────────────────────────────────────────────────
   const getTrialStatus = (h) => {
     if (h.plan !== 'trial' || !h.trialEndsAt) {
       return { label: h.plan, color: '#6b7280', bg: '#f3f4f6' };
@@ -418,6 +432,25 @@ const SuperAdminDashboard = () => {
                 title="Recreate role permissions for all hospitals using the canonical template"
               >
                 🔧 Fix Permissions
+              </button>
+
+              <button
+                onClick={handleBackfillStarterData}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: '#dbeafe',
+                  color: '#1e40af',
+                  border: '1px solid #93c5fd',
+                  padding: '10px 18px',
+                  borderRadius: '8px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+                title="Recreate clinics, wards, departments, services, and configs for all hospitals"
+              >
+                📦 Fix Starter Data
               </button>
             </>
           )}
@@ -562,12 +595,14 @@ const SuperAdminDashboard = () => {
                   <th>Status</th>
                   <th>Staff</th>
                   <th>Patients</th>
+                  <th title="Auto-advance PENDING_BILLING → BILLING_CLEARED after N minutes (empty = disabled)">⏱️ Auto-Advance</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {hospitals.map((h) => {
                   const trial = getTrialStatus(h);
+                  const autoAdvanceValue = h.Settings?.autoAdvanceBillingAfterMinutes ?? '';
                   return (
                     <tr key={h.id}>
                       <td>
@@ -614,6 +649,39 @@ const SuperAdminDashboard = () => {
                       <td>{h._count?.Staff || 0}</td>
                       <td>{h._count?.Patient || 0}</td>
                       <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <input
+                            type="number"
+                            min="1"
+                            max="1440"
+                            placeholder="Off"
+                            defaultValue={autoAdvanceValue}
+                            onBlur={(e) => {
+                              const newValue = e.target.value.trim();
+                              const currentValue = autoAdvanceValue === '' ? '' : String(autoAdvanceValue);
+                              if (newValue !== currentValue) {
+                                handleAutoAdvanceChange(h.id, newValue);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.target.blur();
+                              }
+                            }}
+                            style={{
+                              width: '70px',
+                              padding: '4px 8px',
+                              borderRadius: '6px',
+                              border: '1px solid #d1d5db',
+                              fontSize: '13px',
+                              textAlign: 'center',
+                            }}
+                            title="Minutes until auto-advance. Leave empty to disable."
+                          />
+                          <span style={{ fontSize: '11px', color: '#6b7280' }}>min</span>
+                        </div>
+                      </td>
+                      <td>
                         <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                           <a
                             href={`/h/${h.slug}/login`}
@@ -655,7 +723,7 @@ const SuperAdminDashboard = () => {
                 })}
                 {hospitals.length === 0 && (
                   <tr>
-                    <td colSpan="8" className="text-center">
+                    <td colSpan="9" className="text-center">
                       No hospitals registered yet.
                     </td>
                   </tr>
@@ -836,10 +904,7 @@ const SuperAdminDashboard = () => {
           ============================================================ */}
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div
-            className="modal-content"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>Create New Hospital (Quick Stub)</h3>
               <button className="modal-close" onClick={() => setShowModal(false)}>
@@ -860,9 +925,10 @@ const SuperAdminDashboard = () => {
                   }}
                 >
                   ⚠️ <strong>Quick Add</strong> creates the hospital record + the
-                  default 20 role permission matrix. It does NOT create an admin
-                  account. Use <strong>Register New Hospital</strong> for full
-                  onboarding (hospital + admin + starter data).
+                  default 20 role permission matrix + full starter data
+                  (clinics, wards, departments, services). It does NOT create
+                  an admin account. Use <strong>Register New Hospital</strong> for
+                  full onboarding (hospital + admin + starter data).
                 </div>
 
                 <div className="form-row">

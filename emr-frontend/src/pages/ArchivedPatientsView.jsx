@@ -6,6 +6,7 @@ import axios from 'axios';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
 import { Link } from 'react-router-dom';
+import api from '../api/client';
 
 const ArchivedPatientsView = () => {
   const { token, user } = useAuth();
@@ -35,15 +36,15 @@ const ArchivedPatientsView = () => {
   const fetchArchivedPatients = async () => {
     setLoading(true);
     try {
-      let endpoint = 'http://localhost:3000/api/patients/archived';
+      let endpoint = '/api/patients/archived';
       
       // Admin and Records get full access
       if (['Admin', 'Records'].includes(user?.role)) {
-        endpoint = 'http://localhost:3000/api/patients/archived';
+        endpoint = '/api/patients/archived';
         setIsViewOnly(false);
       } else {
         // For Doctors, Nurses, etc. use view-only endpoint
-        endpoint = 'http://localhost:3000/api/patients/archived-view';
+        endpoint = '/api/patients/archived-view';
         setIsViewOnly(true);
       }
       
@@ -87,12 +88,8 @@ const ArchivedPatientsView = () => {
   const fetchClinicsAndWards = async () => {
     try {
       const [clinicRes, wardRes] = await Promise.all([
-        axios.get('http://localhost:3000/api/clinics', {
-          headers: { Authorization: `Bearer ${token}` }
-        }),
-        axios.get('http://localhost:3000/api/wards', {
-          headers: { Authorization: `Bearer ${token}` }
-        })
+        api.get('/clinics'),
+        api.get('/wards')
       ]);
       setClinics(clinicRes.data || []);
       setWards(wardRes.data || []);
@@ -125,11 +122,8 @@ const ArchivedPatientsView = () => {
       
       console.log('📤 Reactivating patient:', selectedPatient.id, payload);
       
-      const res = await axios.post(
-        `http://localhost:3000/api/patients/${selectedPatient.id}/activate`,
-        payload,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const res = await api.post(`/patients/${selectedPatient.id}/activate`,
+        payload);
       
       toast.success(res.data.message || '✅ File reactivated successfully!');
       setShowReactivateModal(false);
@@ -153,11 +147,9 @@ const ArchivedPatientsView = () => {
     if (!reason) return;
 
     try {
-      await axios.post(`http://localhost:3000/api/patients/${patient.id}/request-reactivation`, {
+      await api.post(`/patients/${patient.id}/request-reactivation`, {
         reason: reason,
         requestedBy: user?.id
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
       });
       toast.success(`✅ Reactivation request sent for ${patient.firstName} ${patient.lastName}. Records department will review.`);
     } catch (error) {
@@ -171,11 +163,8 @@ const ArchivedPatientsView = () => {
     if (!window.confirm(`Unarchive ${patient.firstName} ${patient.lastName}? This will restore them to active patients.`)) return;
     
     try {
-      await axios.post(
-        `http://localhost:3000/api/patients/${patient.id}/unarchive`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.post(`/patients/${patient.id}/unarchive`,
+        {});
       toast.success(`${patient.firstName} ${patient.lastName} unarchived successfully!`);
       fetchArchivedPatients();
     } catch (error) {

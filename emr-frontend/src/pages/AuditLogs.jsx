@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import './Dashboard.css';
+import api from '../api/client';
 
 const AuditLogs = () => {
   const { token } = useAuth();
@@ -16,9 +17,7 @@ const AuditLogs = () => {
 
   const fetchLogs = async () => {
     try {
-      const res = await axios.get('http://localhost:3000/api/system/logs?limit=100', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/system/logs?limit=100');
       setLogs(res.data.data);
       setTotal(res.data.total);
     } catch (error) {

@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
+import api from '../api/client';
 
 const HREmployeeDetail = () => {
   const { id } = useParams();
@@ -16,9 +17,7 @@ const HREmployeeDetail = () => {
   useEffect(() => {
     const fetchEmployee = async () => {
       try {
-        const res = await axios.get(`http://localhost:3000/api/hr/employees/${id}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const res = await api.get(`/hr/employees/${id}`);
         setEmployee(res.data);
       } catch (error) {
         console.error('Fetch employee error:', error);

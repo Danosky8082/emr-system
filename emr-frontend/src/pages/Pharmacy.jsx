@@ -6,6 +6,7 @@ import axios from 'axios';
 import './Dashboard.css';
 import { useSearch } from '../components/Layout';
 import toast from 'react-hot-toast';
+import api from '../api/client';
 
 const Pharmacy = () => {
   const { token, user } = useAuth();
@@ -46,12 +47,8 @@ const Pharmacy = () => {
   const fetchMedications = async () => {
     try {
       const [medRes, nhisRes] = await Promise.all([
-        axios.get('http://localhost:3000/api/medications', {
-          headers: { Authorization: `Bearer ${token}` }
-        }),
-        axios.get('http://localhost:3000/api/pharmacy/nhis-prices', {
-          headers: { Authorization: `Bearer ${token}` }
-        }).catch(() => ({ data: [] }))
+        api.get('/medications'),
+        api.get('/pharmacy/nhis-prices').catch(() => ({ data: [] }))
       ]);
       
       setMedications(medRes.data);
@@ -108,15 +105,12 @@ const Pharmacy = () => {
 
     setUpdatingStock(true);
     try {
-      const response = await axios.patch(
-        `http://localhost:3000/api/medications/${selectedMedication.id}/stock`,
+      const response = await api.patch(`/medications/${selectedMedication.id}/stock`,
         {
           quantity: quantity,
           transactionType: stockForm.transactionType,
           note: stockForm.note || `${stockForm.transactionType} of ${quantity} units`
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+        });
       
       toast.success(`✅ ${stockForm.transactionType}: ${quantity} units processed! New stock: ${response.data.newStock}`);
       setShowStockModal(false);
@@ -150,14 +144,10 @@ const Pharmacy = () => {
           toast.error('Invalid medication ID');
           return;
         }
-        await axios.put(`http://localhost:3000/api/medications/${editing.id}`, payload, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        await api.put(`/medications/${editing.id}`, payload);
         toast.success('Medication updated successfully!');
       } else {
-        await axios.post('http://localhost:3000/api/medications', payload, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        await api.post('/medications', payload);
         toast.success('Medication added successfully!');
       }
       

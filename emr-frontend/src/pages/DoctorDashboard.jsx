@@ -5,6 +5,7 @@ import axios from 'axios';
 import { Link } from 'react-router-dom';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
+import api from '../api/client';
 
 const DoctorDashboard = () => {
   const { token } = useAuth();
@@ -29,7 +30,7 @@ const DoctorDashboard = () => {
 const fetchPatients = async () => {
   try {
     // Use different endpoints based on role
-    let endpoint = 'http://localhost:3000/api/doctor/patients';
+    let endpoint = '/api/doctor/patients';
     
     // Surgeons and Psychiatrists can also use this endpoint
     // Or they can use their own endpoints if created
@@ -57,11 +58,9 @@ const fetchPatients = async () => {
     e.preventDefault();
     if (!selectedPatient) return;
     try {
-      await axios.post('http://localhost:3000/api/vitals', {
+      await api.post('/vitals', {
         patientId: selectedPatient.id,
         ...vitalsForm
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
       });
       toast.success('Vitals recorded successfully!');
       setShowVitalModal(false);

@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
+import api from '../api/client';
 
 const PaediatricDashboard = () => {
   const { token, user } = useAuth();
@@ -40,9 +41,7 @@ const PaediatricDashboard = () => {
   const fetchPatients = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('http://localhost:3000/api/paediatric/patients', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/paediatric/patients');
       setPatients(res.data);
     } catch (error) {
       console.error('Fetch patients error:', error);
@@ -54,9 +53,7 @@ const PaediatricDashboard = () => {
 
   const fetchGrowthData = async (patientId) => {
     try {
-      const res = await axios.get(`http://localhost:3000/api/paediatric/growth/${patientId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get(`/paediatric/growth/${patientId}`);
       setGrowthData(res.data);
       setSelectedPatient(patients.find(p => p.id === patientId));
       setShowGrowthModal(true);
@@ -68,9 +65,7 @@ const PaediatricDashboard = () => {
 
   const fetchImmunizationSchedule = async (patientId) => {
     try {
-      const res = await axios.get(`http://localhost:3000/api/paediatric/immunizations/${patientId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get(`/paediatric/immunizations/${patientId}`);
       setImmunizationSchedule(res.data);
       setSelectedPatient(patients.find(p => p.id === patientId));
       setShowImmunizationModal(true);
@@ -83,9 +78,7 @@ const PaediatricDashboard = () => {
   const handleImmunizationSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:3000/api/immunizations', immunizationForm, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.post('/immunizations', immunizationForm);
       
       toast.success('Immunization recorded successfully!');
       setShowImmunizationModal(false);
@@ -110,9 +103,7 @@ const PaediatricDashboard = () => {
   const handleMilestoneSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:3000/api/paediatric/milestone', milestoneForm, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.post('/paediatric/milestone', milestoneForm);
       
       toast.success('Milestone recorded successfully!');
       setMilestoneForm({

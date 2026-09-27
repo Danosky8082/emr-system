@@ -7,6 +7,7 @@ import './Dashboard.css';
 import toast from 'react-hot-toast';
 import PatientCard from '../components/PatientCard';
 import { Link } from 'react-router-dom';
+import api from '../api/client';
 
 const PatientIntake = () => {
   const { token } = useAuth();
@@ -61,9 +62,7 @@ const PatientIntake = () => {
 
     setLoadingWallet(prev => ({ ...prev, [patientId]: true }));
     try {
-      const res = await axios.get(`http://localhost:3000/api/patients/${patientId}/wallet`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get(`/patients/${patientId}/wallet`);
       setWalletBalances(prev => ({ ...prev, [patientId]: res.data.balance || 0 }));
       return res.data.balance;
     } catch (error) {
@@ -85,6 +84,13 @@ const PatientIntake = () => {
     }
   };
 
+  // Small ticker to keep the countdown fresh when auto-advance is enabled
+const [, setTick] = useState(0);
+useEffect(() => {
+  const id = setInterval(() => setTick((t) => t + 1), 1000);
+  return () => clearInterval(id);
+}, []);
+
   // ✅ FETCH TODAY'S APPOINTMENTS
   const fetchTodayAppointments = async () => {
     try {
@@ -93,10 +99,7 @@ const PatientIntake = () => {
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
 
-      const res = await axios.get(
-        `http://localhost:3000/api/appointments?dateFrom=${today.toISOString()}&dateTo=${tomorrow.toISOString()}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const res = await api.get(`/appointments?dateFrom=${today.toISOString()}&dateTo=${tomorrow.toISOString()}`);
 
       // Only show Scheduled appointments
       const filtered = res.data.filter(a =>
@@ -114,15 +117,9 @@ const PatientIntake = () => {
     setLoading(true);
     try {
       const [journeyRes, clinicRes, wardRes] = await Promise.all([
-        axios.get('http://localhost:3000/api/patient-journeys', {
-          headers: { Authorization: `Bearer ${token}` }
-        }),
-        axios.get('http://localhost:3000/api/clinics', {
-          headers: { Authorization: `Bearer ${token}` }
-        }),
-        axios.get('http://localhost:3000/api/wards', {
-          headers: { Authorization: `Bearer ${token}` }
-        })
+        api.get('/patient-journeys'),
+        api.get('/clinics'),
+        api.get('/wards')
       ]);
 
       const journeysWithDetails = journeyRes.data.map((journey) => {
@@ -207,9 +204,7 @@ const PatientIntake = () => {
         wardId: newJourney.destinationType === 'WARD' ? newJourney.wardId : null
       };
 
-      await axios.post('http://localhost:3000/api/patient-journeys', payload, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.post('/patient-journeys', payload);
 
       toast.success('Patient intake started successfully!');
       setShowModal(false);
@@ -229,11 +224,8 @@ const PatientIntake = () => {
     try {
       console.log(`📤 Updating journey ${journeyId} to status: ${status}`);
       
-      const response = await axios.patch(
-        `http://localhost:3000/api/patient-journeys/${journeyId}/status`,
-        { status },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const response = await api.patch(`/patient-journeys/${journeyId}/status`,
+        { status });
       
       console.log('✅ Status update response:', response.data);
       toast.success(`Status updated to ${status.replace(/_/g, ' ')}`);
@@ -260,10 +252,8 @@ const PatientIntake = () => {
     }
 
     try {
-      await axios.patch(`http://localhost:3000/api/patient-journeys/${selectedJourney.id}/reverse`,
-        { reason: reverseReason },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.patch(`/patient-journeys/${selectedJourney.id}/reverse`,
+        { reason: reverseReason });
       toast.success('Journey reversed successfully!');
       setShowReverseModal(false);
       setReverseReason('');
@@ -284,10 +274,8 @@ const PatientIntake = () => {
     if (!reason) return;
 
     try {
-      await axios.patch(`http://localhost:3000/api/patient-journeys/${selectedJourney.id}/return-to-stage`,
-        { targetStatus: returnToStage, reason },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.patch(`/patient-journeys/${selectedJourney.id}/return-to-stage`,
+        { targetStatus: returnToStage, reason });
       toast.success(`Patient returned to ${returnToStage} successfully!`);
       setShowReturnModal(false);
       setReturnToStage('');
@@ -304,15 +292,12 @@ const PatientIntake = () => {
     if (!selectedJourney) return;
     
     try {
-      await axios.patch(
-        `http://localhost:3000/api/patient-journeys/${selectedJourney.id}`,
+      await api.patch(`/patient-journeys/${selectedJourney.id}`,
         {
           destinationType: destinationForm.destinationType,
           clinicId: destinationForm.destinationType === 'CLINIC' ? destinationForm.clinicId : null,
           wardId: destinationForm.destinationType === 'WARD' ? destinationForm.wardId : null
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+        });
       
       toast.success('Destination updated successfully!');
       setShowDestinationModal(false);
@@ -338,10 +323,8 @@ const PatientIntake = () => {
     const reason = prompt(`Reason for archiving ${patient.firstName} ${patient.lastName} (optional):`);
 
     try {
-      await axios.post(`http://localhost:3000/api/patients/${patient.id}/archive`,
-        { reason: reason || 'Manual archive' },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.post(`/patients/${patient.id}/archive`,
+        { reason: reason || 'Manual archive' });
       toast.success(`${patient.firstName} ${patient.lastName} archived successfully!`);
       setRefreshKey(prev => prev + 1);
     } catch (error) {
@@ -359,10 +342,8 @@ const PatientIntake = () => {
     if (!window.confirm(`Are you sure you want to unarchive ${patient.firstName} ${patient.lastName}?`)) return;
 
     try {
-      await axios.post(`http://localhost:3000/api/patients/${patient.id}/unarchive`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.post(`/patients/${patient.id}/unarchive`,
+        {});
       toast.success(`${patient.firstName} ${patient.lastName} unarchived successfully!`);
       setRefreshKey(prev => prev + 1);
     } catch (error) {
@@ -372,10 +353,8 @@ const PatientIntake = () => {
 
   const handleReprintCard = async (journey) => {
     try {
-      const res = await axios.post(`http://localhost:3000/api/patient-journeys/${journey.id}/reprint-card`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const res = await api.post(`/patient-journeys/${journey.id}/reprint-card`,
+        {});
       setCardPatient(res.data.patient);
       setShowCardModal(true);
       toast.success('Card reprint recorded');
@@ -523,16 +502,62 @@ const PatientIntake = () => {
               const hasAppt = hasAppointmentToday(patient?.id);
               const appt = getAppointmentForPatient(patient?.id);
 
-              // ✅ Define actions based on status
-              if (j.status === 'REGISTERED') {
-                action = { label: '💰 Send to Billing', status: 'PENDING_BILLING' };
-              } else if (j.status === 'BILLING_CLEARED') {
-                action = { label: '🖨️ Mark Card Printed', status: 'CARD_PRINTED' };
-              } else if (j.status === 'CARD_PRINTED') {
-                action = { label: '🚑 Send to Destination', status: 'SENT_TO_DESTINATION' };
-              } else if (j.status === 'SENT_TO_DESTINATION') {
-                action = { label: '🎉 Mark Completed', status: 'COMPLETED' };
-              }
+             // ✅ Define actions based on status
+// Records officer advances PENDING_BILLING → BILLING_CLEARED only
+// after the Billing Officer has marked the bill as Paid.
+if (j.status === 'REGISTERED') {
+  action = { label: '💰 Send to Billing', status: 'PENDING_BILLING' };
+} else if (j.status === 'PENDING_BILLING') {
+  const billIsPaid = j.billingRecord?.status === 'Paid';
+
+  if (billIsPaid) {
+    // ✅ Compute countdown if auto-advance is enabled for this tenant
+    const paymentTime = j.billingRecord?.paymentDate
+      ? new Date(j.billingRecord.paymentDate)
+      : null;
+    const autoAdvanceMinutes = j.autoAdvanceBillingAfterMinutes || null;
+    let secondsLeft = null;
+
+    if (paymentTime && autoAdvanceMinutes) {
+      const deadline = paymentTime.getTime() + autoAdvanceMinutes * 60 * 1000;
+      secondsLeft = Math.max(0, Math.floor((deadline - Date.now()) / 1000));
+    }
+
+    // If auto-advance is active AND the deadline has passed, hide the
+    // button (the cron will handle it within 60 seconds).
+    if (secondsLeft !== null && secondsLeft <= 0) {
+      action = {
+        label: '⏳ Auto-advancing…',
+        status: null,
+        disabled: true,
+        variant: 'warning',
+      };
+    } else {
+      const countdownLabel = secondsLeft !== null
+        ? ` (auto in ${Math.floor(secondsLeft / 60)}m ${String(secondsLeft % 60).padStart(2, '0')}s)`
+        : '';
+
+      action = {
+        label: `✅ Billing Cleared${countdownLabel}`,
+        status: 'BILLING_CLEARED',
+        variant: 'success',
+      };
+    }
+  } else {
+    action = {
+      label: '⏳ Awaiting Payment',
+      status: null,
+      disabled: true,
+      variant: 'warning',
+    };
+  }
+} else if (j.status === 'BILLING_CLEARED') {
+  action = { label: '🖨️ Mark Card Printed', status: 'CARD_PRINTED' };
+} else if (j.status === 'CARD_PRINTED') {
+  action = { label: '🚑 Send to Destination', status: 'SENT_TO_DESTINATION' };
+} else if (j.status === 'SENT_TO_DESTINATION') {
+  action = { label: '🎉 Mark Completed', status: 'COMPLETED' };
+}
 
               const destinationName = j.destinationType === 'WARD'
                 ? j.ward?.name
@@ -789,177 +814,216 @@ const PatientIntake = () => {
 
                     {/* ✅ UPDATED ACTION BUTTON WITH DESTINATION VALIDATION */}
                     {action ? (
-                      action.status === 'PENDING_BILLING' ? (
-                        // ✅ Check if destination exists before allowing billing
-                        (() => {
-                          const hasDestination = j.destinationType === 'CLINIC' 
-                            ? j.clinicId 
-                            : j.destinationType === 'WARD' 
-                              ? j.wardId 
-                              : false;
-                          
-                          return hasDestination ? (
-                            <button
-                              className="btn btn-sm"
-                              style={{
-                                background: '#0f3460',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '4px',
-                                padding: '4px 10px',
-                                cursor: 'pointer',
-                                fontSize: '11px',
-                                fontWeight: '600',
-                                whiteSpace: 'nowrap'
-                              }}
-                              onClick={() => {
-                                console.log(`🔄 Updating journey ${j.id} to ${action.status}`);
-                                handleStatusUpdate(j.id, action.status);
-                              }}
-                            >
-                              {action.label}
-                            </button>
-                          ) : (
-                            <button
-                              className="btn btn-sm"
-                              style={{
-                                background: '#f59e0b',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '4px',
-                                padding: '4px 10px',
-                                cursor: 'pointer',
-                                fontSize: '11px',
-                                fontWeight: '600',
-                                whiteSpace: 'nowrap'
-                              }}
-                              onClick={() => {
-                                toast.error(
-                                  '⚠️ Please set a Clinic or Ward first before sending to billing.',
-                                  { duration: 5000 }
-                                );
-                                setShowDestinationModal(true);
-                                setSelectedJourney(j);
-                                setDestinationForm({
-                                  destinationType: j.destinationType || 'CLINIC',
-                                  clinicId: j.clinicId || '',
-                                  wardId: j.wardId || ''
-                                });
-                              }}
-                              title="Click to set destination"
-                            >
-                              ⚠️ Set Destination First
-                            </button>
-                          );
-                        })()
-                      ) : (
-                        <button
-                          className="btn btn-sm"
-                          style={{
-                            background: '#0f3460',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            padding: '4px 10px',
-                            cursor: 'pointer',
-                            fontSize: '11px',
-                            fontWeight: '600',
-                            whiteSpace: 'nowrap'
-                          }}
-                          onClick={() => {
-                            console.log(`🔄 Updating journey ${j.id} to ${action.status}`);
-                            handleStatusUpdate(j.id, action.status);
-                          }}
-                        >
-                          {action.label}
-                        </button>
-                      )
-                    ) : (
-                      <span style={{ opacity: 0.6, fontSize: '12px', color: '#6b7280' }}>End of process</span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-            {journeys.length === 0 && <tr><td colSpan="8" className="text-center">No active patient intakes. Start a new one!</td></tr>}
-          </tbody>
-        </table>
+  /* ────────────────────────────────────────────────────────────
+     DISABLED state — e.g. "Awaiting Payment"
+     ──────────────────────────────────────────────────────────── */
+  action.disabled || !action.status ? (
+    <button
+      className="btn btn-sm"
+      disabled
+      title="The Billing Officer must mark the bill as Paid before you can advance"
+      style={{
+        background: action.variant === 'warning' ? '#f59e0b' : '#9ca3af',
+        color: 'white',
+        border: 'none',
+        borderRadius: '4px',
+        padding: '4px 10px',
+        cursor: 'not-allowed',
+        fontSize: '11px',
+        fontWeight: '600',
+        whiteSpace: 'nowrap',
+        opacity: 0.75,
+      }}
+    >
+      {action.label}
+    </button>
+  ) : action.status === 'PENDING_BILLING' ? (
+    /* ────────────────────────────────────────────────────────────
+       REGISTERED → PENDING_BILLING
+       Requires a Clinic or Ward destination to be set first.
+       ──────────────────────────────────────────────────────────── */
+    (() => {
+      const hasDestination =
+        j.destinationType === 'CLINIC'
+          ? j.clinicId
+          : j.destinationType === 'WARD'
+            ? j.wardId
+            : false;
+
+      return hasDestination ? (
+        <button
+          className="btn btn-sm"
+          style={{
+            background: '#0f3460',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            padding: '4px 10px',
+            cursor: 'pointer',
+            fontSize: '11px',
+            fontWeight: '600',
+            whiteSpace: 'nowrap',
+          }}
+          onClick={() => {
+            console.log(`🔄 Updating journey ${j.id} to ${action.status}`);
+            handleStatusUpdate(j.id, action.status);
+          }}
+        >
+          {action.label}
+        </button>
+      ) : (
+        <button
+          className="btn btn-sm"
+          style={{
+            background: '#f59e0b',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            padding: '4px 10px',
+            cursor: 'pointer',
+            fontSize: '11px',
+            fontWeight: '600',
+            whiteSpace: 'nowrap',
+          }}
+          onClick={() => {
+            toast.error(
+              '⚠️ Please set a Clinic or Ward first before sending to billing.',
+              { duration: 5000 }
+            );
+            setShowDestinationModal(true);
+            setSelectedJourney(j);
+            setDestinationForm({
+              destinationType: j.destinationType || 'CLINIC',
+              clinicId: j.clinicId || '',
+              wardId: j.wardId || '',
+            });
+          }}
+          title="Click to set destination"
+        >
+          ⚠️ Set Destination First
+        </button>
+      );
+    })()
+  ) : (
+    /* ────────────────────────────────────────────────────────────
+       Standard transitions — success uses green, others use blue
+       ──────────────────────────────────────────────────────────── */
+    <button
+      className="btn btn-sm"
+      style={{
+        background: action.variant === 'success' ? '#10b981' : '#0f3460',
+        color: 'white',
+        border: 'none',
+        borderRadius: '4px',
+        padding: '4px 10px',
+        cursor: 'pointer',
+        fontSize: '11px',
+        fontWeight: '600',
+        whiteSpace: 'nowrap',
+      }}
+      onClick={() => {
+        console.log(`🔄 Updating journey ${j.id} to ${action.status}`);
+        handleStatusUpdate(j.id, action.status);
+      }}
+    >
+      {action.label}
+    </button>
+  )
+) : (
+  <span style={{ opacity: 0.6, fontSize: '12px', color: '#6b7280' }}>
+    End of process
+  </span>
+)}
+          </td>
+        </tr>
+      );
+    })}
+    {journeys.length === 0 && (
+      <tr>
+        <td colSpan="8" className="text-center">
+          No active patient intakes. Start a new one!
+        </td>
+      </tr>
+    )}
+  </tbody>
+</table>
+</div>
+
+{/* Reverse Modal */}
+{showReverseModal && selectedJourney && (
+  <div className="modal-overlay" onClick={() => setShowReverseModal(false)}>
+    <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+      <div className="modal-header">
+        <h3>↩️ Reverse Journey</h3>
+        <button className="modal-close" onClick={() => setShowReverseModal(false)}>×</button>
       </div>
+      <div className="modal-body">
+        <p><strong>Patient:</strong> {selectedJourney.patient?.firstName} {selectedJourney.patient?.lastName}</p>
+        <p><strong>Current Status:</strong> {getStatusLabel(selectedJourney.status)}</p>
+        <p><strong>Destination:</strong> {selectedJourney.clinic?.name || selectedJourney.ward?.name || 'N/A'}</p>
 
-      {/* Reverse Modal */}
-      {showReverseModal && selectedJourney && (
-        <div className="modal-overlay" onClick={() => setShowReverseModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
-            <div className="modal-header">
-              <h3>↩️ Reverse Journey</h3>
-              <button className="modal-close" onClick={() => setShowReverseModal(false)}>×</button>
-            </div>
-            <div className="modal-body">
-              <p><strong>Patient:</strong> {selectedJourney.patient?.firstName} {selectedJourney.patient?.lastName}</p>
-              <p><strong>Current Status:</strong> {getStatusLabel(selectedJourney.status)}</p>
-              <p><strong>Destination:</strong> {selectedJourney.clinic?.name || selectedJourney.ward?.name || 'N/A'}</p>
-
-              <div className="form-group">
-                <label>Reason for Reversing <span style={{ color: 'red' }}>*</span></label>
-                <textarea
-                  value={reverseReason}
-                  onChange={(e) => setReverseReason(e.target.value)}
-                  className="form-control"
-                  rows="3"
-                  placeholder="Please explain why this journey needs to be reversed..."
-                  required
-                />
-                <small style={{ color: '#ef4444' }}>
-                  ⚠️ This will undo the completion and move the patient back to SENT_TO_DESTINATION.
-                </small>
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setShowReverseModal(false)}>Cancel</button>
-              <button className="btn btn-danger" onClick={handleReverseJourney}>Confirm Reverse</button>
-            </div>
-          </div>
+        <div className="form-group">
+          <label>Reason for Reversing <span style={{ color: 'red' }}>*</span></label>
+          <textarea
+            value={reverseReason}
+            onChange={(e) => setReverseReason(e.target.value)}
+            className="form-control"
+            rows="3"
+            placeholder="Please explain why this journey needs to be reversed..."
+            required
+          />
+          <small style={{ color: '#ef4444' }}>
+            ⚠️ This will undo the completion and move the patient back to SENT_TO_DESTINATION.
+          </small>
         </div>
-      )}
+      </div>
+      <div className="modal-footer">
+        <button className="btn btn-secondary" onClick={() => setShowReverseModal(false)}>Cancel</button>
+        <button className="btn btn-danger" onClick={handleReverseJourney}>Confirm Reverse</button>
+      </div>
+    </div>
+  </div>
+)}
 
-      {/* Return to Stage Modal */}
-      {showReturnModal && selectedJourney && (
-        <div className="modal-overlay" onClick={() => setShowReturnModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
-            <div className="modal-header">
-              <h3>🔄 Return to Previous Stage</h3>
-              <button className="modal-close" onClick={() => setShowReturnModal(false)}>×</button>
-            </div>
-            <div className="modal-body">
-              <p><strong>Patient:</strong> {selectedJourney.patient?.firstName} {selectedJourney.patient?.lastName}</p>
-              <p><strong>Current Status:</strong> {getStatusLabel(selectedJourney.status)}</p>
+{/* Return to Stage Modal */}
+{showReturnModal && selectedJourney && (
+  <div className="modal-overlay" onClick={() => setShowReturnModal(false)}>
+    <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+      <div className="modal-header">
+        <h3>🔄 Return to Previous Stage</h3>
+        <button className="modal-close" onClick={() => setShowReturnModal(false)}>×</button>
+      </div>
+      <div className="modal-body">
+        <p><strong>Patient:</strong> {selectedJourney.patient?.firstName} {selectedJourney.patient?.lastName}</p>
+        <p><strong>Current Status:</strong> {getStatusLabel(selectedJourney.status)}</p>
 
-              <div className="form-group">
-                <label>Return to Stage <span style={{ color: 'red' }}>*</span></label>
-                <select
-                  value={returnToStage}
-                  onChange={(e) => setReturnToStage(e.target.value)}
-                  className="form-control"
-                  required
-                >
-                  <option value="">Select a stage...</option>
-                  {getAvailableStages(selectedJourney.status).map(stage => (
-                    <option key={stage} value={stage}>{getStatusLabel(stage)}</option>
-                  ))}
-                </select>
-                <small style={{ color: '#ef4444' }}>
-                  ⚠️ This will move the patient backward in the pipeline. Some data may be cleared.
-                </small>
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setShowReturnModal(false)}>Cancel</button>
-              <button className="btn btn-warning" onClick={handleReturnToStage}>Confirm Return</button>
-            </div>
-          </div>
+        <div className="form-group">
+          <label>Return to Stage <span style={{ color: 'red' }}>*</span></label>
+          <select
+            value={returnToStage}
+            onChange={(e) => setReturnToStage(e.target.value)}
+            className="form-control"
+            required
+          >
+            <option value="">Select a stage...</option>
+            {getAvailableStages(selectedJourney.status).map((stage) => (
+              <option key={stage} value={stage}>
+                {getStatusLabel(stage)}
+              </option>
+            ))}
+          </select>
+          <small style={{ color: '#ef4444' }}>
+            ⚠️ This will move the patient backward in the pipeline. Some data may be cleared.
+          </small>
         </div>
-      )}
-
+      </div>
+      <div className="modal-footer">
+        <button className="btn btn-secondary" onClick={() => setShowReturnModal(false)}>Cancel</button>
+        <button className="btn btn-warning" onClick={handleReturnToStage}>Confirm Return</button>
+      </div>
+    </div>
+  </div>
+)}
       {/* ✅ DESTINATION MODAL */}
       {showDestinationModal && selectedJourney && (
         <div className="modal-overlay" onClick={() => setShowDestinationModal(false)}>

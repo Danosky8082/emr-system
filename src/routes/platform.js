@@ -9,14 +9,31 @@ const { prisma } = require('../prisma-client');
 const { createDefaultRolePermissions } = require('../permission-templates');
 const { createDefaultHospitalData } = require('../hospital-templates');
 
-const JWT_SECRET = process.env.JWT_SECRET;
-const SALT_ROUNDS = 10;
+// ============================================================
+// JWT SECRET
+// ============================================================
+//
+// This file is loaded AFTER server.js (via require), so server.js
+// has already validated that JWT_SECRET exists in production.
+// We still do a defensive check here in case platform.js is ever
+// loaded in isolation (e.g. by a test runner).
+//
+const DEV_FALLBACK_SECRET = 'dev-only-secret-not-for-production-use-0000';
 
-// Sanity check
+let JWT_SECRET = process.env.JWT_SECRET;
+
 if (!JWT_SECRET) {
-  console.warn('⚠️  [platform] JWT_SECRET is not set — using insecure fallback!');
+  if (process.env.NODE_ENV === 'production') {
+    // server.js already exits in this case, so we shouldn't get here.
+    // But if we do (e.g. loaded standalone), fail loudly.
+    throw new Error('JWT_SECRET is required in production');
+  }
+  console.warn('⚠️  [platform] JWT_SECRET not set — using dev fallback.');
+  JWT_SECRET = DEV_FALLBACK_SECRET;
 }
-const EFFECTIVE_JWT_SECRET = JWT_SECRET || 'your-super-secret-jwt-key-change-this-in-production';
+
+const SALT_ROUNDS = 10;
+const EFFECTIVE_JWT_SECRET = JWT_SECRET;
 
 // ============================================================
 // AUTH MIDDLEWARE
@@ -44,7 +61,7 @@ const authenticatePlatform = (req, res, next) => {
   }
 };
 
-// Admin-only guard (for user management + backfill)
+// Admin-only guard (for user management + backfill + settings)
 const requirePlatformAdmin = (req, res, next) => {
   if (req.platformUser?.role !== 'PlatformAdmin') {
     return res.status(403).json({ error: 'Only PlatformAdmin can perform this action' });
@@ -138,6 +155,11 @@ router.get('/hospitals', authenticatePlatform, async (req, res) => {
     const hospitals = await prisma.hospital.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
+        Settings: {
+          select: {
+            autoAdvanceBillingAfterMinutes: true,
+          },
+        },
         _count: {
           select: {
             Staff: true,
@@ -199,7 +221,7 @@ router.post('/hospitals', authenticatePlatform, requirePlatformAdmin, async (req
       // 3) Full 20-role permission matrix
       const rolesCreated = await createDefaultRolePermissions(tx, hospital.id);
 
-      // 4) ✅ KEY — Default clinics, wards, departments, services, configs
+      // 4) ✅ Default clinics, wards, departments, services, configs
       const starterData = await createDefaultHospitalData(tx, hospital.id);
 
       return { hospital, rolesCreated, starterData };
@@ -272,10 +294,59 @@ router.patch('/hospitals/:id/reactivate', authenticatePlatform, requirePlatformA
 });
 
 // ============================================================
+// PATCH /api/platform/hospitals/:id/settings
+// Update per-hospital settings (currently only the auto-advance
+// timeout; extend as more settings become configurable).
+// ============================================================
+router.patch(
+  '/hospitals/:id/settings',
+  authenticatePlatform,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const { autoAdvanceBillingAfterMinutes } = req.body;
+
+      // Validate: undefined (leave unchanged) OR null (disable) OR positive int (1–1440)
+      let normalizedValue = undefined;
+      if (autoAdvanceBillingAfterMinutes !== undefined) {
+        if (autoAdvanceBillingAfterMinutes === null || autoAdvanceBillingAfterMinutes === '') {
+          normalizedValue = null;
+        } else {
+          const n = parseInt(autoAdvanceBillingAfterMinutes, 10);
+          if (isNaN(n) || n < 1 || n > 1440) {
+            return res.status(400).json({
+              error: 'autoAdvanceBillingAfterMinutes must be null (disabled) or 1–1440 (minutes)',
+            });
+          }
+          normalizedValue = n;
+        }
+      }
+
+      const updated = await prisma.hospitalSettings.update({
+        where: { tenantId: req.params.id },
+        data: {
+          autoAdvanceBillingAfterMinutes: normalizedValue,
+          updatedAt: new Date(),
+        },
+      });
+
+      res.json(updated);
+    } catch (err) {
+      if (err.code === 'P2025') {
+        return res.status(404).json({ error: 'Hospital settings not found' });
+      }
+      console.error('❌ Update hospital settings error:', err);
+      res.status(500).json({
+        error: 'Failed to update settings',
+        details: err.message,
+      });
+    }
+  }
+);
+
+// ============================================================
 // POST /api/platform/backfill-permissions
 // Recreates the canonical 20-role permission matrix for every hospital.
-// Use this once after updating the permission template, or if any
-// hospital's permissions look broken.
 // ============================================================
 router.post('/backfill-permissions', authenticatePlatform, requirePlatformAdmin, async (req, res) => {
   try {
@@ -286,10 +357,8 @@ router.post('/backfill-permissions', authenticatePlatform, requirePlatformAdmin,
     const results = [];
 
     for (const h of hospitals) {
-      // 1) Wipe existing permissions for this hospital
       await prisma.rolePermission.deleteMany({ where: { tenantId: h.id } });
 
-      // 2) Recreate using the shared helper inside a transaction
       const created = await prisma.$transaction(async (tx) => {
         return await createDefaultRolePermissions(tx, h.id);
       });
@@ -314,8 +383,6 @@ router.post('/backfill-permissions', authenticatePlatform, requirePlatformAdmin,
 // ============================================================
 // POST /api/platform/backfill-starter-data
 // Recreates clinics/wards/departments/services/configs for every hospital.
-// Use this once after updating hospital-templates.js, or if any
-// hospital is missing its starter data.
 // ============================================================
 router.post('/backfill-starter-data', authenticatePlatform, requirePlatformAdmin, async (req, res) => {
   try {
@@ -326,7 +393,6 @@ router.post('/backfill-starter-data', authenticatePlatform, requirePlatformAdmin
     const results = [];
 
     for (const h of hospitals) {
-      // Wipe existing starter data for idempotent reseed
       await prisma.clinic.deleteMany({ where: { tenantId: h.id } });
       await prisma.ward.deleteMany({ where: { tenantId: h.id } });
       await prisma.department.deleteMany({ where: { tenantId: h.id } });
@@ -340,7 +406,7 @@ router.post('/backfill-starter-data', authenticatePlatform, requirePlatformAdmin
       results.push({
         hospital: h.name,
         tenantId: h.id,
-        ...created, // clinics, wards, departments, services, configs
+        ...created,
       });
     }
 
@@ -355,7 +421,7 @@ router.post('/backfill-starter-data', authenticatePlatform, requirePlatformAdmin
 });
 
 // ============================================================
-// GET /api/platform/users — list platform users
+// GET /api/platform/users
 // ============================================================
 router.get('/users', authenticatePlatform, requirePlatformAdmin, async (req, res) => {
   try {
@@ -375,7 +441,7 @@ router.get('/users', authenticatePlatform, requirePlatformAdmin, async (req, res
 });
 
 // ============================================================
-// POST /api/platform/users — create platform user
+// POST /api/platform/users
 // ============================================================
 router.post('/users', authenticatePlatform, requirePlatformAdmin, async (req, res) => {
   try {
@@ -434,7 +500,7 @@ router.post('/users', authenticatePlatform, requirePlatformAdmin, async (req, re
 });
 
 // ============================================================
-// PATCH /api/platform/users/:id — update role / active status
+// PATCH /api/platform/users/:id
 // ============================================================
 router.patch('/users/:id', authenticatePlatform, requirePlatformAdmin, async (req, res) => {
   try {
@@ -511,7 +577,7 @@ router.post('/users/:id/reset-password', authenticatePlatform, requirePlatformAd
 });
 
 // ============================================================
-// DELETE /api/platform/users/:id — remove a platform user
+// DELETE /api/platform/users/:id
 // ============================================================
 router.delete('/users/:id', authenticatePlatform, requirePlatformAdmin, async (req, res) => {
   try {

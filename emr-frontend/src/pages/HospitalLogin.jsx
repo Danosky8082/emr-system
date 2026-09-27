@@ -6,6 +6,7 @@ import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { useTenant } from '../context/TenantContext';
 import './Login.css';
+import api from '../api/client';
 
 const HospitalLogin = () => {
   const { hospitalSlug } = useParams();
@@ -24,8 +25,7 @@ const HospitalLogin = () => {
   useEffect(() => {
     const fetchHospital = async () => {
       try {
-        const res = await axios.get(
-          `http://localhost:3000/api/hospitals/slug/${hospitalSlug}`
+        const res = await api.get(`/hospitals/slug/${hospitalSlug}`
         );
         setHospital(res.data);
       } catch (error) {
@@ -50,8 +50,7 @@ const HospitalLogin = () => {
         ? { email: trimmedIdentifier, password, hospitalSlug }
         : { username: trimmedIdentifier.toLowerCase(), password, hospitalSlug };
 
-      const response = await axios.post(
-        'http://localhost:3000/api/auth/login',
+      const response = await api.post('/auth/login',
         payload,
         { headers: { 'Content-Type': 'application/json' } }
       );

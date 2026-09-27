@@ -6,6 +6,7 @@ import axios from 'axios';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
 import { Link } from 'react-router-dom';
+import api from '../api/client';
 
 const ModulePatientList = ({ moduleType }) => {
   const { token, user } = useAuth();
@@ -29,10 +30,7 @@ const ModulePatientList = ({ moduleType }) => {
   const fetchPatients = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(
-        `http://localhost:3000/api/module/${moduleType}/patients`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const res = await api.get(`/module/${moduleType}/patients`);
       setPatients(res.data.patients || []);
       setStats({
         total: res.data.total || 0,

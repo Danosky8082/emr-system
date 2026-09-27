@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
+import api from '../api/client';
 
 const LabOrders = () => {
   const { token, user } = useAuth();
@@ -56,9 +57,7 @@ const LabOrders = () => {
   // Fetch lab orders
   const fetchLabOrders = async () => {
     try {
-      const res = await axios.get('http://localhost:3000/api/lab-orders', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/lab-orders');
       setLabOrders(res.data);
     } catch (error) {
       console.error('Error fetching lab orders:', error);
@@ -69,9 +68,7 @@ const LabOrders = () => {
   // Fetch patients
   const fetchPatients = async () => {
     try {
-      const res = await axios.get('http://localhost:3000/api/patients', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/patients');
       setPatients(res.data);
     } catch (error) {
       console.error('Error fetching patients:', error);
@@ -85,9 +82,7 @@ const LabOrders = () => {
   try {
     // ✅ Use /api/services instead of /api/pricing
     // This endpoint is available to LabTechnician and LabScientist
-    const res = await axios.get('http://localhost:3000/api/services?isActive=true', {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    const res = await api.get('/services?isActive=true');
     
     const priceMap = {};
     const catSet = new Set();
@@ -134,9 +129,7 @@ const LabOrders = () => {
   // Fetch wallet balance
   const fetchWalletBalance = async (patientId) => {
     try {
-      const res = await axios.get(`http://localhost:3000/api/patients/${patientId}/wallet`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get(`/patients/${patientId}/wallet`);
       setWalletBalance(res.data.balance || 0);
       return res.data.balance;
     } catch (error) {
@@ -220,13 +213,11 @@ const LabOrders = () => {
     setProcessingPayment(true);
 
     try {
-      const checkRes = await axios.post('http://localhost:3000/api/wallet/check-service', {
+      const checkRes = await api.post('/wallet/check-service', {
         patientId: formData.patientId,
         amount: labCost,
         serviceName: formData.testName,
         serviceType: 'lab'
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
       });
 
       let paymentMethod = 'wallet';
@@ -251,7 +242,7 @@ const LabOrders = () => {
         paymentMethod = 'cash';
       }
 
-      await axios.post('http://localhost:3000/api/wallet/process-service', {
+      await api.post('/wallet/process-service', {
         patientId: formData.patientId,
         amount: labCost,
         description: `Lab: ${formData.testName}`,
@@ -259,11 +250,9 @@ const LabOrders = () => {
         serviceType: 'lab',
         paymentMethod: paymentMethod,
         serviceId: servicePrices[formData.testName.toLowerCase()]?.id || null
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
       });
 
-      await axios.post('http://localhost:3000/api/lab-orders', {
+      await api.post('/lab-orders', {
         patientId: formData.patientId,
         testName: formData.testName,
         testType: formData.testType,
@@ -271,8 +260,6 @@ const LabOrders = () => {
         notes: formData.notes || '',
         price: labCost,
         patientCategory: patientCategory
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
       });
 
       toast.success('✅ Lab order created successfully!');
@@ -302,10 +289,8 @@ const LabOrders = () => {
   const handleUpdateStatus = async (orderId, status) => {
     setUpdatingStatus(true);
     try {
-      await axios.patch(`http://localhost:3000/api/lab-orders/${orderId}/status`, 
-        { status },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.patch(`/lab-orders/${orderId}/status`, 
+        { status });
       toast.success(`Order status updated to ${status}`);
       fetchLabOrders();
     } catch (error) {
@@ -322,13 +307,11 @@ const LabOrders = () => {
     if (!selectedLabOrder) return;
     
     try {
-      await axios.patch(`http://localhost:3000/api/lab-orders/${selectedLabOrder.id}/results`,
+      await api.patch(`/lab-orders/${selectedLabOrder.id}/results`,
         { 
           result: resultForm.result,
           status: resultForm.status || 'Completed'
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+        });
       toast.success('Results submitted successfully!');
       setShowResultModal(false);
       setResultForm({ result: '', status: 'Completed' });
@@ -344,10 +327,8 @@ const LabOrders = () => {
   const handleValidateResult = async (orderId) => {
     setValidating(true);
     try {
-      await axios.patch(`http://localhost:3000/api/lab-orders/${orderId}/validate`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.patch(`/lab-orders/${orderId}/validate`,
+        {});
       toast.success('✅ Lab result validated successfully!');
       fetchLabOrders();
     } catch (error) {

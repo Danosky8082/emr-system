@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import api from '../api/client';
 
 const LeaveEntitlement = () => {
   const { token, user } = useAuth();
@@ -42,12 +43,8 @@ const LeaveEntitlement = () => {
     setLoading(true);
     try {
       const [entitlementRes, policyRes] = await Promise.all([
-        axios.get(`http://localhost:3000/api/hr/leave-entitlement?year=${selectedYear}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        }),
-        axios.get('http://localhost:3000/api/hr/leave-policy', {
-          headers: { Authorization: `Bearer ${token}` }
-        })
+        api.get(`/hr/leave-entitlement?year=${selectedYear}`),
+        api.get('/hr/leave-policy')
       ]);
       setEntitlements(entitlementRes.data);
       setPolicy(policyRes.data);
@@ -73,9 +70,7 @@ const LeaveEntitlement = () => {
   const handleBulkCreate = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:3000/api/hr/leave-entitlement/bulk', bulkData, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.post('/hr/leave-entitlement/bulk', bulkData);
       toast.success('Bulk leave entitlements created successfully!');
       setShowBulkModal(false);
       fetchData();
@@ -88,9 +83,7 @@ const LeaveEntitlement = () => {
   const handleUpdatePolicy = async (e) => {
     e.preventDefault();
     try {
-      await axios.put('http://localhost:3000/api/hr/leave-policy', policyData, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.put('/hr/leave-policy', policyData);
       toast.success('Leave policy updated successfully!');
       setShowPolicyModal(false);
       fetchData();

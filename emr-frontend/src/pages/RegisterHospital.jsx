@@ -4,6 +4,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import './Login.css';
+import api from '../api/client';
 
 const RegisterHospital = () => {
   const navigate = useNavigate();
@@ -39,8 +40,7 @@ const RegisterHospital = () => {
   e.preventDefault();
   setLoading(true);
   try {
-    const res = await axios.post(
-      'http://localhost:3000/api/public/register-hospital',
+    const res = await api.post('/public/register-hospital',
       formData
     );
 

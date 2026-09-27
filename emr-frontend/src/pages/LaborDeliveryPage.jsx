@@ -6,6 +6,7 @@ import axios from 'axios';
 import { useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import './Dashboard.css';
+import api from '../api/client';
 
 const LaborDeliveryPage = () => {
   const { token, user } = useAuth();
@@ -66,9 +67,7 @@ const LaborDeliveryPage = () => {
   const fetchPregnancies = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('http://localhost:3000/api/pregnancies', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/pregnancies');
       setPregnancies(res.data);
     } catch (error) {
       console.error('Fetch pregnancies error:', error);
@@ -80,10 +79,7 @@ const LaborDeliveryPage = () => {
 
   const fetchLaborStatus = async (pregnancyId) => {
     try {
-      const res = await axios.get(
-        `http://localhost:3000/api/pregnancies/${pregnancyId}/labor-status`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const res = await api.get(`/pregnancies/${pregnancyId}/labor-status`);
       setLaborStatus(res.data);
     } catch (error) {
       console.error('Error fetching labor status:', error);
@@ -99,11 +95,8 @@ const LaborDeliveryPage = () => {
     if (!selectedPregnancy) return;
     
     try {
-      const response = await axios.post(
-        `http://localhost:3000/api/pregnancies/${selectedPregnancy.id}/start-labor`,
-        laborForm,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const response = await api.post(`/pregnancies/${selectedPregnancy.id}/start-labor`,
+        laborForm);
       
       toast.success(response.data.message || '✅ Labor started successfully!');
       setShowLaborModal(false);
@@ -119,14 +112,11 @@ const LaborDeliveryPage = () => {
     if (!selectedPregnancy) return;
     
     try {
-      const response = await axios.post(
-        'http://localhost:3000/api/deliveries',
+      const response = await api.post('/deliveries',
         {
           pregnancyId: selectedPregnancy.id,
           ...deliveryForm
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+        });
       
       toast.success(response.data.message || '✅ Delivery recorded successfully!');
       setShowDeliveryModal(false);

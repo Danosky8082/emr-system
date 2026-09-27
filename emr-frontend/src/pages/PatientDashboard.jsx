@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import './PatientDashboard.css';
+import api from '../api/client';
 
 const PatientDashboard = () => {
   const navigate = useNavigate();
@@ -42,9 +43,7 @@ const PatientDashboard = () => {
       const patientData = JSON.parse(localStorage.getItem('patient_data'));
       setPatient(patientData);
 
-      const res = await axios.get('http://localhost:3000/api/patient/dashboard', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/patient/dashboard');
       setDashboardData(res.data);
     } catch (error) {
       if (error.response?.status === 401) {
@@ -65,12 +64,8 @@ const PatientDashboard = () => {
     setWalletLoading(true);
     try {
       const [balanceRes, txRes] = await Promise.all([
-        axios.get('http://localhost:3000/api/patient/wallet', {
-          headers: { Authorization: `Bearer ${token}` }
-        }),
-        axios.get('http://localhost:3000/api/patient/wallet/transactions?limit=10', {
-          headers: { Authorization: `Bearer ${token}` }
-        })
+        api.get('/patient/wallet'),
+        api.get('/patient/wallet/transactions?limit=10')
       ]);
       setWalletBalance(balanceRes.data.balance || 0);
       setWalletTransactions(txRes.data.transactions || []);

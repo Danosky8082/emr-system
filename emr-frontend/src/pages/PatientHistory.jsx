@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
+import api from '../api/client';
 
 const PatientHistory = () => {
   const { token } = useAuth();
@@ -20,9 +21,7 @@ const PatientHistory = () => {
     setLoading(true);
     try {
       // Use the search endpoint
-      const res = await axios.get(`http://localhost:3000/api/patients/history?search=${encodeURIComponent(searchId)}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get(`/patients/history?search=${encodeURIComponent(searchId)}`);
       
       if (res.data.length === 0) {
         toast.error('No medical history found for this patient.');

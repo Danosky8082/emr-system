@@ -6,6 +6,7 @@ import axios from 'axios';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
 import { Link } from 'react-router-dom';
+import api from '../api/client';
 
 const PharmacyDashboard = () => {
   const { token, user } = useAuth();
@@ -31,9 +32,7 @@ const PharmacyDashboard = () => {
     setLoading(true);
     try {
       // Fetch medications for stock analysis
-      const medRes = await axios.get('http://localhost:3000/api/medications', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const medRes = await api.get('/medications');
 
       const medications = medRes.data || [];
       const lowStock = medications.filter(m => m.stockQuantity > 0 && m.stockQuantity <= m.reorderLevel);
@@ -42,9 +41,7 @@ const PharmacyDashboard = () => {
       setLowStockItems(lowStock);
 
       // Fetch dashboard stats
-      const res = await axios.get('http://localhost:3000/api/pharmacy/dashboard', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/pharmacy/dashboard');
       
       setStats({
         totalMedications: medications.length || 0,

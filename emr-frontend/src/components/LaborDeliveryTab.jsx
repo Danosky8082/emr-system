@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import api from '../api/client';
 
 const LaborDeliveryTab = ({ pregnancy, token, onUpdate }) => {
   const navigate = useNavigate();
@@ -64,10 +65,7 @@ const LaborDeliveryTab = ({ pregnancy, token, onUpdate }) => {
 
   const fetchLaborStatus = async () => {
     try {
-      const res = await axios.get(
-        `http://localhost:3000/api/pregnancies/${pregnancy.id}/labor-status`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const res = await api.get(`/pregnancies/${pregnancy.id}/labor-status`);
       setLaborStatus(res.data);
     } catch (error) {
       console.error('Error fetching labor status:', error);
@@ -89,11 +87,8 @@ const LaborDeliveryTab = ({ pregnancy, token, onUpdate }) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const response = await axios.post(
-        `http://localhost:3000/api/pregnancies/${pregnancy.id}/start-labor`,
-        laborForm,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const response = await api.post(`/pregnancies/${pregnancy.id}/start-labor`,
+        laborForm);
       
       toast.success(response.data.message || '✅ Labor started successfully!');
       setShowLaborModal(false);
@@ -110,11 +105,8 @@ const LaborDeliveryTab = ({ pregnancy, token, onUpdate }) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const response = await axios.patch(
-        `http://localhost:3000/api/pregnancies/${pregnancy.id}/labor-progress`,
-        progressForm,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const response = await api.patch(`/pregnancies/${pregnancy.id}/labor-progress`,
+        progressForm);
       
       toast.success('✅ Labor progress updated successfully!');
       setShowProgressModal(false);
@@ -131,14 +123,11 @@ const LaborDeliveryTab = ({ pregnancy, token, onUpdate }) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const response = await axios.post(
-        'http://localhost:3000/api/deliveries',
+      const response = await api.post('/deliveries',
         {
           pregnancyId: pregnancy.id,
           ...deliveryForm
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+        });
       
       toast.success(response.data.message || '✅ Delivery recorded successfully! Baby transferred to Paediatrics.');
       setShowDeliveryModal(false);

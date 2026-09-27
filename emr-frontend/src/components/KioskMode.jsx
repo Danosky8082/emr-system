@@ -5,6 +5,7 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import './KioskMode.css';
 import { useSearchParams } from 'react-router-dom';
+import api from '../api/client';
 
 const KioskMode = () => {
   const [searchParams] = useSearchParams();
@@ -47,8 +48,7 @@ const KioskMode = () => {
   // Fetch consultation fee
   const fetchConsultationFee = async () => {
   try {
-    const res = await axios.get(
-      `http://localhost:3000/api/services/config/CONSULTATION?tenantId=${tenantId}`
+    const res = await api.get(`/services/config/CONSULTATION?tenantId=${tenantId}`
     );
     setConsultationFee(res.data?.baseAmount || 5000);
   } catch (error) {
@@ -69,8 +69,7 @@ const KioskMode = () => {
 
     setLoading(true);
     try {
-      const res = await axios.get(
-  `http://localhost:3000/api/public/patient/search?query=${encodeURIComponent(inputValue)}&tenantId=${tenantId}`
+      const res = await api.get(`/public/patient/search?query=${encodeURIComponent(inputValue)}&tenantId=${tenantId}`
 );
 
       if (res.data.length === 0) {
@@ -112,10 +111,7 @@ const KioskMode = () => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const res = await axios.get(
-      `http://localhost:3000/api/appointments?patientId=${patientId}&dateFrom=${today.toISOString()}&dateTo=${tomorrow.toISOString()}`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
+    const res = await api.get(`/appointments?patientId=${patientId}&dateFrom=${today.toISOString()}&dateTo=${tomorrow.toISOString()}`);
 
     const todayAppointments = res.data.filter(a =>
       a.status !== 'Cancelled' &&
@@ -152,10 +148,7 @@ const KioskMode = () => {
         return;
       }
 
-      const walletRes = await axios.get(
-        `http://localhost:3000/api/patients/${patientId}/wallet`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const walletRes = await api.get(`/patients/${patientId}/wallet`);
       
       const balance = walletRes.data?.balance || 0;
       setWalletBalance(balance);
@@ -198,28 +191,22 @@ const KioskMode = () => {
       : `Consultation Fee - Walk-in`;
 
     // Process wallet payment
-    await axios.post(
-      `http://localhost:3000/api/patients/${patient.id}/wallet/pay`,
+    await api.post(`/patients/${patient.id}/wallet/pay`,
       {
         amount: fee,
         description,
         category: 'Consultation',
         serviceType: 'consultation',
         serviceId: appointment?.id || null   // ✅ optional chaining
-      },
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
+      });
 
     // Check-in patient
-    await axios.post(
-      'http://localhost:3000/api/patient/checkin',
+    await api.post('/patient/checkin',
       {
         patientId: patient.id,
         appointmentId: appointment?.id || null,   // ✅ optional chaining
         checkInMethod: 'self_kiosk'
-      },
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
+      });
 
     toast.success(`✅ ₦${fee.toLocaleString()} deducted from wallet. Check-in complete!`);
     setStep('success');

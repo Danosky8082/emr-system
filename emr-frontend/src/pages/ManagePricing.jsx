@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
+import api from '../api/client';
 
 const ManagePricing = () => {
   const { token } = useAuth();
@@ -25,9 +26,7 @@ const ManagePricing = () => {
   const fetchServices = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('http://localhost:3000/api/pricing', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/pricing');
       setServices(Array.isArray(res.data) ? res.data : res.data?.data || []);
     } catch (error) {
       console.error('Error fetching pricing:', error);
@@ -74,18 +73,12 @@ const ManagePricing = () => {
       };
 
       if (editingService) {
-        await axios.put(
-          `http://localhost:3000/api/pricing/${editingService.id}`,
-          payload,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
+        await api.put(`/pricing/${editingService.id}`,
+          payload);
         toast.success('Service updated successfully!');
       } else {
-        await axios.post(
-          'http://localhost:3000/api/pricing',
-          payload,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
+        await api.post('/pricing',
+          payload);
         toast.success('Service created successfully!');
       }
 
@@ -126,9 +119,7 @@ const ManagePricing = () => {
   const handleDelete = async (id) => {
     if (!window.confirm('Are you sure you want to delete this service?')) return;
     try {
-      await axios.delete(`http://localhost:3000/api/pricing/${id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.delete(`/pricing/${id}`);
       toast.success('Service deleted successfully');
       fetchServices();
     } catch (error) {
