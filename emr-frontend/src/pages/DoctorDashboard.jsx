@@ -30,7 +30,7 @@ const DoctorDashboard = () => {
 const fetchPatients = async () => {
   try {
     // Use different endpoints based on role
-    let endpoint = '/api/doctor/patients';
+    let endpoint = '/doctor/patients';
     
     // Surgeons and Psychiatrists can also use this endpoint
     // Or they can use their own endpoints if created

@@ -25,19 +25,17 @@ const ArchivedPatients = () => {
   const fetchArchivedPatients = async () => {
     setLoading(true);
     try {
-      let endpoint = '/api/patients/archived';
+      let endpoint = '/patients/archived';
       
       // If user is Doctor or Obstetrician, use view-only endpoint
       if (canViewOnly) {
-        endpoint = '/api/patients/archived-view';
+        endpoint = '/patients/archived-view';
         setIsViewOnly(true);
       } else {
         setIsViewOnly(false);
       }
       
-      const res = await axios.get(endpoint, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get(endpoint);
       
       const data = Array.isArray(res.data) ? res.data : res.data.data || [];
       setPatients(data);

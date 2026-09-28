@@ -41,19 +41,16 @@ const Patients = () => {
   const fetchPatients = useCallback(async () => {
     setLoading(true);
     try {
-      let url = '/api/patients';
+      let url = '/patients';
       
       // ✅ FIXED: Include Paediatrician in role checks
       if (['Nurse', 'Midwife'].includes(user?.role)) {
-        url = '/api/nurse/patients';
+        url = '/nurse/patients';
       } else if (['Doctor', 'Obstetrician', 'Paediatrician'].includes(user?.role)) {
-        url = '/api/doctor/patients';
+        url = '/doctor/patients';
       }
 
-      const res = await axios.get(url, { 
-        headers: { Authorization: `Bearer ${token}` },
-        params: { _t: Date.now() }
-      });
+      const res = await api.get(url, { params: { _t: Date.now() } });
 
       let patientsList = res.data;
       

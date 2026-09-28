@@ -78,12 +78,12 @@ const AntenatalDashboard = () => {
         let patientsData = [];
         
         try {
-          let url = '/api/patients';
+          let url = '/patients';
           
           if (user?.role === 'Midwife' || user?.role === 'Nurse') {
-            url = '/api/nurse/patients';
+            url = '/nurse/patients';
           } else if (user?.role === 'Doctor' || user?.role === 'Obstetrician') {
-            url = '/api/doctor/patients';
+            url = '/doctor/patients';
           }
           
           const patientRes = await axios.get(url, {

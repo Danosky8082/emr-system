@@ -36,15 +36,15 @@ const ArchivedPatientsView = () => {
   const fetchArchivedPatients = async () => {
     setLoading(true);
     try {
-      let endpoint = '/api/patients/archived';
+      let endpoint = '/patients/archived';
       
       // Admin and Records get full access
       if (['Admin', 'Records'].includes(user?.role)) {
-        endpoint = '/api/patients/archived';
+        endpoint = '/patients/archived';
         setIsViewOnly(false);
       } else {
         // For Doctors, Nurses, etc. use view-only endpoint
-        endpoint = '/api/patients/archived-view';
+        endpoint = '/patients/archived-view';
         setIsViewOnly(true);
       }
       

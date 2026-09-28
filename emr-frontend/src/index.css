@@ -61,15 +61,20 @@ html,
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 30px;
+    padding: 12px 24px;
     background: rgba(0, 0, 0, 0.4);
     backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     color: white;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    flex-wrap: nowrap;
+    gap: 12px;
     position: sticky;
     top: 0;
     z-index: 100;
+    isolation: isolate;
+    /* NOTE: no overflow-x — it would clip dropdown panels */
 }
 
 .nav-brand {
@@ -81,7 +86,6 @@ html,
     letter-spacing: 1px;
     color: #ffffff;
     flex-shrink: 0;
-    /* Prevent shrinking on small screens */
 }
 
 .nav-brand .unique-logo {
@@ -92,14 +96,22 @@ html,
 
 .nav-menu {
     display: flex;
-    gap: 6px;
+    gap: 4px;
     flex: 1;
     justify-content: center;
     flex-wrap: nowrap;
-    /* Keeps items on one line */
+    min-width: 0;
+    overflow: visible;
+    /* ← must be visible so dropdowns can escape */
 }
 
-/* --- DROPDOWN MENU STYLES (FIXED GAP & TRANSITIONS) --- */
+.nav-menu .nav-link,
+.nav-menu .nav-dropdown-header {
+    white-space: nowrap;
+    font-size: 0.9rem;
+    padding: 8px 10px;
+}
+
 .nav-dropdown {
     position: relative;
     display: inline-block;
@@ -108,10 +120,10 @@ html,
 .nav-dropdown-header {
     color: #ffffff;
     opacity: 0.75;
-    padding: 8px 14px;
+    padding: 8px 10px;
     border-radius: 6px;
     cursor: pointer;
-    font-size: 0.95rem;
+    font-size: 0.9rem;
     display: flex;
     align-items: center;
     gap: 4px;
@@ -119,6 +131,7 @@ html,
     background: transparent;
     border: none;
     font-family: inherit;
+    white-space: nowrap;
 }
 
 .nav-dropdown-header:hover {
@@ -131,49 +144,45 @@ html,
     color: #00d4ff;
 }
 
-/* --- 🔥 THE GAP FIX & SMOOTH TRANSITION --- */
+/* The dropdown panel — floating menu */
 .dropdown-content {
     position: absolute;
     top: 100%;
-    /* Starts directly below */
     left: 0;
-    min-width: 200px;
-    background: rgba(0, 0, 0, 0.85);
+    min-width: 220px;
+    background: rgba(0, 0, 0, 0.95);
     backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 8px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
     padding: 8px 0;
-
-    /* Hide it gracefully */
     opacity: 0;
     visibility: hidden;
     transform: translateY(10px);
-    transition: all 0.15s ease;
+    transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s;
     pointer-events: none;
-    /* Prevent accidental clicks */
-    z-index: 200;
+    z-index: 500;
+    /* ← above navbar (100), below modals */
 }
 
-/* Bridging the gap with a pseudo-element */
+/* Invisible bridge so hover doesn't break while moving to the panel */
 .nav-dropdown::after {
     content: '';
     position: absolute;
     top: 100%;
     left: 0;
     width: 100%;
-    height: 20px;
-    /* Bridges the space between header and menu */
+    height: 12px;
     pointer-events: auto;
-    /* Allows the mouse to travel across it */
 }
 
-.nav-dropdown:hover .dropdown-content {
+.nav-dropdown:hover .dropdown-content,
+.nav-dropdown:focus-within .dropdown-content {
     opacity: 1;
     visibility: visible;
     transform: translateY(0);
     pointer-events: auto;
-    /* Enable clicks when visible */
 }
 
 .dropdown-content .nav-link {
@@ -181,11 +190,12 @@ html,
     padding: 10px 20px;
     text-decoration: none;
     color: #ffffff;
-    opacity: 0.8;
+    opacity: 0.85;
     font-size: 0.9rem;
-    transition: all 0.2s;
+    transition: all 0.15s;
     background: transparent;
     border-radius: 0;
+    white-space: nowrap;
 }
 
 .dropdown-content .nav-link:hover {
@@ -194,36 +204,44 @@ html,
     color: #00d4ff;
 }
 
-/* ---------------------------------------------------- */
-
-/* --- STANDARD NAV LINK --- */
-.nav-link {
-    color: #ffffff;
-    opacity: 0.75;
-    text-decoration: none;
-    padding: 8px 14px;
-    border-radius: 6px;
-    transition: all 0.2s;
-    font-size: 0.95rem;
-}
-
-.nav-link:hover {
-    opacity: 1;
-    background: rgba(255, 255, 255, 0.1);
-}
-
-.nav-link.active {
-    opacity: 1;
-    color: #00d4ff;
-    background: rgba(0, 212, 255, 0.1);
-    font-weight: 500;
-}
-
 /* --- SEARCH BAR --- */
 .nav-search {
     display: flex;
     align-items: center;
-    margin: 0 20px;
+    margin: 0 12px;
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.nav-search input {
+    width: 200px;
+    padding: 8px 16px;
+    border-radius: 24px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: rgba(0, 0, 0, 0.3);
+    color: #ffffff;
+    outline: none;
+    transition: width 0.3s ease, background 0.3s ease;
+    font-size: 0.9rem;
+}
+
+.nav-search input::placeholder {
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.nav-search input:focus {
+    width: 240px;
+    background: white;
+    color: #1a1a2e;
+    border-color: #00d4ff;
+    box-shadow: 0 0 15px rgba(0, 212, 255, 0.4);
+}
+
+.nav-user {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: #ffffff;
     flex-shrink: 0;
 }
 
@@ -463,4 +481,145 @@ html,
 
 .modal-close-btn:hover {
     background: #d1d5db !important;
+}
+
+@media (max-width: 1400px) {
+    .nav-search {
+        display: none;
+        /* hide search on smaller screens */
+    }
+}
+
+@media (max-width: 1100px) {
+    .nav-user span:first-child {
+        display: none;
+        /* hide user's full name */
+    }
+
+    .nav-search {
+        display: none;
+    }
+}
+
+/* --- HAMBURGER BUTTON (hidden on desktop) --- */
+.nav-hamburger {
+    display: none;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white;
+    width: 42px;
+    height: 42px;
+    border-radius: 8px;
+    font-size: 20px;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.15s ease;
+    font-family: inherit;
+}
+
+.nav-hamburger:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+@media (max-width: 1299px) {
+    .nav-hamburger {
+        display: flex;
+    }
+
+    .nav-menu,
+    .nav-search {
+        display: none !important;
+    }
+
+    .navbar {
+        flex-wrap: nowrap;
+        padding: 10px 16px;
+        gap: 10px;
+    }
+
+    .nav-brand {
+        font-size: 1rem;
+        flex: 1;
+        min-width: 0;
+    }
+
+    .nav-brand span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .nav-user {
+        gap: 8px;
+    }
+
+    .nav-user>span:not(.role-badge) {
+        display: none;
+    }
+
+    .main-content {
+        padding: 16px;
+    }
+}
+    /* The .nav-menu and .nav-search are only rendered on desktop
+       (isMobileView guard in JSX), but hide them anyway as a fallback */
+    .nav-menu,
+    .nav-search {
+        display: none !important;
+    }
+
+    .navbar {
+        flex-wrap: nowrap;
+        padding: 10px 16px;
+        gap: 10px;
+    }
+
+    .nav-brand {
+        font-size: 1rem;
+        flex: 1;
+        min-width: 0;
+    }
+
+    .nav-brand span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .nav-user {
+        gap: 8px;
+    }
+
+    .nav-user>span:not(.role-badge) {
+        display: none;
+    }
+}
+
+@media (max-width: 480px) {
+    .nav-brand span {
+        font-size: 0.9rem;
+    }
+
+    .nav-user .role-badge {
+        display: none;
+    }
+}
+
+/* Divider inside dropdowns */
+.dropdown-divider {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.08);
+    margin: 6px 0;
+}
+
+/* Section title inside "More" dropdown */
+.dropdown-section-title {
+    padding: 8px 20px 4px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: rgba(255, 255, 255, 0.5);
+    font-weight: 600;
 }

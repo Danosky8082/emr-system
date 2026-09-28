@@ -1,40 +1,28 @@
-// src/components/Layout.jsx - COMPLETE WITH ALL SPECIALIST MODULES
-
+// src/components/Layout.jsx
 import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate, useOutletContext, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { useTenant } from '../context/TenantContext';  // ✅ NEW
-import axios from 'axios';
-import './Layout.css';
-import { clearAllSessions } from '../utils/clearAllSessions';
+import { useTenant } from '../context/TenantContext';
 import api from '../api/client';
-
-// ============================================================
-// LAYOUT — Main authenticated shell
-//
-// ⚠️  PRE-LAUNCH TODO — TRIAL BANNER:
-//     When trial enforcement is enabled, add a banner here that:
-//       - Fetches /api/hospitals/:tenantId on mount
-//       - Reads plan + trialEndsAt
-//       - Shows a countdown banner if daysRemaining <= 7
-//       - Shows a hard "TRIAL EXPIRED" banner if expired
-//
-//     Currently disabled so no banner nags during development.
-//     The Super Admin dashboard already shows trial status
-//     informationally in the Hospitals table.
-// ============================================================
-
+import MobileMenu from './MobileMenu';
+import './Layout.css';
 
 const Layout = () => {
   const { user, logout } = useAuth();
-  const { clearTenant, hospitalName, hospitalLogo, primaryColor } = useTenant();  // ✅ NEW
+  const { clearTenant, hospitalName, hospitalLogo, primaryColor } = useTenant();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchTerm, setSearchTerm] = useState('');
   const [permissions, setPermissions] = useState(null);
   const [loadingPermissions, setLoadingPermissions] = useState(true);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isMobileView, setIsMobileView] = useState(
+    typeof window !== 'undefined' ? window.innerWidth < 1300 : false
+  );
 
-  // ✅ ORGANIZED MENU STRUCTURE WITH ALL SPECIALIST MODULES
+  // ============================================================
+  // MENU STRUCTURE — drives both desktop nav and mobile menu
+  // ============================================================
   const menuStructure = {
     '📊 Dashboard': [
       { path: '/', label: 'Dashboard' }
@@ -154,20 +142,17 @@ const Layout = () => {
     '/psychiatry': 'psychiatry',
   };
 
+  // ============================================================
+  // FETCH PERMISSIONS
+  // ============================================================
   useEffect(() => {
     const fetchPermissions = async () => {
       if (!user) return;
       setLoadingPermissions(true);
       try {
-        const token = localStorage.getItem('emr_token');
         const res = await api.get('/permissions');
         const rolePerm = res.data.find(p => p.role === user.role);
-        if (rolePerm) {
-          setPermissions(rolePerm);
-        } else {
-          // Create default permissions for the role
-          setPermissions(null);
-        }
+        setPermissions(rolePerm || null);
       } catch (error) {
         console.error('Failed to load permissions', error);
         setPermissions(null);
@@ -178,156 +163,118 @@ const Layout = () => {
     fetchPermissions();
   }, [user]);
 
+  // ============================================================
+  // VIEWPORT TRACKING — swap between desktop nav and mobile menu
+  // Breakpoint at 1300px so medium laptops get the sidebar
+  // ============================================================
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < 1300;
+      setIsMobileView(mobile);
+      if (!mobile) setMobileMenuOpen(false);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // ============================================================
+  // LOGOUT EVENT — fired by MobileMenu
+  // ============================================================
+  useEffect(() => {
+    const handleLogoutEvent = () => {
+      handleLogout();
+    };
+    window.addEventListener('app:logout', handleLogoutEvent);
+    return () => window.removeEventListener('app:logout', handleLogoutEvent);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ============================================================
+  // PERMISSION CHECK
+  // ============================================================
   const canAccess = (path) => {
-    // Admin can access everything
     if (['Admin', 'ITAdmin'].includes(user?.role)) return true;
 
-    // HR can only access HR routes
     if (user?.role === 'HR') {
       const hrPaths = ['/hr/dashboard', '/hr/employees', '/hr/departments', '/hr/leaves'];
-      if (hrPaths.includes(path)) return true;
-      return false;
+      return hrPaths.includes(path);
     }
 
-    // ============================================================
-    // SPECIALIST MODULE ACCESS
-    // ============================================================
-
-    // Paediatrics - Paediatrician only
     if (path === '/paediatric') {
       if (user?.role === 'Paediatrician') return true;
-      if (!loadingPermissions && permissions) {
-        return permissions['paediatrics'] === true;
-      }
-      return false;
+      return permissions?.['paediatrics'] === true;
     }
 
-    // Surgery - Surgeon only
     if (path === '/surgery') {
       if (user?.role === 'Surgeon') return true;
-      if (!loadingPermissions && permissions) {
-        return permissions['surgery'] === true;
-      }
-      return false;
+      return permissions?.['surgery'] === true;
     }
 
-    // Psychiatry - Psychiatrist only
     if (path === '/psychiatry') {
       if (user?.role === 'Psychiatrist') return true;
-      if (!loadingPermissions && permissions) {
-        return permissions['psychiatry'] === true;
-      }
-      return false;
+      return permissions?.['psychiatry'] === true;
     }
 
-    // Dental - Dentist only
     if (path === '/dental') {
       if (user?.role === 'Dentist') return true;
-      if (!loadingPermissions && permissions) {
-        return permissions['dental'] === true;
-      }
-      return false;
+      return permissions?.['dental'] === true;
     }
 
-    // Optometry - Optometrist only
     if (path === '/optometry') {
       if (user?.role === 'Optometrist') return true;
-      if (!loadingPermissions && permissions) {
-        return permissions['optometry'] === true;
-      }
-      return false;
+      return permissions?.['optometry'] === true;
     }
 
-    // Labor & Delivery - Obstetricians, Midwives, Doctors, Nurses
     if (path === '/labor-delivery') {
       if (['Obstetrician', 'Midwife', 'Doctor', 'Nurse'].includes(user?.role)) return true;
-      if (!loadingPermissions && permissions) {
-        return permissions['laborAndDelivery'] === true;
-      }
-      return false;
+      return permissions?.['laborAndDelivery'] === true;
     }
 
-    // Antenatal - Specific roles
     if (path === '/antenatal') {
       const allowedRoles = ['Admin', 'ITAdmin', 'Records', 'Obstetrician', 'Midwife'];
       if (allowedRoles.includes(user?.role)) return true;
-      if (!loadingPermissions && permissions) {
-        return permissions['antenatal'] === true;
-      }
-      return false;
+      return permissions?.['antenatal'] === true;
     }
 
-    // Wallet - Finance roles only
     if (path === '/wallet') {
       if (['Accountant', 'BillingOfficer'].includes(user?.role)) return true;
-      if (!loadingPermissions && permissions) {
-        return permissions['wallet'] === true;
-      }
-      return false;
+      return permissions?.['wallet'] === true;
     }
 
-    // Pharmacy - Pharmacist only
-    if (path === '/pharmacy' || path === '/pharmacy-dashboard' || path === '/pharmacy-patients' || path === '/nhis-drugs') {
+    if (['/pharmacy', '/pharmacy-dashboard', '/pharmacy-patients', '/nhis-drugs'].includes(path)) {
       if (user?.role === 'Pharmacist') return true;
-      if (!loadingPermissions && permissions) {
-        return permissions['pharmacy'] === true || permissions['pharmacyDashboard'] === true;
-      }
-      return false;
+      return permissions?.['pharmacy'] === true || permissions?.['pharmacyDashboard'] === true;
     }
 
-    // Lab - Lab staff only
-    if (path === '/lab-orders' || path === '/lab-patients') {
+    if (['/lab-orders', '/lab-patients'].includes(path)) {
       if (['LabTechnician', 'LabScientist'].includes(user?.role)) return true;
-      if (!loadingPermissions && permissions) {
-        return permissions['labOrders'] === true;
-      }
-      return false;
+      return permissions?.['labOrders'] === true;
     }
 
-    // Radiology - Radiologist only
-    if (path === '/radiology-dashboard' || path === '/radiology-patients') {
+    if (['/radiology-dashboard', '/radiology-patients'].includes(path)) {
       if (user?.role === 'Radiologist') return true;
-      if (!loadingPermissions && permissions) {
-        return permissions['radiology'] === true;
-      }
-      return false;
+      return permissions?.['radiology'] === true;
     }
 
-    // Doctor Queue - Doctors and Obstetricians
     if (path === '/doctor-queue') {
       if (['Doctor', 'Obstetrician'].includes(user?.role)) return true;
-      if (!loadingPermissions && permissions) {
-        return permissions['doctorQueue'] === true;
-      }
-      return false;
+      return permissions?.['doctorQueue'] === true;
     }
 
-    // Queue Management - Admin, Records, Nurse, Midwife
     if (path === '/queue') {
       if (['Records', 'Nurse', 'Midwife'].includes(user?.role)) return true;
-      if (!loadingPermissions && permissions) {
-        return permissions['queueManagement'] === true;
-      }
-      return false;
+      return permissions?.['queueManagement'] === true;
     }
 
-    // Archived Patients (Manage)
     if (path === '/archived-patients') {
       if (['Records'].includes(user?.role)) return true;
-      if (!loadingPermissions && permissions) {
-        return permissions['archivedPatients'] === true;
-      }
-      return false;
+      return permissions?.['archivedPatients'] === true;
     }
 
-    // Archived Patients (View Only)
     if (path === '/archived-patients-view') {
       const allowedRoles = ['Doctor', 'Nurse', 'Obstetrician', 'Midwife', 'Records'];
       if (allowedRoles.includes(user?.role)) return true;
-      if (!loadingPermissions && permissions) {
-        return permissions['archivedPatientsView'] === true;
-      }
-      return false;
+      return permissions?.['archivedPatientsView'] === true;
     }
 
     if (path === '/') return true;
@@ -339,7 +286,9 @@ const Layout = () => {
     return permissions[permissionKey] === true;
   };
 
-  // Redirect logic
+  // ============================================================
+  // ROLE-BASED REDIRECTS
+  // ============================================================
   useEffect(() => {
     const hasRedirected = sessionStorage.getItem('hasRedirected');
     if (!hasRedirected && user) {
@@ -381,27 +330,40 @@ const Layout = () => {
   }, [user, location.pathname, navigate]);
 
   // ============================================================
-  // RENDER NAVIGATION - ORGANIZED DROPDOWNS
+  // HELPER: Render a set of menu items as NavLinks
   // ============================================================
-  
+  const renderDropdownItems = (items) => {
+    return items
+      .filter((item) => canAccess(item.path))
+      .map((item) => (
+        <NavLink
+          key={item.path}
+          to={item.path}
+          className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+        >
+          {item.label}
+        </NavLink>
+      ));
+  };
+
+  // ============================================================
+  // RENDER NAV — desktop only (mobile uses MobileMenu)
+  //
+  // Consolidated to 6 top-level items so the navbar never overflows:
+  //   Dashboard | Patients | Clinical | Pharmacy | Finance | More
+  // ============================================================
   const renderNav = () => {
     if (loadingPermissions) {
       return <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.9rem' }}>Loading menu...</span>;
     }
 
-        // ============================================================
-    // SUPER ADMIN NAVIGATION
-    // ============================================================
+    // SuperAdmin — simple
     if (user?.role === 'SuperAdmin') {
       return (
         <>
-          <NavLink
-            to="/super-admin"
-            className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-          >
+          <NavLink to="/super-admin" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             🔐 Platform Dashboard
           </NavLink>
-
           <button
             onClick={() => navigate('/register-hospital')}
             className="nav-link"
@@ -423,215 +385,190 @@ const Layout = () => {
       );
     }
 
-    // ============================================================
-    // PAEDIATRICIAN NAVIGATION
-    // ============================================================
+    // Admin / ITAdmin — CONSOLIDATED 6-item nav
+    if (['Admin', 'ITAdmin'].includes(user?.role)) {
+      // Groups that go into "More ▼"
+      const moreGroups = [
+        { key: '🔬 Lab', title: '🔬 Laboratory' },
+        { key: '📷 Radiology', title: '📷 Radiology' },
+        { key: '🦷 Dental', title: '🦷 Dental' },
+        { key: '👁️ Optometry', title: '👁️ Optometry' },
+        { key: '👶 Paediatrics', title: '👶 Paediatrics' },
+        { key: '🏥 Surgery', title: '🏥 Surgery' },
+        { key: '🧠 Psychiatry', title: '🧠 Psychiatry' },
+        { key: '👔 HR', title: '👔 HR' },
+        { key: '🔐 Admin', title: '🔐 Admin' },
+        { key: '🚑 Portal', title: '🚑 Portal' },
+      ];
+
+      return (
+        <>
+          {/* Dashboard — direct link */}
+          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            📊 Dashboard
+          </NavLink>
+
+          {/* Patients */}
+          <div className="nav-dropdown">
+            <button className="nav-dropdown-header">👤 Patients ▼</button>
+            <div className="dropdown-content">
+              {renderDropdownItems(menuStructure['👤 Patients'])}
+            </div>
+          </div>
+
+          {/* Clinical — includes Maternity */}
+          <div className="nav-dropdown">
+            <button className="nav-dropdown-header">👨‍⚕️ Clinical ▼</button>
+            <div className="dropdown-content">
+              {renderDropdownItems(menuStructure['👨‍⚕️ Clinical'])}
+              <div className="dropdown-divider" />
+              <div className="dropdown-section-title">Maternity</div>
+              {renderDropdownItems(menuStructure['🤰 Maternity'])}
+            </div>
+          </div>
+
+          {/* Pharmacy */}
+          <div className="nav-dropdown">
+            <button className="nav-dropdown-header">💊 Pharmacy ▼</button>
+            <div className="dropdown-content">
+              {renderDropdownItems(menuStructure['💊 Pharmacy'])}
+            </div>
+          </div>
+
+          {/* Finance */}
+          <div className="nav-dropdown">
+            <button className="nav-dropdown-header">💰 Finance ▼</button>
+            <div className="dropdown-content">
+              {renderDropdownItems(menuStructure['💰 Finance'])}
+            </div>
+          </div>
+
+          {/* More — everything else */}
+          <div className="nav-dropdown">
+            <button className="nav-dropdown-header">⋯ More ▼</button>
+            <div className="dropdown-content dropdown-content-tall">
+              {moreGroups.map((group, idx) => {
+                const items = (menuStructure[group.key] || []).filter((i) => canAccess(i.path));
+                if (items.length === 0) return null;
+                return (
+                  <div key={group.key}>
+                    {idx > 0 && <div className="dropdown-divider" />}
+                    <div className="dropdown-section-title">{group.title}</div>
+                    {items.map((item) => (
+                      <NavLink
+                        key={item.path}
+                        to={item.path}
+                        className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+                      >
+                        {item.label}
+                      </NavLink>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      );
+    }
+
+    // All other roles — keep existing per-role navs but they're short enough
+    // to fit on one line
     if (user?.role === 'Paediatrician') {
       return (
         <>
-          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            📊 Dashboard
-          </NavLink>
-          <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            👤 Patients
-          </NavLink>
+          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
+          <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 Patients</NavLink>
           <div className="nav-dropdown">
-            <button className="nav-dropdown-header" style={{ color: '#f472b6', fontWeight: 'bold' }}>
-              👶 Paediatrics ▼
-            </button>
+            <button className="nav-dropdown-header" style={{ color: '#f472b6', fontWeight: 'bold' }}>👶 Paediatrics ▼</button>
             <div className="dropdown-content">
-              <NavLink to="/paediatric" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                👶 Paediatric Patients
-              </NavLink>
-              <NavLink to="/appointments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                📅 Appointments
-              </NavLink>
+              <NavLink to="/paediatric" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👶 Paediatric Patients</NavLink>
+              <NavLink to="/appointments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📅 Appointments</NavLink>
             </div>
           </div>
-          <div className="nav-dropdown">
-            <button className="nav-dropdown-header">👨‍⚕️ Clinical ▼</button>
-            <div className="dropdown-content">
-              <NavLink to="/prescriptions" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💊 Prescriptions</NavLink>
-              <NavLink to="/lab-orders" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🔬 Lab Orders</NavLink>
-            </div>
-          </div>
-          <NavLink to="/archived-patients-view" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            📦 Archived (View)
-          </NavLink>
+          <NavLink to="/archived-patients-view" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📦 Archived (View)</NavLink>
         </>
       );
     }
 
-    // ============================================================
-    // SURGEON NAVIGATION
-    // ============================================================
     if (user?.role === 'Surgeon') {
       return (
         <>
-          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            📊 Dashboard
-          </NavLink>
-          <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            👤 Patients
-          </NavLink>
+          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
+          <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 Patients</NavLink>
           <div className="nav-dropdown">
-            <button className="nav-dropdown-header" style={{ color: '#dc2626', fontWeight: 'bold' }}>
-              🏥 Surgery ▼
-            </button>
+            <button className="nav-dropdown-header" style={{ color: '#dc2626', fontWeight: 'bold' }}>🏥 Surgery ▼</button>
             <div className="dropdown-content">
-              <NavLink to="/surgery" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                🏥 Surgery Patients
-              </NavLink>
-              <NavLink to="/appointments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                📅 Appointments
-              </NavLink>
+              <NavLink to="/surgery" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🏥 Surgery Patients</NavLink>
+              <NavLink to="/appointments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📅 Appointments</NavLink>
             </div>
           </div>
-          <div className="nav-dropdown">
-            <button className="nav-dropdown-header">👨‍⚕️ Clinical ▼</button>
-            <div className="dropdown-content">
-              <NavLink to="/prescriptions" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💊 Prescriptions</NavLink>
-              <NavLink to="/lab-orders" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🔬 Lab Orders</NavLink>
-            </div>
-          </div>
-          <NavLink to="/archived-patients-view" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            📦 Archived (View)
-          </NavLink>
+          <NavLink to="/archived-patients-view" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📦 Archived (View)</NavLink>
         </>
       );
     }
 
-    // ============================================================
-    // PSYCHIATRIST NAVIGATION
-    // ============================================================
     if (user?.role === 'Psychiatrist') {
       return (
         <>
-          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            📊 Dashboard
-          </NavLink>
-          <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            👤 Patients
-          </NavLink>
+          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
+          <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 Patients</NavLink>
           <div className="nav-dropdown">
-            <button className="nav-dropdown-header" style={{ color: '#7c3aed', fontWeight: 'bold' }}>
-              🧠 Psychiatry ▼
-            </button>
+            <button className="nav-dropdown-header" style={{ color: '#7c3aed', fontWeight: 'bold' }}>🧠 Psychiatry ▼</button>
             <div className="dropdown-content">
-              <NavLink to="/psychiatry" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                🧠 Psychiatry Patients
-              </NavLink>
-              <NavLink to="/appointments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                📅 Appointments
-              </NavLink>
+              <NavLink to="/psychiatry" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🧠 Psychiatry Patients</NavLink>
+              <NavLink to="/appointments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📅 Appointments</NavLink>
             </div>
           </div>
-          <div className="nav-dropdown">
-            <button className="nav-dropdown-header">👨‍⚕️ Clinical ▼</button>
-            <div className="dropdown-content">
-              <NavLink to="/prescriptions" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💊 Prescriptions</NavLink>
-              <NavLink to="/lab-orders" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🔬 Lab Orders</NavLink>
-            </div>
-          </div>
-          <NavLink to="/archived-patients-view" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            📦 Archived (View)
-          </NavLink>
+          <NavLink to="/archived-patients-view" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📦 Archived (View)</NavLink>
         </>
       );
     }
 
-    // ============================================================
-    // DENTIST NAVIGATION
-    // ============================================================
     if (user?.role === 'Dentist') {
       return (
         <>
-          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            📊 Dashboard
-          </NavLink>
-          <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            👤 Patients
-          </NavLink>
+          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
+          <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 Patients</NavLink>
           <div className="nav-dropdown">
-            <button className="nav-dropdown-header" style={{ color: '#0f3460', fontWeight: 'bold' }}>
-              🦷 Dental ▼
-            </button>
+            <button className="nav-dropdown-header" style={{ color: '#0f3460', fontWeight: 'bold' }}>🦷 Dental ▼</button>
             <div className="dropdown-content">
-              <NavLink to="/dental" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                🦷 Dental Clinic
-              </NavLink>
-              <NavLink to="/appointments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                📅 Appointments
-              </NavLink>
+              <NavLink to="/dental" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🦷 Dental Clinic</NavLink>
+              <NavLink to="/appointments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📅 Appointments</NavLink>
             </div>
           </div>
-          <NavLink to="/archived-patients-view" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            📦 Archived (View)
-          </NavLink>
+          <NavLink to="/archived-patients-view" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📦 Archived (View)</NavLink>
         </>
       );
     }
 
-    // ============================================================
-    // OPTOMETRIST NAVIGATION
-    // ============================================================
     if (user?.role === 'Optometrist') {
       return (
         <>
-          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            📊 Dashboard
-          </NavLink>
-          <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            👤 Patients
-          </NavLink>
+          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
+          <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 Patients</NavLink>
           <div className="nav-dropdown">
-            <button className="nav-dropdown-header" style={{ color: '#06b6d4', fontWeight: 'bold' }}>
-              👁️ Optometry ▼
-            </button>
+            <button className="nav-dropdown-header" style={{ color: '#06b6d4', fontWeight: 'bold' }}>👁️ Optometry ▼</button>
             <div className="dropdown-content">
-              <NavLink to="/optometry" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                👁️ Eye Clinic
-              </NavLink>
-              <NavLink to="/appointments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                📅 Appointments
-              </NavLink>
+              <NavLink to="/optometry" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👁️ Eye Clinic</NavLink>
+              <NavLink to="/appointments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📅 Appointments</NavLink>
             </div>
           </div>
-          <NavLink to="/archived-patients-view" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            📦 Archived (View)
-          </NavLink>
+          <NavLink to="/archived-patients-view" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📦 Archived (View)</NavLink>
         </>
       );
     }
 
-    // ============================================================
-    // OBSTETRICIAN NAVIGATION
-    // ============================================================
     if (user?.role === 'Obstetrician') {
       return (
         <>
-          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            📊 Dashboard
-          </NavLink>
-          <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            👤 Patients
-          </NavLink>
+          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
+          <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 Patients</NavLink>
           <div className="nav-dropdown">
-            <button className="nav-dropdown-header" style={{ color: '#dc2626', fontWeight: 'bold' }}>
-              🤱 Maternity ▼
-            </button>
+            <button className="nav-dropdown-header" style={{ color: '#dc2626', fontWeight: 'bold' }}>🤱 Maternity ▼</button>
             <div className="dropdown-content">
-              <NavLink to="/antenatal" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                🤰 Antenatal Care
-              </NavLink>
-              <NavLink to="/labor-delivery" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} style={{ 
-                color: '#dc2626', 
-                fontWeight: 'bold',
-                background: location.pathname === '/labor-delivery' ? 'rgba(220, 38, 38, 0.15)' : 'transparent',
-                borderRadius: '4px'
-              }}>
-                🤱 Labor & Delivery <span style={{ fontSize: '9px', background: '#dc2626', color: 'white', padding: '1px 8px', borderRadius: '10px', marginLeft: '4px' }}>PRIMARY</span>
-              </NavLink>
+              <NavLink to="/antenatal" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🤰 Antenatal Care</NavLink>
+              <NavLink to="/labor-delivery" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🤱 Labor & Delivery</NavLink>
             </div>
           </div>
           <div className="nav-dropdown">
@@ -643,41 +580,21 @@ const Layout = () => {
               <NavLink to="/doctor-queue" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🏥 My Queue</NavLink>
             </div>
           </div>
-          <NavLink to="/archived-patients-view" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            📦 Archived (View)
-          </NavLink>
+          <NavLink to="/archived-patients-view" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📦 Archived (View)</NavLink>
         </>
       );
     }
 
-    // ============================================================
-    // MIDWIFE NAVIGATION
-    // ============================================================
     if (user?.role === 'Midwife') {
       return (
         <>
-          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            📊 Dashboard
-          </NavLink>
-          <NavLink to="/nurse-dashboard" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            👩‍⚕️ My Patients
-          </NavLink>
+          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
+          <NavLink to="/nurse-dashboard" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👩‍⚕️ My Patients</NavLink>
           <div className="nav-dropdown">
-            <button className="nav-dropdown-header" style={{ color: '#dc2626', fontWeight: 'bold' }}>
-              🤱 Maternity ▼
-            </button>
+            <button className="nav-dropdown-header" style={{ color: '#dc2626', fontWeight: 'bold' }}>🤱 Maternity ▼</button>
             <div className="dropdown-content">
-              <NavLink to="/antenatal" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                🤰 Antenatal Care
-              </NavLink>
-              <NavLink to="/labor-delivery" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} style={{ 
-                color: '#dc2626', 
-                fontWeight: 'bold',
-                background: location.pathname === '/labor-delivery' ? 'rgba(220, 38, 38, 0.15)' : 'transparent',
-                borderRadius: '4px'
-              }}>
-                🤱 Labor & Delivery <span style={{ fontSize: '9px', background: '#dc2626', color: 'white', padding: '1px 8px', borderRadius: '10px', marginLeft: '4px' }}>PRIMARY</span>
-              </NavLink>
+              <NavLink to="/antenatal" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🤰 Antenatal Care</NavLink>
+              <NavLink to="/labor-delivery" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🤱 Labor & Delivery</NavLink>
             </div>
           </div>
           <div className="nav-dropdown">
@@ -692,18 +609,11 @@ const Layout = () => {
       );
     }
 
-    // ============================================================
-    // DOCTOR NAVIGATION
-    // ============================================================
     if (user?.role === 'Doctor') {
       return (
         <>
-          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            📊 Dashboard
-          </NavLink>
-          <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            👤 Patients
-          </NavLink>
+          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
+          <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 Patients</NavLink>
           <div className="nav-dropdown">
             <button className="nav-dropdown-header">🤱 Maternity ▼</button>
             <div className="dropdown-content">
@@ -721,25 +631,16 @@ const Layout = () => {
               <NavLink to="/doctor-queue" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🏥 My Queue</NavLink>
             </div>
           </div>
-          <NavLink to="/archived-patients-view" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            📦 Archived (View)
-          </NavLink>
+          <NavLink to="/archived-patients-view" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📦 Archived (View)</NavLink>
         </>
       );
     }
 
-    // ============================================================
-    // NURSE NAVIGATION
-    // ============================================================
     if (user?.role === 'Nurse') {
       return (
         <>
-          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            📊 Dashboard
-          </NavLink>
-          <NavLink to="/nurse-dashboard" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            👩‍⚕️ My Patients
-          </NavLink>
+          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
+          <NavLink to="/nurse-dashboard" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👩‍⚕️ My Patients</NavLink>
           <div className="nav-dropdown">
             <button className="nav-dropdown-header">🤱 Maternity ▼</button>
             <div className="dropdown-content">
@@ -759,18 +660,11 @@ const Layout = () => {
       );
     }
 
-    // ============================================================
-    // RECEPTIONIST NAVIGATION
-    // ============================================================
     if (user?.role === 'Receptionist') {
       return (
         <>
-          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            📊 Dashboard
-          </NavLink>
-          <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            👤 Patients
-          </NavLink>
+          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
+          <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 Patients</NavLink>
           <div className="nav-dropdown">
             <button className="nav-dropdown-header">📋 Records ▼</button>
             <div className="dropdown-content">
@@ -783,15 +677,10 @@ const Layout = () => {
       );
     }
 
-    // ============================================================
-    // PHARMACIST NAVIGATION
-    // ============================================================
     if (user?.role === 'Pharmacist') {
       return (
         <>
-          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            📊 Dashboard
-          </NavLink>
+          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
           <div className="nav-dropdown">
             <button className="nav-dropdown-header">💊 Pharmacy ▼</button>
             <div className="dropdown-content">
@@ -805,15 +694,10 @@ const Layout = () => {
       );
     }
 
-    // ============================================================
-    // LAB TECHNICIAN / LAB SCIENTIST NAVIGATION
-    // ============================================================
     if (['LabTechnician', 'LabScientist'].includes(user?.role)) {
       return (
         <>
-          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            📊 Dashboard
-          </NavLink>
+          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
           <div className="nav-dropdown">
             <button className="nav-dropdown-header">🔬 Laboratory ▼</button>
             <div className="dropdown-content">
@@ -825,15 +709,10 @@ const Layout = () => {
       );
     }
 
-    // ============================================================
-    // RADIOLOGIST NAVIGATION
-    // ============================================================
     if (user?.role === 'Radiologist') {
       return (
         <>
-          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            📊 Dashboard
-          </NavLink>
+          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
           <div className="nav-dropdown">
             <button className="nav-dropdown-header">📷 Radiology ▼</button>
             <div className="dropdown-content">
@@ -845,15 +724,10 @@ const Layout = () => {
       );
     }
 
-    // ============================================================
-    // HR NAVIGATION
-    // ============================================================
     if (user?.role === 'HR') {
       return (
         <>
-          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            📊 Dashboard
-          </NavLink>
+          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
           <div className="nav-dropdown">
             <button className="nav-dropdown-header">👔 HR ▼</button>
             <div className="dropdown-content">
@@ -867,18 +741,11 @@ const Layout = () => {
       );
     }
 
-    // ============================================================
-    // RECORDS NAVIGATION
-    // ============================================================
     if (user?.role === 'Records') {
       return (
         <>
-          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            📊 Dashboard
-          </NavLink>
-          <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            👤 Patients
-          </NavLink>
+          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
+          <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 Patients</NavLink>
           <div className="nav-dropdown">
             <button className="nav-dropdown-header">📋 Records ▼</button>
             <div className="dropdown-content">
@@ -890,22 +757,15 @@ const Layout = () => {
               <NavLink to="/queue" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🏥 Queue Management</NavLink>
             </div>
           </div>
-          <NavLink to="/patient-login" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} style={{ color: '#60a5fa' }}>
-            🚑 Patient Portal
-          </NavLink>
+          <NavLink to="/patient-login" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} style={{ color: '#60a5fa' }}>🚑 Patient Portal</NavLink>
         </>
       );
     }
 
-    // ============================================================
-    // ACCOUNTANT NAVIGATION
-    // ============================================================
     if (user?.role === 'Accountant') {
       return (
         <>
-          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            📊 Dashboard
-          </NavLink>
+          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
           <div className="nav-dropdown">
             <button className="nav-dropdown-header">💰 Finance ▼</button>
             <div className="dropdown-content">
@@ -919,15 +779,10 @@ const Layout = () => {
       );
     }
 
-    // ============================================================
-    // BILLING OFFICER NAVIGATION
-    // ============================================================
     if (user?.role === 'BillingOfficer') {
       return (
         <>
-          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            📊 Dashboard
-          </NavLink>
+          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
           <div className="nav-dropdown">
             <button className="nav-dropdown-header">💰 Finance ▼</button>
             <div className="dropdown-content">
@@ -940,157 +795,60 @@ const Layout = () => {
       );
     }
 
-    // ============================================================
-    // ADMIN AND ITADMIN - Full menu with all dropdowns
-    // ============================================================
-    if (['Admin', 'ITAdmin'].includes(user?.role)) {
-      return (
-        <>
-          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            📊 Dashboard
-          </NavLink>
-          
-          {Object.entries(menuStructure).map(([groupName, items]) => {
-            const visibleItems = items.filter(item => canAccess(item.path));
-            if (visibleItems.length === 0) return null;
-            
-            // Dashboard is a direct link, not a dropdown
-            if (groupName === '📊 Dashboard') {
-              return null;
-            }
-            
-            // Patient Portal is a dropdown
-            if (groupName === '🚑 Portal') {
-              return (
-                <div key={groupName} className="nav-dropdown">
-                  <button className="nav-dropdown-header" style={{ color: '#60a5fa' }}>🚑 Portal ▼</button>
-                  <div className="dropdown-content">
-                    {visibleItems.map(item => (
-                      <NavLink
-                        key={item.path}
-                        to={item.path}
-                        className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-                      >
-                        {item.label}
-                      </NavLink>
-                    ))}
-                  </div>
-                </div>
-              );
-            }
-            
-            return (
-              <div key={groupName} className="nav-dropdown">
-                <button className="nav-dropdown-header">{groupName} ▼</button>
-                <div className="dropdown-content">
-                  {visibleItems.map(item => (
-                    <NavLink
-                      key={item.path}
-                      to={item.path}
-                      className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-                    >
-                      {item.label}
-                    </NavLink>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </>
-      );
-    }
-
-    // ============================================================
-    // OTHER ROLES (Default fallback)
-    // ============================================================
+    // Fallback
     return (
       <>
-        <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-          📊 Dashboard
-        </NavLink>
-        
-        {Object.entries(menuStructure).map(([groupName, items]) => {
-          // Skip role-specific groups that don't apply
-          if (groupName === '👨‍⚕️ Clinical' && !['Doctor', 'Nurse', 'Obstetrician', 'Midwife'].includes(user?.role)) {
-            return null;
-          }
-          if (groupName === '🤰 Maternity' && !['Doctor', 'Nurse', 'Obstetrician', 'Midwife'].includes(user?.role)) {
-            return null;
-          }
-          if (groupName === '💊 Pharmacy' && user?.role !== 'Pharmacist') {
-            return null;
-          }
-          if (groupName === '🔬 Lab' && !['LabTechnician', 'LabScientist'].includes(user?.role)) {
-            return null;
-          }
-          if (groupName === '📷 Radiology' && user?.role !== 'Radiologist') {
-            return null;
-          }
-          if (groupName === '🦷 Dental' && user?.role !== 'Dentist') {
-            return null;
-          }
-          if (groupName === '👁️ Optometry' && user?.role !== 'Optometrist') {
-            return null;
-          }
-          if (groupName === '👶 Paediatrics' && user?.role !== 'Paediatrician') {
-            return null;
-          }
-          if (groupName === '🏥 Surgery' && user?.role !== 'Surgeon') {
-            return null;
-          }
-          if (groupName === '🧠 Psychiatry' && user?.role !== 'Psychiatrist') {
-            return null;
-          }
-          if (groupName === '👔 HR' && user?.role !== 'HR') {
-            return null;
-          }
-          if (groupName === '🚑 Portal') {
-            return null;
-          }
-          if (groupName === '🔐 Admin' && !['Admin', 'ITAdmin'].includes(user?.role)) {
-            return null;
-          }
-          if (groupName === '📊 Dashboard') {
-            return null;
-          }
-          
-          const visibleItems = items.filter(item => canAccess(item.path));
-          if (visibleItems.length === 0) return null;
-          
-          return (
-            <div key={groupName} className="nav-dropdown">
-              <button className="nav-dropdown-header">{groupName} ▼</button>
-              <div className="dropdown-content">
-                {visibleItems.map(item => (
-                  <NavLink
-                    key={item.path}
-                    to={item.path}
-                    className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-                  >
-                    {item.label}
-                  </NavLink>
-                ))}
-              </div>
-            </div>
-          );
-        })}
+        <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
       </>
     );
   };
 
   const handleLogout = () => {
-  clearAllSessions();   
-  clearTenant();         
-  logout();              
-  navigate('/login');
-};
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('emr_token');
+        localStorage.removeItem('emr_user');
+        localStorage.removeItem('emr_tenant_id');
+        localStorage.removeItem('emr_hospital');
+        localStorage.removeItem('emr_hospital_settings');
+        localStorage.removeItem('platform_token');
+        localStorage.removeItem('platform_user');
+        localStorage.removeItem('patient_token');
+        localStorage.removeItem('patient_data');
+        localStorage.removeItem('must_change_password');
+        sessionStorage.clear();
+      }
+    } catch (err) {
+      console.warn('Failed clearing session during logout:', err);
+    }
+
+    clearTenant();
+    logout();
+    navigate('/login');
+  };
+
+  // Prepare mobile menu groups
+  const menuGroupsForMobile = Object.entries(menuStructure).map(
+    ([title, items]) => ({
+      title: title.replace(/^[^\w]+\s*/, '') || title,
+      items: items.filter((item) => canAccess(item.path)),
+    })
+  ).filter((g) => g.items.length > 0);
 
   return (
     <div className="layout app-container">
       <nav
         className="navbar"
-        style={{ borderBottom: `2px solid ${primaryColor || '#00f2fe'}` }}  // ✅ Dynamic color with fallback
+        style={{ borderBottom: `2px solid ${primaryColor || '#00f2fe'}` }}
       >
+        <button
+          className="nav-hamburger"
+          onClick={() => setMobileMenuOpen(true)}
+          aria-label="Open navigation"
+        >
+          ☰
+        </button>
+
         <div className="nav-brand">
           {hospitalLogo ? (
             <img
@@ -1113,19 +871,23 @@ const Layout = () => {
               <rect x="40" y="45" width="20" height="10" rx="2" fill="#00f2fe" />
             </svg>
           )}
-          <span>{hospitalName || 'NexGen EMR'}</span>  {/* ✅ Dynamic name with fallback */}
+          <span>{hospitalName || 'NexGen EMR'}</span>
         </div>
 
-        <div className="nav-menu">{renderNav()}</div>
+        {!isMobileView && (
+          <>
+            <div className="nav-menu">{renderNav()}</div>
 
-        <div className="nav-search">
-          <input
-            type="text"
-            placeholder="🔍 Search records..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
+            <div className="nav-search">
+              <input
+                type="text"
+                placeholder="🔍 Search records..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+          </>
+        )}
 
         <div className="nav-user">
           <span>{user?.firstName} {user?.lastName}</span>
@@ -1137,6 +899,12 @@ const Layout = () => {
       <main className="main-content">
         <Outlet context={{ searchTerm }} />
       </main>
+
+      <MobileMenu
+        isOpen={mobileMenuOpen}
+        onClose={() => setMobileMenuOpen(false)}
+        menuGroups={menuGroupsForMobile}
+      />
     </div>
   );
 };
