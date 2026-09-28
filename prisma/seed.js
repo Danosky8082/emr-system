@@ -131,9 +131,12 @@ async function main() {
       await prisma.servicePricing.deleteMany({ where: { tenantId: h.id } });
       await prisma.serviceConfiguration.deleteMany({ where: { tenantId: h.id } });
 
-      const created = await prisma.$transaction(async (tx) => {
-        return await createDefaultHospitalData(tx, h.id);
-      });
+            const created = await prisma.$transaction(
+        async (tx) => {
+          return await createDefaultHospitalData(tx, h.id);
+        },
+        { timeout: 120000 } // 2 min — many inserts over a remote DB
+      );
 
       console.log(
         `  ✅ ${h.name}: ` +
@@ -357,9 +360,12 @@ async function main() {
 
     for (const h of HOSPITALS) {
       await prisma.rolePermission.deleteMany({ where: { tenantId: h.id } });
-      const rolesCreated = await prisma.$transaction(async (tx) => {
-        return await createDefaultRolePermissions(tx, h.id);
-      });
+            const rolesCreated = await prisma.$transaction(
+        async (tx) => {
+          return await createDefaultRolePermissions(tx, h.id);
+        },
+        { timeout: 120000 }
+      );
       console.log(`  ✅ ${h.name}: ${rolesCreated} roles`);
     }
 

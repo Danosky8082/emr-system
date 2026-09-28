@@ -216,7 +216,7 @@ router.post('/hospitals', authenticatePlatform, requirePlatformAdmin, async (req
       // 2) Default hospital settings
       await tx.hospitalSettings.create({
         data: { tenantId: hospital.id, hospitalId: hospital.id },
-      });
+          }, { timeout: 120000 });
 
       // 3) Full 20-role permission matrix
       const rolesCreated = await createDefaultRolePermissions(tx, hospital.id);
@@ -359,9 +359,12 @@ router.post('/backfill-permissions', authenticatePlatform, requirePlatformAdmin,
     for (const h of hospitals) {
       await prisma.rolePermission.deleteMany({ where: { tenantId: h.id } });
 
-      const created = await prisma.$transaction(async (tx) => {
-        return await createDefaultRolePermissions(tx, h.id);
-      });
+            const created = await prisma.$transaction(
+        async (tx) => {
+                    return await createDefaultRolePermissions(tx, h.id);
+        },
+        { timeout: 120000 }
+      );
 
       results.push({
         hospital: h.name,
@@ -399,9 +402,12 @@ router.post('/backfill-starter-data', authenticatePlatform, requirePlatformAdmin
       await prisma.servicePricing.deleteMany({ where: { tenantId: h.id } });
       await prisma.serviceConfiguration.deleteMany({ where: { tenantId: h.id } });
 
-      const created = await prisma.$transaction(async (tx) => {
-        return await createDefaultHospitalData(tx, h.id);
-      });
+            const created = await prisma.$transaction(
+        async (tx) => {
+          return await createDefaultRolePermissions(tx, h.id);
+        },
+        { timeout: 120000 }
+      );
 
       results.push({
         hospital: h.name,

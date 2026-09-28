@@ -893,7 +893,7 @@ app.post('/api/super-admin/hospitals', authenticate, requireSuperAdmin, async (r
       const starterData = await createDefaultHospitalData(tx, hospital.id);
 
       return { hospital, rolesCreated, starterData };
-    });
+    }, { timeout: 120000 });
 
     res.status(201).json({
       ...result.hospital,
@@ -1025,7 +1025,7 @@ app.post('/api/public/register-hospital', async (req, res) => {
           isActive: true,
           trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
         },
-      });
+          }, { timeout: 120000 });
 
       // 2) Default hospital settings
       await tx.hospitalSettings.create({
