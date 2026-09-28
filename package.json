@@ -22,6 +22,7 @@
   "description": "",
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.10.0",
     "bcryptjs": "^3.0.3",
     "cloudinary": "^2.11.0",
     "cors": "^2.8.6",
@@ -33,17 +34,16 @@
     "multer": "^2.2.0",
     "node-cron": "^4.6.0",
     "pg": "^8.23.0",
+    "prisma": "^7.10.0",
     "qrcode.react": "^4.2.0",
-    "recharts": "^3.10.1"
+    "recharts": "^3.10.1",
+    "tsx": "^4.23.15"
   },
   "devDependencies": {
-    "@prisma/client": "^7.10.0",
     "@types/express": "^5.0.6",
     "@types/node": "^26.4.0",
     "dotenv-cli": "^7.4.4",
     "nodemon": "^3.1.14",
-    "prisma": "^7.10.0",
-    "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   },
   "prisma": {
