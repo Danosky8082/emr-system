@@ -890,10 +890,22 @@ const Layout = () => {
         )}
 
         <div className="nav-user">
-          <span>{user?.firstName} {user?.lastName}</span>
-          <span className="role-badge">{user?.role}</span>
-          <button onClick={handleLogout} className="btn btn-danger btn-sm">Logout</button>
-        </div>
+  <span>{user?.firstName} {user?.lastName}</span>
+  <span className="role-badge">{user?.role}</span>
+  <button
+    onClick={() => {
+      if (window.confirm('Switch to another hospital? You will be logged out.')) {
+        handleLogout();
+      }
+    }}
+    className="btn btn-secondary btn-sm"
+    style={{ background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)' }}
+    title="Change hospital"
+  >
+    🏥 Switch
+  </button>
+  <button onClick={handleLogout} className="btn btn-danger btn-sm">Logout</button>
+</div>
       </nav>
 
       <main className="main-content">

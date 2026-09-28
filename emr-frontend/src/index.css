@@ -11,16 +11,18 @@ html,
 
 /* GLOBAL FADED BACKGROUND */
 .app-container {
-    /* Put your image in /public and name it background.jpg */
     background-image: url('/background.jpg');
     background-size: cover;
     background-position: center;
     background-attachment: fixed;
     min-height: 100vh;
-    width: 100vw;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
     position: relative;
     display: flex;
     flex-direction: column;
+    box-sizing: border-box;
 }
 
 /* Dark blue, semi-transparent overlay to fade the image */
@@ -285,12 +287,16 @@ html,
 
 /* --- LOGIN PAGE – LEFT ALIGNED --- */
 .login-screen {
-    width: 100vw;
+    width: 100%;
+    max-width: 100%;
     min-height: 100vh;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: flex-start !important;
-    padding-left: 12% !important;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    padding-left: 12%;
+    padding-right: 20px;
+    box-sizing: border-box;
+    overflow-x: hidden;
 }
 
 .login-container {
@@ -301,6 +307,7 @@ html,
     max-width: 420px;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
     margin: 0;
+    box-sizing: border-box;
 }
 
 .login-header {
@@ -576,4 +583,149 @@ html,
     letter-spacing: 0.8px;
     color: rgba(255, 255, 255, 0.5);
     font-weight: 600;
+}
+
+/* --- MOBILE LOGIN FIX --- */
+@media (max-width: 640px) {
+    .login-screen {
+        padding: 16px !important;
+        justify-content: center !important;
+        align-items: flex-start !important;
+        padding-top: 40px !important;
+        padding-left: 16px !important;
+    }
+
+    .login-container {
+        max-width: 100%;
+        padding: 24px 20px;
+        margin: 0;
+    }
+
+    .login-header h1 {
+        font-size: 22px;
+    }
+
+    .login-header p {
+        font-size: 13px;
+    }
+}
+
+/* --- SUPERADMIN MOBILE FIX --- */
+@media (max-width: 640px) {
+    .platform-actions {
+        flex-direction: column;
+        width: 100%;
+    }
+
+    .platform-actions>button {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+/* --- MOBILE TABLE SCROLL --- */
+@media (max-width: 900px) {
+
+    /* Make wide tables horizontally scrollable instead of overflowing */
+    .table-container {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .table-container table {
+        min-width: 700px;
+    }
+
+    /* Reduce cell padding on mobile */
+    .table-container th,
+    .table-container td {
+        padding: 10px 12px;
+        font-size: 13px;
+    }
+}
+
+/* --- LOGIN PAGE: center on mobile, left-align on desktop --- */
+@media (max-width: 768px) {
+    .login-screen {
+        justify-content: center;
+        align-items: center;
+        padding: 16px;
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+
+    .login-container {
+        padding: 32px 24px;
+        max-width: 100%;
+        margin: 0;
+    }
+
+    .login-header h1 {
+        font-size: 24px;
+    }
+
+    .login-header p {
+        font-size: 13px;
+    }
+}
+
+@media (max-width: 480px) {
+    .login-screen {
+        padding: 12px;
+        padding-left: 12px;
+        padding-right: 12px;
+        align-items: flex-start;
+        padding-top: 40px;
+    }
+
+    .login-container {
+        padding: 24px 20px;
+    }
+
+    .login-header h1 {
+        font-size: 22px;
+    }
+}
+
+/* --- Tall dropdowns: cap height and allow scroll --- */
+.dropdown-content-tall {
+    /* Cap at 70% of viewport height, minus the navbar's height (63px) and some margin */
+    max-height: calc(100vh - 100px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    /* Nicer scrollbar */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+    /* Don't push past the viewport on the right */
+    max-width: min(320px, 90vw);
+}
+
+.dropdown-content-tall::-webkit-scrollbar {
+    width: 6px;
+}
+
+.dropdown-content-tall::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 3px;
+}
+
+.dropdown-content-tall::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.25);
+    border-radius: 3px;
+}
+
+.dropdown-content-tall::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.4);
+}
+
+/* --- Anchor dropdowns so they never overflow the viewport --- */
+.nav-dropdown {
+    position: relative;
+}
+
+/* For dropdowns near the right edge, anchor to the right instead of left */
+.nav-dropdown:last-of-type .dropdown-content,
+.nav-dropdown:nth-last-of-type(2) .dropdown-content {
+    left: auto;
+    right: 0;
 }

@@ -372,7 +372,7 @@ const SuperAdminDashboard = () => {
           )}
         </div>
 
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <div className="platform-actions" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           {activeTab === 'hospitals' && (
             <>
               <button
@@ -588,10 +588,10 @@ const SuperAdminDashboard = () => {
             <table>
               <thead>
                 <tr>
-                  <th>Name</th>
+                  <th style={{ minWidth: '160px' }}>Name</th>
                   <th>Slug</th>
                   <th>Code</th>
-                  <th>Plan</th>
+                  <th style={{ minWidth: '80px' }}>Plan</th>
                   <th>Status</th>
                   <th>Staff</th>
                   <th>Patients</th>

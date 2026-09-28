@@ -97,17 +97,27 @@ const MobileMenu = ({ isOpen, onClose, menuGroups }) => {
 
         {/* Footer */}
         <div className="mobile-menu-footer">
-          <button
-            className="mobile-menu-logout"
-            onClick={() => {
-              onClose();
-              // The parent will handle the actual logout — we just navigate
-              window.dispatchEvent(new CustomEvent('app:logout'));
-            }}
-          >
-            🚪 Logout
-          </button>
-        </div>
+  <button
+    className="mobile-menu-switch"
+    onClick={() => {
+      onClose();
+      if (window.confirm('Switch to another hospital? You will be logged out.')) {
+        window.dispatchEvent(new CustomEvent('app:logout'));
+      }
+    }}
+  >
+    🏥 Switch Hospital
+  </button>
+  <button
+    className="mobile-menu-logout"
+    onClick={() => {
+      onClose();
+      window.dispatchEvent(new CustomEvent('app:logout'));
+    }}
+  >
+    🚪 Logout
+  </button>
+</div>
       </aside>
     </>
   );
