@@ -1365,62 +1365,173 @@ const PatientProfile = () => {
 
         {/* ============ PROFILE TAB ============ */}
         {currentTab === 'profile' && canViewProfile && (
-          <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-            <h4 style={{ margin: '0 0 16px 0' }}>📋 Full Patient Information</h4>
+  <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+    <h4 style={{ margin: '0 0 16px 0' }}>📋 Full Patient Information</h4>
+
+    <div className="profile-info-groups">
+
+      {/* ============================================================
+          GROUP 1 — Patient Identity (open by default)
+          ============================================================ */}
+      <div className={`profile-info-group ${expandedGroups.identity ? 'open' : ''}`}>
+        <button
+          type="button"
+          className="profile-info-group-title"
+          onClick={() => toggleGroup('identity')}
+        >
+          <span className="group-icon">🆔</span>
+          <span className="group-label">Patient Identity</span>
+          <span className="group-chevron">▾</span>
+        </button>
+        <div className="profile-info-group-body">
+          <div className="profile-grid">
+            <div className="profile-grid-item"><span className="label">Hospital ID</span><span className="value">{patient.hospitalId}</span></div>
+            <div className="profile-grid-item"><span className="label">Age</span><span className="value">{calculateAge(patient.dateOfBirth)} years</span></div>
+            <div className="profile-grid-item"><span className="label">Gender</span><span className="value">{patient.gender}</span></div>
+            <div className="profile-grid-item"><span className="label">Date of Birth</span><span className="value">{new Date(patient.dateOfBirth).toLocaleDateString()}</span></div>
+            <div className="profile-grid-item"><span className="label">Patient Category</span><span className="value">{catBadge.label}</span></div>
+          </div>
+        </div>
+      </div>
+
+      {/* ============================================================
+          GROUP 2 — Contact Information (open by default)
+          ============================================================ */}
+      <div className={`profile-info-group ${expandedGroups.contact ? 'open' : ''}`}>
+        <button
+          type="button"
+          className="profile-info-group-title"
+          onClick={() => toggleGroup('contact')}
+        >
+          <span className="group-icon">📞</span>
+          <span className="group-label">Contact Information</span>
+          <span className="group-chevron">▾</span>
+        </button>
+        <div className="profile-info-group-body">
+          <div className="profile-grid">
+            <div className="profile-grid-item"><span className="label">Phone</span><span className="value">{patient.phone || '-'}</span></div>
+            <div className="profile-grid-item"><span className="label">Email</span><span className="value">{patient.email || '-'}</span></div>
+            <div className="profile-grid-item"><span className="label">Emergency Contact</span><span className="value">{patient.emergencyContact || '-'}</span></div>
+            <div className="profile-grid-item" style={{ gridColumn: '1 / -1' }}><span className="label">Address</span><span className="value">{patient.address || '-'}</span></div>
+          </div>
+        </div>
+      </div>
+
+      {/* ============================================================
+          GROUP 3 — Medical Alerts (collapsed by default)
+          ============================================================ */}
+      <div className={`profile-info-group ${expandedGroups.alerts ? 'open' : ''}`}>
+        <button
+          type="button"
+          className="profile-info-group-title"
+          onClick={() => toggleGroup('alerts')}
+        >
+          <span className="group-icon">🚨</span>
+          <span className="group-label">Medical Alerts</span>
+          <span className="group-chevron">▾</span>
+        </button>
+        <div className="profile-info-group-body">
+          <div className="profile-grid">
+            <div className="profile-grid-item" style={{ gridColumn: '1 / -1' }}>
+              <span className="label">Allergies</span>
+              <span className="value" style={{ color: patient.allergies ? '#ef4444' : 'inherit' }}>
+                {patient.allergies || 'None'}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ============================================================
+          GROUP 4 — Next of Kin (collapsed by default)
+          ============================================================ */}
+      <div className={`profile-info-group ${expandedGroups.kin ? 'open' : ''}`}>
+        <button
+          type="button"
+          className="profile-info-group-title"
+          onClick={() => toggleGroup('kin')}
+        >
+          <span className="group-icon">👥</span>
+          <span className="group-label">Next of Kin</span>
+          <span className="group-chevron">▾</span>
+        </button>
+        <div className="profile-info-group-body">
+          <div className="profile-grid">
+            <div className="profile-grid-item"><span className="label">Name</span><span className="value">{patient.nextOfKinName || '-'}</span></div>
+            <div className="profile-grid-item"><span className="label">Phone</span><span className="value">{patient.nextOfKinPhone || '-'}</span></div>
+            <div className="profile-grid-item"><span className="label">Relationship</span><span className="value">{patient.nextOfKinRelationship || '-'}</span></div>
+          </div>
+        </div>
+      </div>
+
+      {/* ============================================================
+          GROUP 5 — Billing & Wallet (collapsed by default)
+          Only rendered if the user has wallet viewing permission
+          ============================================================ */}
+      {canViewWallet && (
+        <div className={`profile-info-group ${expandedGroups.billing ? 'open' : ''}`}>
+          <button
+            type="button"
+            className="profile-info-group-title"
+            onClick={() => toggleGroup('billing')}
+          >
+            <span className="group-icon">💳</span>
+            <span className="group-label">Billing & Wallet</span>
+            <span className="group-chevron">▾</span>
+          </button>
+          <div className="profile-info-group-body">
             <div className="profile-grid">
-              <div className="profile-grid-item"><span className="label">Hospital ID</span><span className="value">{patient.hospitalId}</span></div>
-              <div className="profile-grid-item"><span className="label">Age</span><span className="value">{calculateAge(patient.dateOfBirth)} years</span></div>
-              <div className="profile-grid-item"><span className="label">Gender</span><span className="value">{patient.gender}</span></div>
-              <div className="profile-grid-item"><span className="label">Date of Birth</span><span className="value">{new Date(patient.dateOfBirth).toLocaleDateString()}</span></div>
-              <div className="profile-grid-item"><span className="label">Phone</span><span className="value">{patient.phone || '-'}</span></div>
-              <div className="profile-grid-item"><span className="label">Email</span><span className="value">{patient.email || '-'}</span></div>
-              <div className="profile-grid-item"><span className="label">Address</span><span className="value">{patient.address || '-'}</span></div>
-              <div className="profile-grid-item"><span className="label">Emergency Contact</span><span className="value">{patient.emergencyContact || '-'}</span></div>
-              <div className="profile-grid-item"><span className="label">Allergies</span><span className="value" style={{ color: patient.allergies ? '#ef4444' : 'inherit' }}>{patient.allergies || 'None'}</span></div>
-              <div className="profile-grid-item" style={{ gridColumn: '1 / -1' }}>
-                <span className="label">Next of Kin</span>
-                <span className="value">
-                  {patient.nextOfKinName || '-'}
-                  {patient.nextOfKinPhone ? ` (${patient.nextOfKinPhone})` : ''}
-                  {patient.nextOfKinRelationship ? ` - ${patient.nextOfKinRelationship}` : ''}
-                </span>
-              </div>
-              <div className="profile-grid-item"><span className="label">Patient Category</span><span className="value">{catBadge.label}</span></div>
               <div className="profile-grid-item"><span className="label">Insurance</span><span className="value">{patient.insuranceProvider || 'None'}</span></div>
               <div className="profile-grid-item"><span className="label">Insurance ID</span><span className="value">{patient.insuranceId || '—'}</span></div>
               <div className="profile-grid-item"><span className="label">Corporate Company</span><span className="value">{patient.corporateCompany || '—'}</span></div>
-              <div className="profile-grid-item"><span className="label">File Status</span><span className="value">{patient.fileStatus || 'ACTIVE'}</span></div>
-              <div className="profile-grid-item"><span className="label">Registered</span><span className="value">{new Date(patient.createdAt).toLocaleDateString()}</span></div>
-              <div className="profile-grid-item"><span className="label">Last Updated</span><span className="value">{new Date(patient.updatedAt).toLocaleDateString()}</span></div>
-              {/* ✅ WALLET IN PROFILE TAB */}
-              {canViewWallet && wallet && (
-                <div className="profile-grid-item">
-                  <span className="label">💳 Wallet Balance</span>
-                  <span className="value" style={{ color: wallet.balance > 0 ? '#10b981' : '#6b7280', fontWeight: '700' }}>
-                    {formatCurrency(wallet.balance)}
-                  </span>
-                </div>
-              )}
-              {canViewWallet && wallet && (
-                <div className="profile-grid-item">
-                  <span className="label">Wallet Status</span>
-                  <span className="value">
-                    <span style={{
-                      padding: '2px 12px',
-                      borderRadius: '12px',
-                      background: walletStatus.bg,
-                      color: walletStatus.color,
-                      fontSize: '12px',
-                      fontWeight: '600'
-                    }}>
-                      {walletStatus.icon} {wallet.status}
+              {wallet && (
+                <>
+                  <div className="profile-grid-item">
+                    <span className="label">💳 Wallet Balance</span>
+                    <span className="value" style={{ color: wallet.balance > 0 ? '#10b981' : '#6b7280', fontWeight: '700' }}>
+                      {formatCurrency(wallet.balance)}
                     </span>
-                  </span>
-                </div>
+                  </div>
+                  <div className="profile-grid-item">
+                    <span className="label">Wallet Status</span>
+                    <span className="value">
+                      <span style={{ padding: '2px 12px', borderRadius: '12px', background: walletStatus.bg, color: walletStatus.color, fontSize: '12px', fontWeight: '600' }}>
+                        {walletStatus.icon} {wallet.status}
+                      </span>
+                    </span>
+                  </div>
+                </>
               )}
             </div>
           </div>
-        )}
+        </div>
+      )}
+
+      {/* ============================================================
+          GROUP 6 — File Info (collapsed by default)
+          ============================================================ */}
+      <div className={`profile-info-group ${expandedGroups.file ? 'open' : ''}`}>
+        <button
+          type="button"
+          className="profile-info-group-title"
+          onClick={() => toggleGroup('file')}
+        >
+          <span className="group-icon">📋</span>
+          <span className="group-label">File Info</span>
+          <span className="group-chevron">▾</span>
+        </button>
+        <div className="profile-info-group-body">
+          <div className="profile-grid">
+            <div className="profile-grid-item"><span className="label">File Status</span><span className="value">{patient.fileStatus || 'ACTIVE'}</span></div>
+            <div className="profile-grid-item"><span className="label">Registered</span><span className="value">{new Date(patient.createdAt).toLocaleDateString()}</span></div>
+            <div className="profile-grid-item"><span className="label">Last Updated</span><span className="value">{new Date(patient.updatedAt).toLocaleDateString()}</span></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+)}
 
         {/* ============ VITALS TAB ============ */}
         {currentTab === 'vitals' && canViewVitals && (

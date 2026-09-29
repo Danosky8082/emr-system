@@ -1,0 +1,516 @@
+/* ============================================================
+   GLOBAL RESPONSIVE STYLESHEET
+   Applied app-wide to fix mobile/tablet layout issues.
+   Import once at the top of src/main.jsx or src/App.jsx.
+   ============================================================ */
+
+/* ============================================================
+   1. GLOBAL OVERFLOW GUARDS
+   ============================================================ */
+* {
+    box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+    max-width: 100%;
+    overflow-x: hidden;
+}
+
+img,
+svg,
+video,
+canvas {
+    max-width: 100%;
+    height: auto;
+}
+
+/* ============================================================
+   2. TYPOGRAPHY SCALING
+   ============================================================ */
+@media (max-width: 768px) {
+    html {
+        font-size: 15px;
+    }
+}
+
+@media (max-width: 480px) {
+    html {
+        font-size: 14px;
+    }
+}
+
+/* ============================================================
+   3. GENERIC GRID COLLAPSE
+   Any element with inline `display: grid` + `grid-template-columns: 1fr 1fr`
+   will collapse to a single column on narrow screens.
+   ============================================================ */
+@media (max-width: 900px) {
+
+    /* Target every div that uses the two-column pattern */
+    [style*="grid-template-columns"][style*="1fr 1fr"],
+    [style*="grid-template-columns"][style*="repeat(2"],
+    [style*="grid-template-columns"][style*="repeat(3"],
+    [style*="gridTemplateColumns"] {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+/* ============================================================
+   4. FORM LAYOUTS
+   ============================================================ */
+@media (max-width: 640px) {
+
+    .form-row,
+    [style*="display: grid"][style*="grid-template-columns: 1fr 1fr"] {
+        grid-template-columns: 1fr !important;
+        gap: 10px !important;
+    }
+
+    .form-group label {
+        font-size: 13px;
+    }
+
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+        font-size: 16px !important;
+        /* Prevents iOS auto-zoom on focus */
+        padding: 12px 14px;
+    }
+
+    /* Group form buttons vertically */
+    .modal-footer,
+    [style*="justify-content: flex-end"][style*="gap"] {
+        flex-direction: column-reverse;
+        gap: 8px !important;
+    }
+
+    .modal-footer>button,
+    [style*="justify-content: flex-end"][style*="gap"]>button {
+        width: 100%;
+        padding: 12px 16px !important;
+    }
+}
+
+/* ============================================================
+   5. TABLES — HORIZONTAL SCROLL (never overflow)
+   ============================================================ */
+@media (max-width: 900px) {
+    .table-container {
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+        border-radius: 12px;
+        /* Visual hint that it scrolls */
+        box-shadow: inset -20px 0 20px -20px rgba(0, 0, 0, 0.15);
+    }
+
+    .table-container table {
+        min-width: 700px;
+        /* Force horizontal scroll instead of column squish */
+    }
+
+    .table-container th,
+    .table-container td {
+        padding: 10px 12px !important;
+        font-size: 13px !important;
+        white-space: nowrap;
+    }
+
+    /* Make action buttons not wrap inside cells */
+    .table-container td .btn-sm {
+        white-space: nowrap;
+    }
+}
+
+/* ============================================================
+   6. MODALS — FIT THE VIEWPORT
+   ============================================================ */
+@media (max-width: 640px) {
+
+    .modal-overlay,
+    .modal-overlay-global {
+        padding: 10px !important;
+        align-items: flex-start !important;
+        padding-top: 40px !important;
+    }
+
+    .modal-content,
+    .modal-content-global {
+        max-width: 100% !important;
+        max-height: calc(100vh - 60px) !important;
+        border-radius: 12px !important;
+        width: 100% !important;
+    }
+
+    .modal-header,
+    .modal-header-modern {
+        padding: 16px 20px !important;
+    }
+
+    .modal-header h3 {
+        font-size: 16px !important;
+    }
+
+    .modal-body,
+    .modal-body-modern {
+        padding: 16px !important;
+        max-height: calc(100vh - 200px) !important;
+    }
+
+    .modal-footer,
+    .modal-footer-modern {
+        padding: 12px 16px !important;
+    }
+}
+
+/* ============================================================
+   7. DASHBOARD SPECIFIC
+   ============================================================ */
+@media (max-width: 1200px) {
+    .stats-grid {
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)) !important;
+        gap: 12px !important;
+    }
+
+    .stat-card {
+        padding: 16px 18px !important;
+        gap: 12px !important;
+    }
+
+    .stat-icon {
+        font-size: 24px !important;
+    }
+
+    .stat-value {
+        font-size: 22px !important;
+    }
+
+    .stat-label {
+        font-size: 12px !important;
+    }
+}
+
+@media (max-width: 640px) {
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 10px !important;
+    }
+
+    .stat-card {
+        padding: 14px 12px !important;
+        gap: 10px !important;
+        flex-direction: column;
+        align-items: flex-start !important;
+        text-align: left;
+    }
+
+    .stat-icon {
+        font-size: 22px !important;
+    }
+
+    .stat-value {
+        font-size: 20px !important;
+    }
+
+    .stat-label {
+        font-size: 11px !important;
+    }
+
+    /* Two-column chart grid → single column */
+    [style*="gridTemplateColumns"][style*="1fr 1fr"],
+    [style*="grid-template-columns"][style*="1fr 1fr"] {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+/* ============================================================
+   8. PATIENT PROFILE — SIDEBAR STACKS ON MOBILE
+   ============================================================ */
+@media (max-width: 900px) {
+    .patient-profile-container {
+        flex-direction: column !important;
+        gap: 16px !important;
+    }
+
+    .profile-sidebar {
+        width: 100% !important;
+        position: static !important;
+        padding: 12px 0 !important;
+        max-height: none !important;
+        overflow: visible !important;
+    }
+
+    .profile-sidebar h4 {
+        padding: 0 16px 12px 16px !important;
+    }
+
+    .profile-tab-btn {
+        display: inline-flex;
+        align-items: center;
+        width: auto !important;
+        padding: 8px 14px !important;
+        margin: 4px 6px !important;
+        border-radius: 20px;
+        border-left: none !important;
+        background: rgba(255, 255, 255, 0.05);
+        font-size: 13px !important;
+    }
+
+    .profile-tab-btn.active {
+        background: rgba(0, 212, 255, 0.15);
+        border-left: none !important;
+    }
+
+    .profile-content {
+        padding: 16px !important;
+        width: 100%;
+        border-radius: 12px;
+    }
+}
+
+/* Profile info grid columns */
+@media (max-width: 640px) {
+    .profile-grid {
+        grid-template-columns: 1fr !important;
+        gap: 10px !important;
+    }
+
+    .profile-grid-item {
+        padding: 10px 12px !important;
+    }
+}
+
+/* ============================================================
+   9. ACTIVITY TIMELINE
+   ============================================================ */
+@media (max-width: 640px) {
+
+    .activity-list,
+    [style*="position: relative"][style*="padding-left: 20px"] {
+        padding-left: 14px !important;
+    }
+
+    [style*="position: relative"][style*="padding-left: 20px"]>div {
+        padding: 8px 10px 8px 16px !important;
+    }
+}
+
+/* ============================================================
+   10. WALLET / FINANCE CARDS
+   ============================================================ */
+@media (max-width: 768px) {
+
+    /* Balance card on wallet dashboard */
+    [style*="linear-gradient(135deg, #0f3460"] {
+        padding: 20px !important;
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 16px !important;
+    }
+
+    /* Wallet action buttons stack */
+    [style*="display: flex"][style*="gap"][style*="marginBottom"]>button {
+        width: 100%;
+        justify-content: center !important;
+    }
+}
+
+/* ============================================================
+   11. QUEUE / TABLES WITH MANY COLUMNS
+   ============================================================ */
+@media (max-width: 640px) {
+
+    /* Any table with 5+ columns needs horizontal scroll */
+    .dashboard .table-container {
+        border-radius: 8px;
+    }
+}
+
+/* ============================================================
+   12. SEARCH BAR AND FILTER CONTROLS
+   ============================================================ */
+@media (max-width: 768px) {
+
+    /* Filter row with search + dropdown + counter stacks */
+    [style*="display: flex"][style*="gap"][style*="marginBottom"] {
+        flex-direction: column !important;
+        align-items: stretch !important;
+    }
+
+    [style*="display: flex"][style*="gap"][style*="marginBottom"]>input,
+    [style*="display: flex"][style*="gap"][style*="marginBottom"]>select {
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+}
+
+/* ============================================================
+   13. TABS (HR Dashboard, Patient Portal, etc.)
+   ============================================================ */
+@media (max-width: 640px) {
+
+    [style*="display: flex"][style*="borderBottom"],
+    [style*="display: flex"][style*="gap: 4px"][style*="padding: 6px"] {
+        flex-wrap: wrap !important;
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    [style*="display: flex"][style*="borderBottom"]>button {
+        flex-shrink: 0;
+        font-size: 13px !important;
+        padding: 10px 14px !important;
+    }
+}
+
+/* ============================================================
+   14. BUTTON GROUPS / ACTION ROWS
+   ============================================================ */
+@media (max-width: 640px) {
+
+    /* The page-header action buttons stack */
+    .page-header>div,
+    .page-header>div[style*="display: flex"] {
+        width: 100%;
+        flex-wrap: wrap;
+        gap: 8px !important;
+    }
+
+    .page-header button,
+    .page-header a.btn {
+        flex: 1 1 auto;
+        min-width: 140px;
+        justify-content: center;
+    }
+
+    /* HR dashboard quick action buttons */
+    [style*="flex-wrap: wrap"][style*="justify-content: center"]>a,
+    [style*="flex-wrap: wrap"][style*="justify-content: center"]>button {
+        width: 100%;
+    }
+}
+
+/* ============================================================
+   15. LOGIN SCREEN
+   ============================================================ */
+@media (max-width: 768px) {
+    .login-screen {
+        padding: 16px !important;
+        justify-content: center !important;
+        padding-left: 16px !important;
+    }
+
+    .login-container {
+        padding: 28px 22px !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+    }
+
+    .login-header h1 {
+        font-size: 24px !important;
+    }
+}
+
+@media (max-width: 480px) {
+    .login-screen {
+        padding: 12px !important;
+        padding-top: 32px !important;
+        align-items: flex-start !important;
+    }
+
+    .login-container {
+        padding: 22px 18px !important;
+    }
+
+    .login-header h1 {
+        font-size: 22px !important;
+    }
+}
+
+/* ============================================================
+   16. HR / SPECIALIST DASHBOARD QUICK ACTION GRIDS
+   ============================================================ */
+@media (max-width: 640px) {
+
+    /* The HR dashboard "Manage Employees/Departments/Leaves" row */
+    [style*="gap: 14px"][style*="justify-content: center"],
+    [style*="gap: 12px"][style*="justify-content: center"] {
+        flex-direction: column !important;
+    }
+
+    [style*="gap: 14px"][style*="justify-content: center"]>*,
+    [style*="gap: 12px"][style*="justify-content: center"]>* {
+        width: 100% !important;
+    }
+}
+
+/* ============================================================
+   17. KIOSK MODE
+   ============================================================ */
+@media (max-width: 640px) {
+    .kiosk-container {
+        padding: 20px !important;
+    }
+
+    .kiosk-button {
+        width: 100% !important;
+        padding: 16px !important;
+        font-size: 16px !important;
+    }
+}
+
+/* ============================================================
+   18. TOUCH-FRIENDLY TAP TARGETS
+   ============================================================ */
+@media (max-width: 768px) {
+
+    button,
+    .btn,
+    .btn-sm,
+    a.btn,
+    [role="button"] {
+        min-height: 40px;
+    }
+
+    /* Small action buttons get a bit more padding on mobile */
+    .btn-sm {
+        min-height: 36px;
+        padding: 8px 14px !important;
+        font-size: 12px !important;
+    }
+}
+
+/* ============================================================
+   19. HIDE THE HORIZONTAL SCROLLBAR VISUAL
+   (still scrollable, just not ugly)
+   ============================================================ */
+.table-container::-webkit-scrollbar {
+    height: 6px;
+}
+
+.table-container::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: 3px;
+}
+
+.table-container::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+/* ============================================================
+   20. SAFE AREA FOR IPHONES WITH NOTCH
+   ============================================================ */
+@supports (padding: max(0px)) {
+    .navbar {
+        padding-left: max(24px, env(safe-area-inset-left)) !important;
+        padding-right: max(24px, env(safe-area-inset-right)) !important;
+    }
+
+    .main-content {
+        padding-left: max(16px, env(safe-area-inset-left)) !important;
+        padding-right: max(16px, env(safe-area-inset-right)) !important;
+        padding-bottom: max(16px, env(safe-area-inset-bottom)) !important;
+    }
+}

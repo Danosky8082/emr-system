@@ -5,6 +5,7 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom'; // ✅ IMPORT THIS
 import App from './App';
 import './index.css';
+import './styles/responsive.css';
 
 // ✅ Ignore browser extension errors
 window.addEventListener('error', function(e) {
