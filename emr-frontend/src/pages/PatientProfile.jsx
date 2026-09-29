@@ -131,7 +131,7 @@ const PatientProfile = () => {
     fullContent: ''
   });
 
-  // Vitals modal
+    // Vitals modal
   const [showVitalModal, setShowVitalModal] = useState(false);
   const [vitalsForm, setVitalsForm] = useState({
     bloodPressureSystolic: '',
@@ -178,6 +178,20 @@ const PatientProfile = () => {
     clinicalQuestion: '',
     notes: ''
   });
+
+  // ✅ Profile info collapsible groups (used in the Profile tab on mobile)
+  const [expandedGroups, setExpandedGroups] = useState({
+    identity: true,
+    contact: false,
+    alerts: false,
+    kin: false,
+    billing: false,
+    file: false,
+  });
+
+  const toggleGroup = (key) => {
+    setExpandedGroups((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
   // ============================================================
   // STATIC DATA
