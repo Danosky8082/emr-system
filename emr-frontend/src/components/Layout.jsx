@@ -17,8 +17,8 @@ const Layout = () => {
   const [loadingPermissions, setLoadingPermissions] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isMobileView, setIsMobileView] = useState(
-    typeof window !== 'undefined' ? window.innerWidth < 1300 : false
-  );
+  typeof window !== 'undefined' ? window.innerWidth < 1400 : false
+);
 
   // ============================================================
   // MENU STRUCTURE — drives both desktop nav and mobile menu
@@ -169,10 +169,10 @@ const Layout = () => {
   // ============================================================
   useEffect(() => {
     const handleResize = () => {
-      const mobile = window.innerWidth < 1300;
-      setIsMobileView(mobile);
-      if (!mobile) setMobileMenuOpen(false);
-    };
+  const mobile = window.innerWidth < 1400;
+  setIsMobileView(mobile);
+  if (!mobile) setMobileMenuOpen(false);
+};
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
