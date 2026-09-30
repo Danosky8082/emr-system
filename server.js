@@ -71,6 +71,7 @@ const SALT_ROUNDS = 10;
 const DEFAULT_TENANT_ID = 'default-hospital-id';
 
 const app = express();
+app.set('trust proxy', 1); 
 
 // ============================================================
 // 1. BODY PARSERS — MUST come before any route that reads req.body
@@ -585,9 +586,12 @@ app.get(/^\/images\/(.+)$/, async (req, res) => {
 // ---------- 5d. Rate limiting (applies to ALL /api routes) ----------
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: process.env.NODE_ENV === 'production' ? 100 : 1000
+  max: process.env.NODE_ENV === 'production' ? 2000 : 10000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  // Skip the limiter for the health check so Render's probe doesn't count
+  skip: (req) => req.path === '/api/health',
 });
-app.use('/api', limiter);
 
 // ---------- 5e. PLATFORM ROUTES — with diagnostics ----------
 console.log('\n🔧 Loading platform routes...');
