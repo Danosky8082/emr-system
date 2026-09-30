@@ -147,6 +147,8 @@ const PatientProfile = () => {
 
   // Prescription modal
   const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
+  const [prescriptionCart, setPrescriptionCart] = useState([]);
+  const [savingPrescriptionBatch, setSavingPrescriptionBatch] = useState(false);
   const [prescriptionForm, setPrescriptionForm] = useState({
     medication: '',
     dosage: '',
@@ -992,6 +994,72 @@ const PatientProfile = () => {
     }
   };
 
+  const handleAddToCart = () => {
+  if (!prescriptionForm.medication || !prescriptionForm.dosage || !prescriptionForm.frequency) {
+    toast.error('Medication, dosage, and frequency are required');
+    return;
+  }
+
+  const exists = prescriptionCart.some(
+    (item) =>
+      item.medication.toLowerCase() === prescriptionForm.medication.toLowerCase() &&
+      item.dosage === prescriptionForm.dosage
+  );
+  if (exists) {
+    toast.error('This exact prescription is already in the list');
+    return;
+  }
+
+  setPrescriptionCart((prev) => [...prev, { ...prescriptionForm }]);
+  setPrescriptionForm({ medication: '', dosage: '', frequency: '', duration: '', instructions: '' });
+  setMedicationSearchTerm('');
+  toast.success(`Added: ${prescriptionForm.medication}`);
+};
+
+const handleRemoveFromCart = (index) => {
+  setPrescriptionCart((prev) => prev.filter((_, i) => i !== index));
+};
+
+const handleSaveAllPrescriptions = async () => {
+  if (prescriptionCart.length === 0) {
+    toast.error('Add at least one medication first');
+    return;
+  }
+  if (savingPrescriptionBatch) return;
+
+  setSavingPrescriptionBatch(true);
+  try {
+    const saved = [];
+    for (const item of prescriptionCart) {
+      const res = await api.post('/prescriptions', { patientId: id, ...item });
+      saved.push(res.data);
+    }
+
+    toast.success(`✅ ${saved.length} prescription(s) saved!`);
+    setPrescriptionCart([]);
+    setShowPrescriptionModal(false);
+    fetchAllData();
+  } catch (error) {
+    const msg = error.response?.data?.error || 'Failed to save prescriptions';
+    toast.error(`Error: ${msg}`);
+    fetchAllData();
+  } finally {
+    setSavingPrescriptionBatch(false);
+  }
+};
+
+const handleClosePrescriptionModal = () => {
+  if (prescriptionCart.length > 0) {
+    if (!window.confirm(`You have ${prescriptionCart.length} unsaved prescription(s). Close anyway?`)) {
+      return;
+    }
+  }
+  setPrescriptionCart([]);
+  setPrescriptionForm({ medication: '', dosage: '', frequency: '', duration: '', instructions: '' });
+  setMedicationSearchTerm('');
+  setShowPrescriptionModal(false);
+};
+
   const handleLabOrderSubmit = async (e) => {
     e.preventDefault();
     if (!labOrderForm.testName) {
@@ -1636,9 +1704,17 @@ const PatientProfile = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
               <h3 style={{ border: 'none', padding: 0, margin: 0 }}>💊 Prescriptions</h3>
               {canCreatePrescription && !isDischarged && (
-                <button className="btn btn-primary btn-sm" onClick={() => setShowPrescriptionModal(true)}>
-                  ➕ New Prescription
-                </button>
+                <button
+  className="btn btn-primary btn-sm"
+  onClick={() => {
+    setPrescriptionCart([]);
+    setPrescriptionForm({ medication: '', dosage: '', frequency: '', duration: '', instructions: '' });
+    setMedicationSearchTerm('');
+    setShowPrescriptionModal(true);
+  }}
+>
+  ➕ New Prescription
+</button>
               )}
             </div>
 
@@ -2872,86 +2948,319 @@ const PatientProfile = () => {
           PRESCRIPTION MODAL
           ============================================================ */}
       {canCreatePrescription && showPrescriptionModal && (
-        <div className="modal-overlay" onClick={() => setShowPrescriptionModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
-            <div className="modal-header">
-              <h3>💊 New Prescription</h3>
-              <button className="modal-close" onClick={() => setShowPrescriptionModal(false)}>×</button>
-            </div>
-            <form onSubmit={handlePrescriptionSubmit}>
-              <div className="modal-body">
-                <div className="form-group" ref={medicationInputRef} style={{ position: 'relative' }}>
-                  <label>Medication * (Type at least 2 letters)</label>
-                  <input type="text" required
-                    value={medicationSearchTerm || prescriptionForm.medication}
-                    onChange={(e) => handleMedicationSearch(e.target.value)}
-                    placeholder="e.g. Paracetamol, Amoxicillin..."
-                    style={{ width: '100%', padding: '10px 14px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '14px' }}
-                    autoComplete="off" />
-                  {showMedicationSuggestions && medicationSuggestions.length > 0 && (
-                    <div ref={medicationSuggestionRef}
-                      style={{
-                        position: 'absolute', zIndex: 1000, background: 'white',
-                        border: '1px solid #ddd', borderRadius: '8px',
-                        maxHeight: '200px', overflowY: 'auto', width: '100%',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)', marginTop: '4px'
-                      }}>
-                      {medicationSuggestions.map((med, idx) => (
-                        <div key={idx} onClick={() => selectMedication(med)}
-                          style={{
-                            padding: '10px 14px', cursor: 'pointer',
-                            borderBottom: idx < medicationSuggestions.length - 1 ? '1px solid #f3f4f6' : 'none',
-                            display: 'flex', alignItems: 'center', gap: '8px'
-                          }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = '#f0f7ff'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = 'white'}>
-                          <span>💊</span>
-                          <span style={{ fontWeight: '500' }}>{med}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Dosage *</label>
-                    <input type="text" required value={prescriptionForm.dosage}
-                      onChange={e => setPrescriptionForm({ ...prescriptionForm, dosage: e.target.value })}
-                      placeholder="e.g. 500mg" />
+  <div className="modal-overlay" onClick={handleClosePrescriptionModal}>
+    <div
+      className="modal-content"
+      onClick={(e) => e.stopPropagation()}
+      style={{ maxWidth: '820px', maxHeight: '90vh', overflowY: 'auto' }}
+    >
+      <div className="modal-header">
+        <h3>
+          💊 New Prescriptions — {patient.firstName} {patient.lastName}
+        </h3>
+        <button className="modal-close" onClick={handleClosePrescriptionModal}>×</button>
+      </div>
+
+      <div className="modal-body">
+        {/* ============================================================
+            ENTRY FORM — adds to cart, does NOT save yet
+            ============================================================ */}
+        <div
+          style={{
+            background: '#f8fafc',
+            padding: '16px',
+            borderRadius: '10px',
+            border: '1px solid #e2e8f0',
+            marginBottom: '20px',
+          }}
+        >
+          <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#0f3460' }}>
+            ✏️ Add a medication
+          </h4>
+
+          {/* Medication autocomplete */}
+          <div className="form-group" ref={medicationInputRef} style={{ position: 'relative' }}>
+            <label>Medication *</label>
+            <input
+              type="text"
+              value={medicationSearchTerm || prescriptionForm.medication}
+              onChange={(e) => handleMedicationSearch(e.target.value)}
+              placeholder="Type at least 2 letters…"
+              style={{
+                width: '100%',
+                padding: '10px 14px',
+                border: '1px solid #ddd',
+                borderRadius: '8px',
+                fontSize: '14px',
+              }}
+              autoComplete="off"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleAddToCart();
+                }
+              }}
+            />
+            {showMedicationSuggestions && medicationSuggestions.length > 0 && (
+              <div
+                ref={medicationSuggestionRef}
+                style={{
+                  position: 'absolute',
+                  zIndex: 1000,
+                  background: 'white',
+                  border: '1px solid #ddd',
+                  borderRadius: '8px',
+                  maxHeight: '200px',
+                  overflowY: 'auto',
+                  width: '100%',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                  marginTop: '4px',
+                }}
+              >
+                {medicationSuggestions.map((med, idx) => (
+                  <div
+                    key={idx}
+                    onClick={() => selectMedication(med)}
+                    style={{
+                      padding: '10px 14px',
+                      cursor: 'pointer',
+                      borderBottom:
+                        idx < medicationSuggestions.length - 1 ? '1px solid #f3f4f6' : 'none',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = '#f0f7ff')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'white')}
+                  >
+                    💊 {med}
                   </div>
-                  <div className="form-group">
-                    <label>Frequency *</label>
-                    <input type="text" required value={prescriptionForm.frequency}
-                      onChange={e => setPrescriptionForm({ ...prescriptionForm, frequency: e.target.value })}
-                      placeholder="e.g. Twice daily" />
-                  </div>
-                </div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Duration</label>
-                    <input type="text" value={prescriptionForm.duration}
-                      onChange={e => setPrescriptionForm({ ...prescriptionForm, duration: e.target.value })}
-                      placeholder="e.g. 7 days" />
-                  </div>
-                  <div className="form-group">
-                    <label>Instructions</label>
-                    <input type="text" value={prescriptionForm.instructions}
-                      onChange={e => setPrescriptionForm({ ...prescriptionForm, instructions: e.target.value })}
-                      placeholder="e.g. Take with food" />
-                  </div>
-                </div>
+                ))}
               </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-secondary"
-                  onClick={() => { setShowPrescriptionModal(false); setMedicationSearchTerm(''); }}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary">Create Prescription</button>
-              </div>
-            </form>
+            )}
           </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label>Dosage *</label>
+              <input
+                type="text"
+                value={prescriptionForm.dosage}
+                onChange={(e) =>
+                  setPrescriptionForm({ ...prescriptionForm, dosage: e.target.value })
+                }
+                placeholder="e.g. 500mg"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddToCart();
+                  }
+                }}
+              />
+            </div>
+            <div className="form-group">
+              <label>Frequency *</label>
+              <input
+                type="text"
+                value={prescriptionForm.frequency}
+                onChange={(e) =>
+                  setPrescriptionForm({ ...prescriptionForm, frequency: e.target.value })
+                }
+                placeholder="e.g. Twice daily"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddToCart();
+                  }
+                }}
+              />
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label>Duration</label>
+              <input
+                type="text"
+                value={prescriptionForm.duration}
+                onChange={(e) =>
+                  setPrescriptionForm({ ...prescriptionForm, duration: e.target.value })
+                }
+                placeholder="e.g. 7 days"
+              />
+            </div>
+            <div className="form-group">
+              <label>Instructions</label>
+              <input
+                type="text"
+                value={prescriptionForm.instructions}
+                onChange={(e) =>
+                  setPrescriptionForm({ ...prescriptionForm, instructions: e.target.value })
+                }
+                placeholder="e.g. Take with food"
+              />
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleAddToCart}
+            disabled={
+              !prescriptionForm.medication ||
+              !prescriptionForm.dosage ||
+              !prescriptionForm.frequency
+            }
+            style={{
+              background: '#0f3460',
+              color: 'white',
+              border: 'none',
+              padding: '10px 20px',
+              borderRadius: '8px',
+              fontWeight: '600',
+              cursor:
+                !prescriptionForm.medication ||
+                !prescriptionForm.dosage ||
+                !prescriptionForm.frequency
+                  ? 'not-allowed'
+                  : 'pointer',
+              opacity:
+                !prescriptionForm.medication ||
+                !prescriptionForm.dosage ||
+                !prescriptionForm.frequency
+                  ? 0.5
+                  : 1,
+            }}
+          >
+            ➕ Add to prescription list
+          </button>
         </div>
-      )}
+
+        {/* ============================================================
+            CART — the list of medications queued to save
+            ============================================================ */}
+        <div style={{ marginBottom: '8px' }}>
+          <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#0f3460' }}>
+            📋 Medications to prescribe ({prescriptionCart.length})
+          </h4>
+
+          {prescriptionCart.length === 0 ? (
+            <div
+              style={{
+                padding: '24px 20px',
+                textAlign: 'center',
+                background: '#fafafa',
+                borderRadius: '8px',
+                border: '1px dashed #d1d5db',
+                color: '#9ca3af',
+                fontSize: '13px',
+              }}
+            >
+              No medications added yet. Fill in the form above and click
+              <strong> "Add to prescription list"</strong>.
+            </div>
+          ) : (
+            <div
+              className="table-container"
+              style={{
+                maxHeight: '280px',
+                overflowY: 'auto',
+                border: '1px solid #e2e8f0',
+                borderRadius: '8px',
+              }}
+            >
+              <table>
+                <thead>
+                  <tr>
+                    <th style={{ width: '30%' }}>Medication</th>
+                    <th>Dosage</th>
+                    <th>Frequency</th>
+                    <th>Duration</th>
+                    <th>Instructions</th>
+                    <th style={{ width: '90px' }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {prescriptionCart.map((item, idx) => (
+                    <tr key={idx}>
+                      <td>
+                        <strong>{item.medication}</strong>
+                      </td>
+                      <td>{item.dosage}</td>
+                      <td>{item.frequency}</td>
+                      <td>{item.duration || '—'}</td>
+                      <td>{item.instructions || '—'}</td>
+                      <td>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveFromCart(idx)}
+                          style={{
+                            background: '#fee2e2',
+                            color: '#991b1b',
+                            border: 'none',
+                            padding: '4px 10px',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                          }}
+                        >
+                          🗑️ Remove
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {prescriptionCart.length > 0 && (
+            <div
+              style={{
+                marginTop: '12px',
+                padding: '10px 14px',
+                background: '#eff6ff',
+                border: '1px solid #3b82f6',
+                borderRadius: '8px',
+                fontSize: '13px',
+                color: '#1e3a5f',
+              }}
+            >
+              💡 Review the list above, then click <strong>"💾 Save all"</strong> to create
+              all {prescriptionCart.length} prescription(s) at once.
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="modal-footer">
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={handleClosePrescriptionModal}
+          disabled={savingPrescriptionBatch}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={handleSaveAllPrescriptions}
+          disabled={savingPrescriptionBatch || prescriptionCart.length === 0}
+          style={{
+            background: prescriptionCart.length === 0 ? '#9ca3af' : '#10b981',
+            cursor:
+              savingPrescriptionBatch || prescriptionCart.length === 0
+                ? 'not-allowed'
+                : 'pointer',
+            opacity: savingPrescriptionBatch ? 0.6 : 1,
+          }}
+        >
+          {savingPrescriptionBatch
+            ? '⏳ Saving…'
+            : `💾 Save all (${prescriptionCart.length})`}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
 
       {/* ============================================================
           LAB ORDER MODAL

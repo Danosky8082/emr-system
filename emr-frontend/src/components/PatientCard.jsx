@@ -25,12 +25,18 @@ const PatientCard = ({ patient, hospitalName = "NexGen EMR Clinic" }) => {
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <div style={{ fontSize: '16px', fontWeight: '800', color: '#0f3460' }}>
-            {hospitalName}
-          </div>
-          <div style={{ fontSize: '10px', color: '#666' }}>Medical Centre, Lagos</div>
-        </div>
+  <div>
+    <img
+      src="/logo.png"
+      alt=""
+      style={{ height: '24px', width: '24px', objectFit: 'contain', marginBottom: '2px' }}
+    />
+    <div style={{ fontSize: '14px', fontWeight: '800', color: '#0f3460' }}>
+      {hospitalName}
+    </div>
+    <div style={{ fontSize: '10px', color: '#666' }}>Medical Centre, Lagos</div>
+  </div>
+  ...
         <div style={{ border: '1px solid #eee', borderRadius: '4px', padding: '4px' }}>
           {/* <--- The QR Code now renders safely ---> */}
           <QRCode value={patient.hospitalId} size={50} />

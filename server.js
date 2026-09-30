@@ -3870,6 +3870,33 @@ app.post('/api/prescriptions', authenticate, authorize('Doctor', 'Nurse', 'Obste
     if (!patientId || !medication || !dosage || !frequency) {
       return res.status(400).json({ error: 'Missing required fields: patientId, medication, dosage, frequency' });
     }
+
+    // ============================================================
+    // ✅ IDEMPOTENCY GUARD
+    // Prevents double-click / double-tap from creating two identical
+    // prescriptions in quick succession. Rejects if the SAME staff
+    // member prescribed the SAME medication at the SAME dosage and
+    // frequency for the SAME patient within the last 60 seconds.
+    // ============================================================
+    const sixtySecondsAgo = new Date(Date.now() - 60 * 1000);
+    const duplicate = await req.db.prescription.findFirst({
+      where: {
+        patientId,
+        medication,
+        dosage,
+        frequency,
+        prescribingStaffId: req.user.id,
+        createdAt: { gte: sixtySecondsAgo },
+      },
+    });
+
+    if (duplicate) {
+      return res.status(409).json({
+        error: 'Duplicate prescription detected — same medication was just prescribed for this patient.',
+        duplicateId: duplicate.id,
+      });
+    }
+
     const prescription = await req.db.prescription.create({
       data: {
         patientId, prescribingStaffId: req.user.id, medication, dosage,
