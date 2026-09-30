@@ -850,27 +850,16 @@ const Layout = () => {
         </button>
 
         <div className="nav-brand">
-          {hospitalLogo ? (
-            <img
-              src={hospitalLogo}
-              alt={hospitalName || 'Hospital Logo'}
-              style={{ height: '38px' }}
-            />
-          ) : (
-            <svg className="unique-logo" viewBox="0 0 100 100">
-              <defs>
-                <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#00f2fe" />
-                  <stop offset="100%" stopColor="#4facfe" />
-                </linearGradient>
-              </defs>
-              <path d="M50 8 L85 28 L85 72 L50 92 L15 72 L15 28 Z" fill="none" stroke="url(#glow)" strokeWidth="5" strokeLinejoin="round"/>
-              <path d="M 25 45 Q 45 30 50 50 Q 55 70 75 55" fill="none" stroke="#fff" strokeWidth="3" opacity="0.8"/>
-              <path d="M 25 55 Q 45 70 50 50 Q 55 30 75 45" fill="none" stroke="#fff" strokeWidth="3" opacity="0.6"/>
-              <rect x="45" y="40" width="10" height="20" rx="2" fill="#00f2fe" />
-              <rect x="40" y="45" width="20" height="10" rx="2" fill="#00f2fe" />
-            </svg>
-          )}
+          <img
+  src={hospitalLogo || '/logo.png'}
+  alt={hospitalName || 'NexGen EMR'}
+  className="unique-logo"
+  style={{
+    height: '38px',
+    width: '38px',
+    objectFit: 'contain',
+  }}
+/>
           <span>{hospitalName || 'NexGen EMR'}</span>
         </div>
 

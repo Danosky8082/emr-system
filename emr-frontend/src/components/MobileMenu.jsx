@@ -52,9 +52,14 @@ const MobileMenu = ({ isOpen, onClose, menuGroups }) => {
       >
         {/* Header */}
         <div className="mobile-menu-header">
-          <div className="mobile-menu-brand">
-            <span className="mobile-menu-brand-name">{hospitalName || 'NexGen EMR'}</span>
-          </div>
+          <div className="mobile-menu-brand" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+  <img
+    src="/logo.png"
+    alt="NexGen EMR"
+    style={{ width: '32px', height: '32px', objectFit: 'contain' }}
+  />
+  <span className="mobile-menu-brand-name">{hospitalName || 'NexGen EMR'}</span>
+</div>
           <button
             className="mobile-menu-close"
             onClick={onClose}

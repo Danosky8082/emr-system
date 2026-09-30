@@ -131,17 +131,14 @@ const HospitalLogin = () => {
         }}
       >
         <div className="login-header">
-          {hospital.logoUrl ? (
-            <img
-              src={hospital.logoUrl}
-              alt={hospital.name}
-              style={{ maxWidth: '120px', marginBottom: '12px' }}
-            />
-          ) : (
-            <h1 style={{ color: hospital.primaryColor || '#0f3460' }}>
-              🏥 {hospital.name}
-            </h1>
-          )}
+          <img
+  src={hospital.logoUrl || '/logo.png'}
+  alt={hospital.name}
+  style={{ maxWidth: '96px', height: '96px', objectFit: 'contain', marginBottom: '12px' }}
+/>
+<h1 style={{ color: hospital.primaryColor || '#0f3460', marginTop: 0 }}>
+  {hospital.name}
+</h1>
           <p>
             {hospital.city && hospital.state
               ? `${hospital.city}, ${hospital.state}`

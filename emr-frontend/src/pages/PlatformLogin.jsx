@@ -35,10 +35,21 @@ const PlatformLogin = () => {
   return (
     <div className="login-screen app-container">
       <div className="login-container" style={{ borderTop: '4px solid #dc2626' }}>
-        <div className="login-header">
-          <h1 style={{ color: '#dc2626' }}>🔐 Platform Access</h1>
-          <p className="subtitle">Restricted — NexGen EMR operators only</p>
-        </div>
+        <div className="login-header" style={{ textAlign: 'center' }}>
+  <img
+    src="/logo.png"
+    alt="NexGen EMR"
+    style={{
+      width: '72px',
+      height: '72px',
+      objectFit: 'contain',
+      marginBottom: '10px',
+      filter: 'drop-shadow(0 4px 12px rgba(0, 0, 0, 0.15))',
+    }}
+  />
+  <h1 style={{ color: '#dc2626', marginTop: 0 }}>Platform Access</h1>
+  <p className="subtitle">Restricted — NexGen EMR operators only</p>
+</div>
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">

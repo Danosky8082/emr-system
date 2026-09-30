@@ -92,11 +92,22 @@ const Login = () => {
   return (
     <div className="login-screen app-container">
       <div className="login-container">
-        <div className="login-header">
-          <h1>🏥 NexGen EMR</h1>
-          <p>Medical Centre, Lagos</p>
-          <p className="subtitle">Electronic Medical Records System</p>
-        </div>
+        <div className="login-header" style={{ textAlign: 'center' }}>
+  <img
+    src="/logo.png"
+    alt="NexGen EMR"
+    style={{
+      width: '88px',
+      height: '88px',
+      objectFit: 'contain',
+      marginBottom: '12px',
+      filter: 'drop-shadow(0 4px 12px rgba(0, 0, 0, 0.15))',
+    }}
+  />
+  <h1 style={{ marginBottom: '4px' }}>NexGen EMR</h1>
+  <p>Medical Centre, Lagos</p>
+  <p className="subtitle">Electronic Medical Records System</p>
+</div>
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">

@@ -109,9 +109,19 @@ const PatientLogin = () => {
         {/* Left Side - Branding */}
         <div className="patient-login-left">
           <div className="brand-content">
-            <div className="brand-icon">🏥</div>
-            <h1>NexGen EMR</h1>
-            <p className="brand-tagline">Patient Portal</p>
+  <img
+    src="/logo.png"
+    alt="NexGen EMR"
+    style={{
+      width: '120px',
+      height: '120px',
+      objectFit: 'contain',
+      marginBottom: '16px',
+      filter: 'drop-shadow(0 8px 24px rgba(0, 0, 0, 0.35))',
+    }}
+  />
+  <h1>NexGen EMR</h1>
+  <p className="brand-tagline">Patient Portal</p>
             <div className="brand-features">
               <div className="feature-item">
                 <span className="feature-icon">🔒</span>
