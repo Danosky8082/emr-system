@@ -738,14 +738,36 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     const idLower = id.toLowerCase();
-    let staff = null;
+let staff = null;
 
-    // ── Case 1: Email ────────────────────────────────
-    if (idLower.includes('@')) {
-      staff = await prisma.staff.findFirst({
-        where: { email: idLower },
-      });
-    }
+// ── Case 1: Email ────────────────────────────────
+if (idLower.includes('@')) {
+  staff = await prisma.staff.findFirst({
+    where: { email: idLower },
+  });
+}
+
+// ── Case 1b: Employee ID (e.g. ADMIN001, DOC001) ──
+else if (/^[A-Z]{2,6}[-\d]+$/i.test(id) && !idLower.includes('-')) {
+  // Matches patterns like "ADMIN001", "DOC001", "NURSE01" — 
+  // must NOT contain a hyphen, because that's reserved for prefixed usernames.
+  const empMatches = await prisma.staff.findMany({
+    where: { employeeId: id.toUpperCase() },
+    select: { id: true, username: true, tenantId: true, isActive: true, firstName: true, lastName: true },
+  });
+
+  if (empMatches.length === 0) {
+    staff = null;
+  } else if (empMatches.length === 1) {
+    staff = await prisma.staff.findUnique({ where: { id: empMatches[0].id } });
+  } else {
+    // Same employee ID in multiple hospitals — need a hospital prefix
+    return res.status(409).json({
+      error: 'This Employee ID exists in multiple hospitals. Please use your username or email instead.',
+      code: 'AMBIGUOUS_EMPLOYEE_ID',
+    });
+  }
+}
     // ── Case 2: Prefixed username ("caretech-admin") ──
     else if (idLower.includes('-')) {
       const firstHyphen = idLower.indexOf('-');
@@ -844,6 +866,62 @@ const requireSuperAdmin = (req, res, next) => {
   }
   next();
 };
+
+// ============================================================
+// STAFF — Change own password
+// ============================================================
+app.post('/api/auth/change-password', authenticate, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Current and new password are required' });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: 'New password must be at least 8 characters' });
+    }
+
+    if (newPassword === currentPassword) {
+      return res.status(400).json({ error: 'New password must be different from current password' });
+    }
+
+    const staff = await req.db.staff.findUnique({
+      where: { id: req.user.id },
+      select: { id: true, password: true, email: true },
+    });
+
+    if (!staff) {
+      return res.status(404).json({ error: 'Staff account not found' });
+    }
+
+    const valid = await bcrypt.compare(currentPassword, staff.password);
+    if (!valid) {
+      return res.status(401).json({ error: 'Current password is incorrect' });
+    }
+
+    const hashed = await bcrypt.hash(newPassword, SALT_ROUNDS);
+    await req.db.staff.update({
+      where: { id: staff.id },
+      data: { password: hashed, updatedAt: new Date() },
+    });
+
+    await req.db.auditLog.create({
+      data: {
+        staffId: req.user.id,
+        action: 'CHANGE_OWN_PASSWORD',
+        module: 'Auth',
+        details: `Staff ${staff.email} changed their own password`,
+        ipAddress: req.ip,
+      },
+    });
+
+    res.json({ success: true, message: 'Password changed successfully' });
+  } catch (error) {
+    console.error('Change own password error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // List all hospitals
 app.get('/api/super-admin/hospitals', authenticate, requireSuperAdmin, async (req, res) => {

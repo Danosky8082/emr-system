@@ -113,25 +113,22 @@ const Login = () => {
           <div className="form-group">
             <label>Username or Email</label>
             <input
-              type="text"
-              value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
-              placeholder="e.g., caretech-admin"
+  type="text"
+  value={identifier}
+  onChange={(e) => setIdentifier(e.target.value)}
+  placeholder="Username, Employee ID, or Email"
               required
               autoComplete="username"
             />
-            <small
-              style={{
-                color: '#9ca3af',
-                display: 'block',
-                marginTop: '4px',
-                fontSize: '12px',
-              }}
-            >
-              Your username starts with your hospital prefix.
-              <br />
-              You can also use your email address.
-            </small>
+            <small style={{ color: '#9ca3af', display: 'block', marginTop: '4px', fontSize: '12px' }}>
+  You can log in with:
+  <br />
+  • Your <strong>username</strong> (e.g. caretech-admin)
+  <br />
+  • Your <strong>Employee ID</strong> (e.g. ADMIN001)
+  <br />
+  • Your <strong>email</strong> (e.g. admin@hospital.com)
+</small>
           </div>
 
           <div className="form-group">

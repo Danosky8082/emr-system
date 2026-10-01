@@ -892,7 +892,21 @@ const Layout = () => {
     title="Change hospital"
   >
     🏥 Switch
-  </button>
+          </button>
+          
+          <button
+  onClick={() => navigate('/change-password')}
+  className="btn btn-secondary btn-sm"
+  style={{
+    background: 'rgba(255,255,255,0.15)',
+    color: '#fff',
+    border: '1px solid rgba(255,255,255,0.2)',
+  }}
+  title="Change your password"
+>
+  🔑
+          </button>
+          
   <button onClick={handleLogout} className="btn btn-danger btn-sm">Logout</button>
 </div>
       </nav>

@@ -64,6 +64,7 @@ import RegisterHospital from './pages/RegisterHospital';
 import PatientLogin from './pages/PatientLogin';
 import PatientDashboard from './pages/PatientDashboard';
 import PatientChangeCredentials from './pages/PatientChangeCredentials';
+import ChangePassword from './pages/ChangePassword';
 
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -98,6 +99,7 @@ const AppContent = () => {
         <Route path="/login" element={<Login />} />
         <Route path="/h/:hospitalSlug" element={<HospitalLogin />} />
         <Route path="/h/:hospitalSlug/login" element={<HospitalLogin />} />
+        <Route path="change-password" element={<ChangePassword />} />
 
         {/* ✅ Standalone / public routes (NOT wrapped in Layout) */}
         {/* ✅ Platform-only */}
