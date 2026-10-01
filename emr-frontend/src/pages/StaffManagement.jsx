@@ -271,98 +271,99 @@ const StaffManagement = () => {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      if (editingStaff) {
-        // -------- EDIT PATH --------
-        const { password, ...updateData } = formData;
-        await api.put(`/staff/${editingStaff.id}`,
-          updateData);
-        toast.success('Staff updated successfully!');
+  e.preventDefault();
+  try {
+    if (editingStaff) {
+      // -------- EDIT PATH --------
+      const { password, ...updateData } = formData;
+      await api.put(`/staff/${editingStaff.id}`, updateData);
+      toast.success('Staff updated successfully!');
 
-        if (rolesRequiringAssignment.includes(formData.role) && editingStaff) {
-          try {
-            const currentAssignments = await api.get(`/staff/${editingStaff.id}/assignments`);
-            const oldClinicIds = currentAssignments.data.clinicIds || [];
-            const oldWardIds = currentAssignments.data.wardIds || [];
+      if (rolesRequiringAssignment.includes(formData.role)) {
+        try {
+          const currentAssignments = await api.get(`/staff/${editingStaff.id}/assignments`);
+          const oldClinicIds = currentAssignments.data.clinicIds || [];
+          const oldWardIds = currentAssignments.data.wardIds || [];
 
-            for (const clinicId of oldClinicIds) {
-              try {
-                await api.delete(`/staff/${editingStaff.id}/clinics/${clinicId}`);
-              } catch (err) {}
-            }
-            for (const wardId of oldWardIds) {
-              try {
-                await api.delete(`/staff/${editingStaff.id}/wards/${wardId}`);
-              } catch (err) {}
-            }
-            for (const clinicId of assignedClinicIds) {
-              try {
-                await api.post(`/staff/${editingStaff.id}/clinics`,
-                  { clinicId });
-              } catch (err) {}
-            }
-            for (const wardId of assignedWardIds) {
-              try {
-                await api.post(`/staff/${editingStaff.id}/wards`,
-                  { wardId });
-              } catch (err) {}
-            }
-            toast.success('Assignments updated successfully!');
-          } catch (error) {
-            toast.error('Failed to update assignments');
+          for (const clinicId of oldClinicIds) {
+            try { await api.delete(`/staff/${editingStaff.id}/clinics/${clinicId}`); } catch {}
           }
-        }
-      } else {
-        // -------- CREATE PATH --------
-        // The server generates the username. We do NOT send one.
-        const response = await api.post('/staff',
-          formData);
-
-        const createdStaff = response.data;
-
-        // Show credentials in a dedicated modal (not just a toast)
-        setCreatedCreds({
-          name: `${createdStaff.firstName} ${createdStaff.lastName}`,
-          username: createdStaff.username || '(not returned by server)',
-          employeeId: createdStaff.employeeId,
-          email: createdStaff.email,
-          role: createdStaff.role,
-        });
-
-        if (rolesRequiringAssignment.includes(formData.role)) {
-          setNewStaffName(`${formData.firstName} ${formData.lastName}`);
-          setNewStaffRole(formData.role);
-          setShowAssignmentAlert(true);
-
-          setEditingStaff(createdStaff);
-          setFormData({
-            employeeId: createdStaff.employeeId,
-            firstName: createdStaff.firstName,
-            lastName: createdStaff.lastName,
-            email: createdStaff.email,
-            role: createdStaff.role,
-            department: createdStaff.department || '',
-            password: '',
-          });
-          if (rolesRequiringAssignment.includes(createdStaff.role)) {
-            await fetchAssignments(createdStaff.id);
+          for (const wardId of oldWardIds) {
+            try { await api.delete(`/staff/${editingStaff.id}/wards/${wardId}`); } catch {}
           }
-          setShowModal(true);
+          for (const clinicId of assignedClinicIds) {
+            try { await api.post(`/staff/${editingStaff.id}/clinics`, { clinicId }); } catch {}
+          }
+          for (const wardId of assignedWardIds) {
+            try { await api.post(`/staff/${editingStaff.id}/wards`, { wardId }); } catch {}
+          }
+          toast.success('Assignments updated successfully!');
+        } catch (error) {
+          toast.error('Failed to update assignments');
         }
       }
 
+      // Edit path is complete — close everything
       setShowModal(false);
       setEditingStaff(null);
       setFormData(emptyForm);
       setAssignedClinicIds([]);
       setAssignedWardIds([]);
       fetchStaff();
-    } catch (error) {
-      const message = error.response?.data?.error || 'Operation failed';
-      toast.error(message);
+      return; // ← important: don't fall into create-path cleanup
     }
-  };
+
+    // -------- CREATE PATH --------
+    const response = await api.post('/staff', formData);
+    const createdStaff = response.data;
+
+    // Show the credentials modal
+    setCreatedCreds({
+      name: `${createdStaff.firstName} ${createdStaff.lastName}`,
+      username: createdStaff.username || '(not returned by server)',
+      employeeId: createdStaff.employeeId,
+      email: createdStaff.email,
+      role: createdStaff.role,
+    });
+
+    // If this role needs clinic/ward assignment, reopen the modal in edit mode
+    // so the admin can assign immediately.
+    if (rolesRequiringAssignment.includes(formData.role)) {
+      setNewStaffName(`${formData.firstName} ${formData.lastName}`);
+      setNewStaffRole(formData.role);
+      setShowAssignmentAlert(true);
+
+      setEditingStaff(createdStaff);
+      setFormData({
+        employeeId: createdStaff.employeeId,
+        firstName: createdStaff.firstName,
+        lastName: createdStaff.lastName,
+        email: createdStaff.email,
+        role: createdStaff.role,
+        department: createdStaff.department || '',
+        password: '',
+      });
+
+      await fetchAssignments(createdStaff.id);
+
+      // Leave the modal open in edit mode — do NOT touch showModal here,
+      // it should stay true so the admin can assign clinics/wards.
+      fetchStaff();
+      return; // ← important: don't run the cleanup that closes the modal
+    }
+
+    // Role doesn't need assignment — close the modal and reset
+    setShowModal(false);
+    setEditingStaff(null);
+    setFormData(emptyForm);
+    setAssignedClinicIds([]);
+    setAssignedWardIds([]);
+    fetchStaff();
+  } catch (error) {
+    const message = error.response?.data?.error || 'Operation failed';
+    toast.error(message);
+  }
+};
 
   const handleEdit = async (staffMember) => {
     setEditingStaff(staffMember);
