@@ -747,75 +747,70 @@ if (idLower.includes('@')) {
   });
 }
 
-// ── Case 1b: Employee ID (e.g. ADMIN001, DOC001) ──
-else if (/^[A-Z]{2,6}[-\d]+$/i.test(id) && !idLower.includes('-')) {
-  // Matches patterns like "ADMIN001", "DOC001", "NURSE01" — 
-  // must NOT contain a hyphen, because that's reserved for prefixed usernames.
+// ── Case 1b: Employee ID (e.g. ADMIN001, stmarys-doctor, LABSCI001) ──
+else {
+  // Try employee ID first — this handles both hyphenated
+  // (stmarys-doctor) and non-hyphenated (ADMIN001) formats.
   const empMatches = await prisma.staff.findMany({
-    where: { employeeId: id.toUpperCase() },
-    select: { id: true, username: true, tenantId: true, isActive: true, firstName: true, lastName: true },
+    where: { employeeId: id },
+    select: { id: true },
   });
 
-  if (empMatches.length === 0) {
-    staff = null;
-  } else if (empMatches.length === 1) {
+  if (empMatches.length === 1) {
     staff = await prisma.staff.findUnique({ where: { id: empMatches[0].id } });
-  } else {
-    // Same employee ID in multiple hospitals — need a hospital prefix
+  } else if (empMatches.length > 1) {
     return res.status(409).json({
       error: 'This Employee ID exists in multiple hospitals. Please use your username or email instead.',
       code: 'AMBIGUOUS_EMPLOYEE_ID',
     });
+  } else if (idLower.includes('-')) {
+    // ── Case 2: Prefixed username ("caretech-admin") ──
+    const firstHyphen = idLower.indexOf('-');
+    const prefix = idLower.substring(0, firstHyphen);
+    const localUsername = idLower.substring(firstHyphen + 1);
+
+    const hospital = await prisma.hospital.findUnique({
+      where: { usernamePrefix: prefix },
+      select: { id: true, isActive: true, name: true },
+    });
+
+    if (!hospital) {
+      return res.status(401).json({
+        error: 'Invalid credentials. Check your hospital prefix.',
+      });
+    }
+    if (!hospital.isActive) {
+      return res.status(403).json({
+        error: `Hospital "${hospital.name}" is not active. Contact support.`,
+      });
+    }
+
+    staff = await prisma.staff.findFirst({
+      where: {
+        tenantId: hospital.id,
+        OR: [
+          { username: `${prefix}-${localUsername}` },
+          { username: localUsername },
+        ],
+      },
+    });
+  } else {
+    // ── Case 3: Bare username ("admin") — legacy fallback ──
+    const matches = await prisma.staff.findMany({
+      where: { username: idLower },
+    });
+    if (matches.length === 0) {
+      staff = null;
+    } else if (matches.length === 1) {
+      staff = matches[0];
+    } else {
+      return res.status(409).json({
+        error: 'This username exists in multiple hospitals. Please include your hospital prefix (e.g., caretech-admin).',
+        code: 'AMBIGUOUS_USERNAME',
+      });
+    }
   }
 }
-    // ── Case 2: Prefixed username ("caretech-admin") ──
-    else if (idLower.includes('-')) {
-      const firstHyphen = idLower.indexOf('-');
-      const prefix = idLower.substring(0, firstHyphen);
-      const localUsername = idLower.substring(firstHyphen + 1);
-
-      const hospital = await prisma.hospital.findUnique({
-        where: { usernamePrefix: prefix },
-        select: { id: true, isActive: true, name: true },
-      });
-
-      if (!hospital) {
-        return res.status(401).json({
-          error: 'Invalid credentials. Check your hospital prefix.',
-        });
-      }
-      if (!hospital.isActive) {
-        return res.status(403).json({
-          error: `Hospital "${hospital.name}" is not active. Contact support.`,
-        });
-      }
-
-      staff = await prisma.staff.findFirst({
-  where: {
-    tenantId: hospital.id,
-    OR: [
-      { username: `${prefix}-${localUsername}` },  // "stmarys-admin"
-      { username: localUsername },                 // "admin"
-    ],
-  },
-});
-    }
-    // ── Case 3: Bare username ("admin") — legacy fallback ──
-    else {
-      const matches = await prisma.staff.findMany({
-        where: { username: idLower },
-      });
-      if (matches.length === 0) {
-        staff = null;
-      } else if (matches.length === 1) {
-        staff = matches[0];
-      } else {
-        return res.status(409).json({
-          error: 'This username exists in multiple hospitals. Please include your hospital prefix (e.g., caretech-admin).',
-          code: 'AMBIGUOUS_USERNAME',
-        });
-      }
-    }
 
     if (!staff || !staff.isActive) {
       return res.status(401).json({ error: 'Invalid credentials' });
