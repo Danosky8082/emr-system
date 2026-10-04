@@ -776,6 +776,7 @@ const Layout = () => {
               <NavLink to="/pricing" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💲 Service Pricing</NavLink>
               <NavLink to="/wallet" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💳 Patient Wallet</NavLink>
               <NavLink to="/billing-officer" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💳 Billing Desk</NavLink>
+               <NavLink to="/ledger" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📒 Ledger</NavLink>
             </div>
           </div>
         </>
@@ -792,6 +793,7 @@ const Layout = () => {
               <NavLink to="/billing" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💰 Billing</NavLink>
               <NavLink to="/billing-officer" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💳 Billing Desk</NavLink>
               <NavLink to="/wallet" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💳 Patient Wallet</NavLink>
+               <NavLink to="/ledger" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📒 Ledger</NavLink>
             </div>
           </div>
         </>
