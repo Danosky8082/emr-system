@@ -653,7 +653,7 @@ const Dashboard = () => {
     // Global Hospital Dashboard
     if (['Admin', 'Records', 'ITAdmin'].includes(role)) {
       return [
-        { icon: '👤', label: 'Total Patients', value: stats.totalPatients || 0 },
+        { icon: '👤', label: 'Total Patients', value: stats.totalPatients || 0, to: '/patients' },
         { icon: '👨‍⚕️', label: 'Total Staff', value: stats.totalStaff || 0 },
         { icon: '📅', label: 'Scheduled Appts', value: stats.totalAppointments || 0 },
         { icon: '💰', label: 'Total Revenue', value: `₦${(stats.totalRevenue || 0).toLocaleString()}` },
@@ -710,7 +710,7 @@ const Dashboard = () => {
     // Receptionist Dashboard
     if (role === 'Receptionist') {
       return [
-        { icon: '👤', label: 'Total Patients', value: stats.totalPatients || 0 },
+        { icon: '👤', label: 'Total Patients', value: stats.totalPatients || 0, to: '/patients' },
         { icon: '📅', label: "Today's Appointments", value: stats.todayAppointments || 0 },
         { icon: '📋', label: 'Pending Intake', value: stats.pendingIntake || 0 },
       ];
@@ -762,18 +762,37 @@ const Dashboard = () => {
           {statCards.length > 0 ? (
             <div className="stats-grid">
               {statCards.map((stat, index) => (
-                <div key={index} className="stat-card">
-                  <div className="stat-icon">{stat.icon}</div>
-                  <div className="stat-info">
-                    <div className="stat-value">{stat.value}</div>
-                    <div className="stat-label">{stat.label}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p>No stats available for this role.</p>
-          )}
+  <Link
+    key={index}
+    to={stat.to || '#'}
+    className="stat-card"
+    style={{
+      textDecoration: 'none',
+      color: 'inherit',
+      cursor: stat.to ? 'pointer' : 'default',
+      transition: 'transform 0.2s, box-shadow 0.2s',
+    }}
+    onMouseEnter={(e) => {
+      if (stat.to) {
+        e.currentTarget.style.transform = 'translateY(-3px)';
+        e.currentTarget.style.boxShadow = '0 8px 20px rgba(0,0,0,0.12)';
+      }
+    }}
+    onMouseLeave={(e) => {
+      e.currentTarget.style.transform = 'translateY(0)';
+      e.currentTarget.style.boxShadow = '';
+    }}
+  >
+    <div className="stat-icon">{stat.icon}</div>
+    <div className="stat-info">
+      <div className="stat-value">{stat.value}</div>
+      <div className="stat-label">
+        {stat.label}
+        {stat.to && <span style={{ marginLeft: 6, opacity: 0.5 }}>→</span>}
+      </div>
+    </div>
+  </Link>
+))}
 
           {/* Quick Action Button for Clinical Roles */}
           {['Doctor', 'Nurse', 'Obstetrician', 'Midwife'].includes(user?.role) && (
