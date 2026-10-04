@@ -1099,6 +1099,7 @@ model RolePermission {
   dental               Boolean  @default(false)
   immunizations        Boolean  @default(false)
   laborAndDelivery     Boolean  @default(false)
+  ledger               Boolean  @default(false)
   optometry            Boolean  @default(false)
   patientPortal        Boolean  @default(false)
   portalSetup          Boolean  @default(false)
