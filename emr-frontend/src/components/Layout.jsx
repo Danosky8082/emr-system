@@ -83,6 +83,7 @@ const Layout = () => {
       { path: '/pricing', label: 'Service Pricing' },
       { path: '/wallet', label: 'Patient Wallet' },
       { path: '/service-config', label: 'Service Fees' },
+      { path: '/ledger', label: '📒 Ledger' },
     ],
     '👔 HR': [
       { path: '/hr/dashboard', label: 'HR Dashboard' },
@@ -97,6 +98,7 @@ const Layout = () => {
       { path: '/permissions', label: 'Role Permissions' },
       { path: '/audit-logs', label: 'Audit Logs' },
       { path: '/system-status', label: 'System Status' },
+      { path: '/ledger', label: '📒 Ledger' },
     ],
     '🚑 Portal': [
       { path: '/patient-login', label: 'Patient Login' },
@@ -140,6 +142,7 @@ const Layout = () => {
     '/paediatric': 'paediatrics',
     '/surgery': 'surgery',
     '/psychiatry': 'psychiatry',
+    '/ledger': 'ledger',
   };
 
   // ============================================================

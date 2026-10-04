@@ -92,7 +92,7 @@ async function createDefaultRolePermissions(tx, hospitalId) {
     'nurseDashboard','doctorDashboard','antenatal','archivedPatients','archivedPatientsView',
     'queueManagement','doctorQueue','hrDashboard','hrEmployees','hrDepartments','hrLeaves',
     'hrAttendance','hrPerformance','hrTrainings','radiology','dental','optometry',
-    'immunizations','patientPortal','portalSetup','laborAndDelivery',
+    'immunizations','patientPortal','portalSetup','laborAndDelivery', 'ledger', 
   ];
 
   const base = Object.fromEntries(allModules.map((m) => [m, false]));
@@ -188,11 +188,13 @@ async function createDefaultRolePermissions(tx, hospitalId) {
     Accountant: { ...base,
       dashboard: true, billing: true, pricing: true, wallet: true,
       nhisManagement: true, nhisAuthorizations: true,
+      ledger: true, 
     },
 
     BillingOfficer: { ...base,
       dashboard: true, patients: true,
       billingOfficer: true, wallet: true,
+      ledger: true, 
     },
 
     Records: { ...base,
@@ -6868,6 +6870,259 @@ app.get('/api/billing/:id/reversals', authenticate, authorize('Admin', 'ITAdmin'
   }
 });
 
+// ============================================================
+// LEDGER — Unified transaction log for fraud monitoring
+// Visible only to Admin, ITAdmin, Accountant, BillingOfficer
+// ============================================================
+app.get('/api/ledger', authenticate, authorize('Admin', 'ITAdmin', 'Accountant', 'BillingOfficer'), async (req, res) => {
+  try {
+    const {
+      from,
+      to,
+      staffId,
+      type,
+      search,
+      limit = 200,
+      offset = 0,
+    } = req.query;
+
+    const fromDate = from ? new Date(from) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const toDate = to ? new Date(to + 'T23:59:59') : new Date();
+    const lim = Math.min(parseInt(limit) || 200, 1000);
+    const off = parseInt(offset) || 0;
+
+    const entries = [];
+
+    // ── 1. Medication dispenses / purchases ──────────────────
+    const medTx = await req.db.medicationTransaction.findMany({
+      where: {
+        createdAt: { gte: fromDate, lte: toDate },
+        ...(staffId ? { staffId } : {}),
+      },
+      include: {
+        Medication: { select: { name: true, category: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+    });
+
+    // Fetch patient + staff info for those transactions in bulk
+    const medPatientIds = [...new Set(medTx.map(t => t.patientId).filter(Boolean))];
+    const medStaffIds = [...new Set(medTx.map(t => t.staffId).filter(Boolean))];
+
+    const [medPatients, medStaff] = await Promise.all([
+      medPatientIds.length
+        ? req.db.patient.findMany({
+            where: { id: { in: medPatientIds } },
+            select: { id: true, hospitalId: true, firstName: true, lastName: true },
+          })
+        : [],
+      medStaffIds.length
+        ? req.db.staff.findMany({
+            where: { id: { in: medStaffIds } },
+            select: { id: true, firstName: true, lastName: true, role: true },
+          })
+        : [],
+    ]);
+
+    const medPatientMap = Object.fromEntries(medPatients.map(p => [p.id, p]));
+    const medStaffMap = Object.fromEntries(medStaff.map(s => [s.id, s]));
+
+    entries.push(...medTx.map(t => ({
+      id: `med-${t.id}`,
+      timestamp: t.createdAt,
+      type: 'MEDICATION',
+      subtype: t.transactionType,
+      description: `${t.transactionType} · ${t.quantity} × ${t.Medication?.name || 'Unknown'}`,
+      amount: t.totalPrice || 0,
+      reference: t.reference || null,
+      patient: t.patientId && medPatientMap[t.patientId]
+        ? {
+            id: t.patientId,
+            hospitalId: medPatientMap[t.patientId].hospitalId,
+            name: `${medPatientMap[t.patientId].firstName} ${medPatientMap[t.patientId].lastName}`,
+          }
+        : null,
+      staff: t.staffId && medStaffMap[t.staffId]
+        ? {
+            id: t.staffId,
+            name: `${medStaffMap[t.staffId].firstName} ${medStaffMap[t.staffId].lastName}`,
+            role: medStaffMap[t.staffId].role,
+          }
+        : null,
+    })));
+
+    // ── 2. Prescriptions written ─────────────────────────────
+    const presc = await req.db.prescription.findMany({
+      where: {
+        createdAt: { gte: fromDate, lte: toDate },
+        ...(staffId ? { prescribingStaffId: staffId } : {}),
+      },
+      include: {
+        Patient: { select: { id: true, hospitalId: true, firstName: true, lastName: true } },
+        Staff_Prescription_prescribingStaffIdToStaff: {
+          select: { id: true, firstName: true, lastName: true, role: true },
+        },
+        Staff_Prescription_dispensingStaffIdToStaff: {
+          select: { id: true, firstName: true, lastName: true, role: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+    });
+
+    entries.push(...presc.map(p => ({
+      id: `presc-${p.id}`,
+      timestamp: p.createdAt,
+      type: 'PRESCRIPTION',
+      subtype: p.status,
+      description: `${p.medication} · ${p.dosage} · ${p.frequency}`,
+      amount: 0,
+      reference: null,
+      patient: p.Patient
+        ? {
+            id: p.Patient.id,
+            hospitalId: p.Patient.hospitalId,
+            name: `${p.Patient.firstName} ${p.Patient.lastName}`,
+          }
+        : null,
+      staff: p.Staff_Prescription_prescribingStaffIdToStaff
+        ? {
+            id: p.Staff_Prescription_prescribingStaffIdToStaff.id,
+            name: `${p.Staff_Prescription_prescribingStaffIdToStaff.firstName} ${p.Staff_Prescription_prescribingStaffIdToStaff.lastName}`,
+            role: p.Staff_Prescription_prescribingStaffIdToStaff.role,
+          }
+        : null,
+      extra: p.Staff_Prescription_dispensingStaffIdToStaff
+        ? { dispensedBy: `${p.Staff_Prescription_dispensingStaffIdToStaff.firstName} ${p.Staff_Prescription_dispensingStaffIdToStaff.lastName}` }
+        : null,
+    })));
+
+    // ── 3. Billing payments ──────────────────────────────────
+    const bills = await req.db.billingRecord.findMany({
+      where: {
+        paymentDate: { gte: fromDate, lte: toDate },
+        status: { in: ['Paid', 'Partial'] },
+        ...(staffId ? { processedBy: staffId } : {}),
+      },
+      include: {
+        Patient: { select: { id: true, hospitalId: true, firstName: true, lastName: true } },
+        Staff: { select: { id: true, firstName: true, lastName: true, role: true } },
+      },
+      orderBy: { paymentDate: 'desc' },
+      take: 500,
+    });
+
+    entries.push(...bills.map(b => ({
+      id: `bill-${b.id}`,
+      timestamp: b.paymentDate,
+      type: 'BILLING',
+      subtype: b.status,
+      description: `${b.invoiceNumber} · ${b.paymentMethod || 'N/A'}`,
+      amount: b.paidAmount || 0,
+      reference: b.invoiceNumber,
+      patient: b.Patient
+        ? {
+            id: b.Patient.id,
+            hospitalId: b.Patient.hospitalId,
+            name: `${b.Patient.firstName} ${b.Patient.lastName}`,
+          }
+        : null,
+      staff: b.Staff
+        ? {
+            id: b.Staff.id,
+            name: `${b.Staff.firstName} ${b.Staff.lastName}`,
+            role: b.Staff.role,
+          }
+        : null,
+    })));
+
+    // ── 4. Wallet transactions ───────────────────────────────
+    const walletTx = await req.db.walletTransaction.findMany({
+      where: {
+        createdAt: { gte: fromDate, lte: toDate },
+        ...(staffId ? { paidToStaffId: staffId } : {}),
+      },
+      include: {
+        PatientWallet: {
+          include: {
+            Patient: { select: { id: true, hospitalId: true, firstName: true, lastName: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+    });
+
+    entries.push(...walletTx.map(w => ({
+      id: `wallet-${w.id}`,
+      timestamp: w.createdAt,
+      type: 'WALLET',
+      subtype: w.transactionType,
+      description: w.description || w.transactionType,
+      amount: w.amount || 0,
+      reference: w.reference || null,
+      balanceAfter: w.balanceAfter ?? null,
+      patient: w.PatientWallet?.Patient
+        ? {
+            id: w.PatientWallet.Patient.id,
+            hospitalId: w.PatientWallet.Patient.hospitalId,
+            name: `${w.PatientWallet.Patient.firstName} ${w.PatientWallet.Patient.lastName}`,
+          }
+        : null,
+      staff: null,
+    })));
+
+    // ── Sort & filter ────────────────────────────────────────
+    entries.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    let filtered = entries;
+    if (type && type !== 'ALL') {
+      filtered = filtered.filter(e => e.type === type);
+    }
+    if (search) {
+      const q = String(search).toLowerCase();
+      filtered = filtered.filter(e =>
+        e.description?.toLowerCase().includes(q) ||
+        e.patient?.name?.toLowerCase().includes(q) ||
+        e.patient?.hospitalId?.toLowerCase().includes(q) ||
+        e.staff?.name?.toLowerCase().includes(q) ||
+        e.reference?.toLowerCase().includes(q)
+      );
+    }
+
+    const page = filtered.slice(off, off + lim);
+
+    // ── Summary stats ────────────────────────────────────────
+    const totals = filtered.reduce(
+      (acc, e) => {
+        acc.byType[e.type] = (acc.byType[e.type] || 0) + 1;
+        if (e.type === 'BILLING' || e.type === 'WALLET') {
+          acc.totalRevenue += e.amount || 0;
+        }
+        return acc;
+      },
+      { totalRevenue: 0, byType: {} }
+    );
+
+    res.json({
+      data: page,
+      total: filtered.length,
+      limit: lim,
+      offset: off,
+      summary: {
+        totalAmount: totals.totalRevenue,
+        totalEntries: filtered.length,
+        byType: totals.byType,
+        range: { from: fromDate.toISOString(), to: toDate.toISOString() },
+      },
+    });
+  } catch (error) {
+    console.error('Ledger error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post('/api/patient-journeys/:id/reprint-card', authenticate, authorize('Admin', 'Records'), async (req, res) => {
   try {
     const { id } = req.params;
@@ -10925,6 +11180,9 @@ cron.schedule('* * * * *', async () => {
 }, { timezone: 'Africa/Lagos' });
 
 console.log('✅ Auto-advance billing cron scheduled: every minute (Africa/Lagos)');
+
+
+
 
 // ============================================================
 // CRON JOBS
