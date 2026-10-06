@@ -11032,6 +11032,564 @@ app.get('/api/patients/:id/discharge-check', authenticate, async (req, res) => {
 });
 
 // ============================================================
+// LEDGER — ANOMALY DETECTION
+//
+// Returns flagged transactions that match one of four
+// fraud/error patterns. All patterns operate on the same
+// tenant-scoped data the main /api/ledger route uses.
+//
+// IMPORTANT: This route deliberately avoids $queryRaw and
+// groupBy. The tenant extension in src/prisma-client.js
+// does NOT inject tenantId into groupBy (see the exclusion
+// comment there) and $queryRaw bypasses it entirely. So we
+// fetch via findMany (which IS auto-scoped) and aggregate
+// in JS. Slower for huge datasets, but correct.
+//
+// Window is hard-capped at 90 days to keep response times
+// reasonable. Anomaly detection is a "recent activity"
+// tool, not a historical audit.
+// ============================================================
+app.get(
+  '/api/ledger/anomalies',
+  authenticate,
+  authorize('Admin', 'ITAdmin', 'Accountant', 'BillingOfficer'),
+  async (req, res) => {
+    try {
+      const {
+        from,
+        to,
+        severity,          // 'HIGH' | 'MEDIUM' | 'LOW' | undefined (all)
+        limit = 200,
+        offset = 0,
+      } = req.query;
+
+      // ── Window: 30 days by default, max 90 days ──────────
+      const now = new Date();
+      const defaultFrom = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+      let fromDate = from ? new Date(from) : defaultFrom;
+      let toDate = to ? new Date(to + 'T23:59:59') : now;
+
+      // Hard cap at 90 days
+      const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+      if (fromDate < ninetyDaysAgo) fromDate = ninetyDaysAgo;
+      if (toDate > now) toDate = now;
+
+      // ── Sanity: if the range is reversed, swap ─────────────
+      if (fromDate > toDate) {
+        const tmp = fromDate;
+        fromDate = toDate;
+        toDate = tmp;
+      }
+
+      const lim = Math.min(parseInt(limit) || 200, 500);
+      const off = parseInt(offset) || 0;
+
+      const anomalies = [];
+
+      // ════════════════════════════════════════════════════════
+      // PATTERN 1 — HIGH-VOLUME STAFF (>20 tx in any 1-hour window)
+      // ════════════════════════════════════════════════════════
+      //
+      // Strategy: fetch all actionable transactions in the window,
+      // group by (staffId + hour bucket), flag any group > 20.
+      //
+      // We pull from MedicationTransaction, BillingRecord, and
+      // WalletTransaction (the three tables that carry a staffId
+      // and represent money/goods movement).
+
+      const [medTx, billTx, walletTx] = await Promise.all([
+        req.db.medicationTransaction.findMany({
+          where: {
+            createdAt: { gte: fromDate, lte: toDate },
+            staffId: { not: null },
+          },
+          select: {
+            id: true, createdAt: true, staffId: true,
+            transactionType: true, quantity: true, totalPrice: true,
+            Medication: { select: { name: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+        }),
+        req.db.billingRecord.findMany({
+          where: {
+            paymentDate: { gte: fromDate, lte: toDate },
+            status: { in: ['Paid', 'Partial'] },
+            processedBy: { not: null },
+          },
+          select: {
+            id: true, paymentDate: true, processedBy: true,
+            invoiceNumber: true, paidAmount: true, paymentMethod: true,
+          },
+          orderBy: { paymentDate: 'desc' },
+        }),
+        req.db.walletTransaction.findMany({
+          where: {
+            createdAt: { gte: fromDate, lte: toDate },
+            paidToStaffId: { not: null },
+            transactionType: { in: ['Deposit', 'Payment', 'Refund'] },
+          },
+          select: {
+            id: true, createdAt: true, paidToStaffId: true,
+            transactionType: true, amount: true, description: true,
+          },
+          orderBy: { createdAt: 'desc' },
+        }),
+      ]);
+
+      // Build a flat list of {staffId, timestamp, source, id, ...}
+      const allStaffEvents = [
+        ...medTx.map(t => ({
+          staffId: t.staffId,
+          timestamp: new Date(t.createdAt).getTime(),
+          source: 'MEDICATION',
+          refId: t.id,
+          label: `${t.transactionType} ${t.quantity}x ${t.Medication?.name || 'Unknown'}`,
+          amount: t.totalPrice || 0,
+        })),
+        ...billTx.map(t => ({
+          staffId: t.processedBy,
+          timestamp: new Date(t.paymentDate).getTime(),
+          source: 'BILLING',
+          refId: t.id,
+          label: `${t.invoiceNumber} (${t.paymentMethod || 'N/A'})`,
+          amount: t.paidAmount || 0,
+        })),
+        ...walletTx.map(t => ({
+          staffId: t.paidToStaffId,
+          timestamp: new Date(t.createdAt).getTime(),
+          source: 'WALLET',
+          refId: t.id,
+          label: t.description || t.transactionType,
+          amount: t.amount || 0,
+        })),
+      ];
+
+      // Bucket by (staffId, hour)
+      const HOUR_MS = 60 * 60 * 1000;
+      const buckets = new Map();
+      for (const ev of allStaffEvents) {
+        const hourBucket = Math.floor(ev.timestamp / HOUR_MS);
+        const key = `${ev.staffId}|${hourBucket}`;
+        if (!buckets.has(key)) {
+          buckets.set(key, { staffId: ev.staffId, hourBucket, events: [] });
+        }
+        buckets.get(key).events.push(ev);
+      }
+
+      const HIGH_VOLUME_THRESHOLD = 20;
+
+      for (const bucket of buckets.values()) {
+        if (bucket.events.length < HIGH_VOLUME_THRESHOLD) continue;
+
+        const staffId = bucket.staffId;
+        const hourStart = new Date(bucket.hourBucket * HOUR_MS);
+        const hourEnd = new Date((bucket.hourBucket + 1) * HOUR_MS);
+
+        const totalAmount = bucket.events.reduce((s, e) => s + (e.amount || 0), 0);
+        const breakdown = {
+          MEDICATION: bucket.events.filter(e => e.source === 'MEDICATION').length,
+          BILLING: bucket.events.filter(e => e.source === 'BILLING').length,
+          WALLET: bucket.events.filter(e => e.source === 'WALLET').length,
+        };
+
+        anomalies.push({
+          id: `anomaly-highvol-${staffId}-${bucket.hourBucket}`,
+          pattern: 'HIGH_VOLUME_STAFF',
+          severity: bucket.events.length >= 40 ? 'HIGH' : 'MEDIUM',
+          timestamp: hourStart.toISOString(),
+          staffId,
+          windowStart: hourStart.toISOString(),
+          windowEnd: hourEnd.toISOString(),
+          transactionCount: bucket.events.length,
+          totalAmount,
+          breakdown,
+          description:
+            `${bucket.events.length} transactions by the same staff member ` +
+            `between ${hourStart.toLocaleTimeString()} and ${hourEnd.toLocaleTimeString()}`,
+          sample: bucket.events.slice(0, 5).map(e => ({
+            source: e.source,
+            label: e.label,
+            amount: e.amount,
+          })),
+        });
+      }
+
+      // ════════════════════════════════════════════════════════
+      // PATTERN 2 — UNMATCHED DISPENSES
+      //
+      // A medication was dispensed but there is no matching
+      // Prescription for the same patient + medication in the
+      // 7 days preceding the dispense.
+      // ════════════════════════════════════════════════════════
+
+      const dispenses = medTx.filter(
+        t => t.transactionType === 'Dispensed' && t.patientId
+      );
+
+      if (dispenses.length > 0) {
+        // Batch-load prescriptions for the patients involved
+        const patientIds = [...new Set(dispenses.map(d => d.patientId))];
+
+        const prescriptions = await req.db.prescription.findMany({
+          where: {
+            patientId: { in: patientIds },
+            // Widen the search 7 days before the earliest dispense
+            createdAt: {
+              gte: new Date(fromDate.getTime() - 7 * 24 * 60 * 60 * 1000),
+              lte: toDate,
+            },
+          },
+          select: {
+            patientId: true,
+            medication: true,
+            createdAt: true,
+          },
+        });
+
+        // Index prescriptions by patientId for quick lookup
+        const prescByPatient = new Map();
+        for (const p of prescriptions) {
+          if (!prescByPatient.has(p.patientId)) {
+            prescByPatient.set(p.patientId, []);
+          }
+          prescByPatient.get(p.patientId).push(p);
+        }
+
+        // Need med names + patient info for flagged rows
+        const dispenseMedIds = [...new Set(dispenses.map(d => d.medicationId))];
+        const medsForDispense = await req.db.medication.findMany({
+          where: { id: { in: dispenseMedIds } },
+          select: { id: true, name: true },
+        });
+        const medNameMap = Object.fromEntries(medsForDispense.map(m => [m.id, m.name]));
+
+        const patientsForDispense = await req.db.patient.findMany({
+          where: { id: { in: patientIds } },
+          select: { id: true, hospitalId: true, firstName: true, lastName: true },
+        });
+        const patientMap = Object.fromEntries(patientsForDispense.map(p => [p.id, p]));
+
+        const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+        for (const d of dispenses) {
+          const medName = medNameMap[d.medicationId] || 'Unknown';
+          const dispenseTime = new Date(d.createdAt).getTime();
+
+          const candidates = prescByPatient.get(d.patientId) || [];
+          const hasMatch = candidates.some(p => {
+            const prescTime = new Date(p.createdAt).getTime();
+            return (
+              p.medication &&
+              p.medication.toLowerCase().trim() === medName.toLowerCase().trim() &&
+              prescTime <= dispenseTime &&
+              dispenseTime - prescTime <= SEVEN_DAYS_MS
+            );
+          });
+
+          if (!hasMatch) {
+            const patient = patientMap[d.patientId];
+                        anomalies.push({
+              id: `anomaly-unmatched-${d.id}`,
+              pattern: 'UNMATCHED_DISPENSE',
+              severity: 'HIGH',
+              timestamp: d.createdAt.toISOString(),
+              staffId: d.staffId,
+              patientId: d.patientId,
+              patient: patient
+                ? {
+                    hospitalId: patient.hospitalId,
+                    name: `${patient.firstName} ${patient.lastName}`,
+                  }
+                : null,
+              medication: medName,
+              quantity: d.quantity,
+              amount: d.totalPrice || 0,
+              description:
+                `Dispensed ${d.quantity}x ${medName} with no matching ` +
+                `prescription in the preceding 7 days`,
+            });
+          }
+        }
+      }
+
+      // ════════════════════════════════════════════════════════
+      // PATTERN 3 — PAYMENT MISMATCH
+      //
+      // paidAmount + balance !== totalAmount, OR
+      // sum(items[].paidAmount) !== paidAmount
+      // ════════════════════════════════════════════════════════
+
+      // Fetch all bills in the window regardless of status so we
+      // can catch bills marked Paid that don't actually balance.
+      const billsForMismatch = await req.db.billingRecord.findMany({
+        where: {
+          OR: [
+            { paymentDate: { gte: fromDate, lte: toDate } },
+            { createdAt: { gte: fromDate, lte: toDate } },
+          ],
+        },
+        select: {
+          id: true,
+          invoiceNumber: true,
+          patientId: true,
+          totalAmount: true,
+          paidAmount: true,
+          balance: true,
+          status: true,
+          items: true,
+          createdAt: true,
+          paymentDate: true,
+          processedBy: true,
+        },
+      });
+
+      // Preload patients + staff for flagged bills
+      const mismatchPatientIds = [...new Set(billsForMismatch.map(b => b.patientId))];
+      const mismatchStaffIds = [...new Set(billsForMismatch.map(b => b.processedBy).filter(Boolean))];
+
+      const [mismatchPatients, mismatchStaff] = await Promise.all([
+        req.db.patient.findMany({
+          where: { id: { in: mismatchPatientIds } },
+          select: { id: true, hospitalId: true, firstName: true, lastName: true },
+        }),
+        mismatchStaffIds.length
+          ? req.db.staff.findMany({
+              where: { id: { in: mismatchStaffIds } },
+              select: { id: true, firstName: true, lastName: true, role: true },
+            })
+          : [],
+      ]);
+
+      const mismatchPatientMap = Object.fromEntries(mismatchPatients.map(p => [p.id, p]));
+      const mismatchStaffMap = Object.fromEntries(mismatchStaff.map(s => [s.id, s]));
+
+      const EPS = 0.01; // float tolerance
+
+      for (const b of billsForMismatch) {
+        const total = Number(b.totalAmount) || 0;
+        const paid = Number(b.paidAmount) || 0;
+        const balance = Number(b.balance) || 0;
+
+        // Check 1: total = paid + balance
+        const arithmeticMismatch = Math.abs(total - (paid + balance)) > EPS;
+
+        // Check 2: sum(items[].paidAmount) = paid
+        let itemsPaidSum = 0;
+        let itemsParseError = false;
+        try {
+          const items = Array.isArray(b.items) ? b.items : [];
+          for (const item of items) {
+            const itemPaid = Number(item?.paidAmount) || 0;
+            itemsPaidSum += itemPaid;
+          }
+        } catch {
+          itemsParseError = true;
+        }
+
+        const itemsMismatch = !itemsParseError && Math.abs(itemsPaidSum - paid) > EPS;
+
+        // Check 3: status says Paid but balance > 0
+        const statusInconsistent =
+          b.status === 'Paid' && balance > EPS;
+
+        if (arithmeticMismatch || itemsMismatch || statusInconsistent) {
+          const patient = mismatchPatientMap[b.patientId];
+          const staff = b.processedBy ? mismatchStaffMap[b.processedBy] : null;
+
+          const reasons = [];
+          if (arithmeticMismatch) reasons.push(`total ≠ paid + balance (${total} vs ${paid} + ${balance})`);
+          if (itemsMismatch) reasons.push(`items sum (${itemsPaidSum}) ≠ paid (${paid})`);
+          if (statusInconsistent) reasons.push(`status=Paid but balance=${balance}`);
+          if (itemsParseError) reasons.push(`items field could not be parsed`);
+
+          anomalies.push({
+            id: `anomaly-mismatch-${b.id}`,
+            pattern: 'PAYMENT_MISMATCH',
+            severity: 'HIGH',
+            timestamp: (b.paymentDate || b.createdAt).toISOString(),
+            staffId: b.processedBy || null,
+            staff: staff
+              ? { id: staff.id, name: `${staff.firstName} ${staff.lastName}`, role: staff.role }
+              : null,
+            patientId: b.patientId,
+            patient: patient
+              ? {
+                  hospitalId: patient.hospitalId,
+                  name: `${patient.firstName} ${patient.lastName}`,
+                }
+              : null,
+            invoiceNumber: b.invoiceNumber,
+            totalAmount: total,
+            paidAmount: paid,
+            balance,
+            status: b.status,
+            reasons,
+            description: `Billing inconsistency on ${b.invoiceNumber}: ${reasons.join('; ')}`,
+          });
+        }
+      }
+
+      // ════════════════════════════════════════════════════════
+      // PATTERN 4 — ORPHAN REFUNDS
+      //
+      // A wallet Refund exists but its referenced BillingRecord
+      // was never paid, or the refund amount exceeds the payment.
+      // ════════════════════════════════════════════════════════
+
+      const refunds = walletTx.filter(t => t.transactionType === 'Refund');
+
+      if (refunds.length > 0) {
+        // WalletTransaction stores a serviceId that (for refunds)
+        // points at a BillingRecord.id, plus serviceType='billing_reversal'
+        // or similar. We look up by serviceId.
+        const serviceIds = refunds.map(r => r.serviceId).filter(Boolean);
+
+        const relatedBills = serviceIds.length
+          ? await req.db.billingRecord.findMany({
+              where: { id: { in: serviceIds } },
+              select: {
+                id: true,
+                invoiceNumber: true,
+                paidAmount: true,
+                status: true,
+                patientId: true,
+                items: true,
+              },
+            })
+          : [];
+
+        const relatedBillMap = Object.fromEntries(relatedBills.map(b => [b.id, b]));
+
+        for (const r of refunds) {
+          const bill = r.serviceId ? relatedBillMap[r.serviceId] : null;
+          const reasons = [];
+
+          if (!bill) {
+            reasons.push('Refund has no linked BillingRecord (orphaned)');
+          } else {
+            if (bill.status !== 'Paid' && bill.status !== 'Partial') {
+              reasons.push(`Refund against bill with status "${bill.status}"`);
+            }
+            const billPaid = Number(bill.paidAmount) || 0;
+            const refundAmt = Number(r.amount) || 0;
+            if (refundAmt > billPaid + EPS) {
+              reasons.push(
+                `Refund ${refundAmt} > bill paidAmount ${billPaid}`
+              );
+            }
+          }
+
+          if (reasons.length > 0) {
+            anomalies.push({
+              id: `anomaly-refund-${r.id}`,
+              pattern: 'ORPHAN_REFUND',
+              severity: 'HIGH',
+              timestamp: r.createdAt.toISOString(),
+              staffId: r.paidToStaffId || null,
+              amount: r.amount,
+              description: r.description,
+              reasons,
+              linkedBill: bill
+                ? { id: bill.id, invoiceNumber: bill.invoiceNumber, status: bill.status }
+                : null,
+              summary: `Refund of ₦${(r.amount || 0).toLocaleString()}: ${reasons.join('; ')}`,
+            });
+          }
+        }
+      }
+
+      // ════════════════════════════════════════════════════════
+      // Sort by severity, then timestamp desc
+      // ════════════════════════════════════════════════════════
+
+      const SEVERITY_ORDER = { HIGH: 0, MEDIUM: 1, LOW: 2 };
+      anomalies.sort((a, b) => {
+        const sa = SEVERITY_ORDER[a.severity] ?? 99;
+        const sb = SEVERITY_ORDER[b.severity] ?? 99;
+        if (sa !== sb) return sa - sb;
+        return new Date(b.timestamp) - new Date(a.timestamp);
+      });
+
+      // ════════════════════════════════════════════════════════
+      // Filter by severity if requested
+      // ════════════════════════════════════════════════════════
+
+      const filtered =
+        severity && ['HIGH', 'MEDIUM', 'LOW'].includes(severity.toUpperCase())
+          ? anomalies.filter(a => a.severity === severity.toUpperCase())
+          : anomalies;
+
+      // ════════════════════════════════════════════════════════
+      // Enrich with staff names (batch fetch)
+      // ════════════════════════════════════════════════════════
+
+      const allStaffIds = [
+        ...new Set(filtered.map(a => a.staffId).filter(Boolean)),
+      ];
+
+      const staffList = allStaffIds.length
+        ? await req.db.staff.findMany({
+            where: { id: { in: allStaffIds } },
+            select: { id: true, firstName: true, lastName: true, role: true },
+          })
+        : [];
+
+      const staffMap = Object.fromEntries(staffList.map(s => [s.id, s]));
+
+      const enriched = filtered.map(a => ({
+        ...a,
+        staff: a.staff || (a.staffId && staffMap[a.staffId]
+          ? {
+              id: a.staffId,
+              name: `${staffMap[a.staffId].firstName} ${staffMap[a.staffId].lastName}`,
+              role: staffMap[a.staffId].role,
+            }
+          : null),
+      }));
+
+      // ════════════════════════════════════════════════════════
+      // Summary
+      // ════════════════════════════════════════════════════════
+
+      const summary = {
+        total: enriched.length,
+        byPattern: {
+          HIGH_VOLUME_STAFF: enriched.filter(a => a.pattern === 'HIGH_VOLUME_STAFF').length,
+          UNMATCHED_DISPENSE: enriched.filter(a => a.pattern === 'UNMATCHED_DISPENSE').length,
+          PAYMENT_MISMATCH: enriched.filter(a => a.pattern === 'PAYMENT_MISMATCH').length,
+          ORPHAN_REFUND: enriched.filter(a => a.pattern === 'ORPHAN_REFUND').length,
+        },
+        bySeverity: {
+          HIGH: enriched.filter(a => a.severity === 'HIGH').length,
+          MEDIUM: enriched.filter(a => a.severity === 'MEDIUM').length,
+          LOW: enriched.filter(a => a.severity === 'LOW').length,
+        },
+        range: {
+          from: fromDate.toISOString(),
+          to: toDate.toISOString(),
+          cappedAt90Days: fromDate.getTime() === ninetyDaysAgo.getTime(),
+        },
+      };
+
+      res.json({
+        data: enriched.slice(off, off + lim),
+        total: enriched.length,
+        limit: lim,
+        offset: off,
+        summary,
+      });
+    } catch (error) {
+      console.error('Ledger anomalies error:', error);
+      res.status(500).json({
+        error: 'Failed to compute ledger anomalies',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined,
+      });
+    }
+  }
+);
+
+// ============================================================
 // CRON LOCK HELPERS
 // ============================================================
 //
