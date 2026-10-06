@@ -197,8 +197,16 @@ const Layout = () => {
   // ============================================================
   // PERMISSION CHECK
   // ============================================================
-  const canAccess = (path) => {
+    const canAccess = (path) => {
     if (['Admin', 'ITAdmin'].includes(user?.role)) return true;
+
+    // Analytics is available to Pharmacist and Accountant regardless of the
+    // DB permission flag — they are the two roles that need it most and
+    // we don't want a missing DB row to hide the link.
+    if (path === '/analytics') {
+      if (['Admin', 'ITAdmin', 'Pharmacist', 'Accountant'].includes(user?.role)) return true;
+      return permissions?.['analytics'] === true;
+    }
 
     if (user?.role === 'HR') {
       const hrPaths = ['/hr/dashboard', '/hr/employees', '/hr/departments', '/hr/leaves'];
@@ -682,7 +690,7 @@ const Layout = () => {
       );
     }
 
-    if (user?.role === 'Pharmacist') {
+        if (user?.role === 'Pharmacist') {
       return (
         <>
           <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
@@ -693,6 +701,7 @@ const Layout = () => {
               <NavLink to="/pharmacy" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💊 Inventory</NavLink>
               <NavLink to="/pharmacy-dashboard" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
               <NavLink to="/nhis-drugs" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🏥 NHIS Drugs</NavLink>
+              <NavLink to="/analytics" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Analytics</NavLink>
             </div>
           </div>
         </>
@@ -767,7 +776,7 @@ const Layout = () => {
       );
     }
 
-    if (user?.role === 'Accountant') {
+        if (user?.role === 'Accountant') {
       return (
         <>
           <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
@@ -778,7 +787,8 @@ const Layout = () => {
               <NavLink to="/pricing" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💲 Service Pricing</NavLink>
               <NavLink to="/wallet" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💳 Patient Wallet</NavLink>
               <NavLink to="/billing-officer" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💳 Billing Desk</NavLink>
-               <NavLink to="/ledger" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📒 Ledger</NavLink>
+              <NavLink to="/ledger" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📒 Ledger</NavLink>
+              <NavLink to="/analytics" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Analytics</NavLink>
             </div>
           </div>
         </>
@@ -794,8 +804,9 @@ const Layout = () => {
             <div className="dropdown-content">
               <NavLink to="/billing" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💰 Billing</NavLink>
               <NavLink to="/billing-officer" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💳 Billing Desk</NavLink>
-              <NavLink to="/wallet" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💳 Patient Wallet</NavLink>
-               <NavLink to="/ledger" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📒 Ledger</NavLink>
+               <NavLink to="/wallet" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💳 Patient Wallet</NavLink>
+              <NavLink to="/ledger" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📒 Ledger</NavLink>
+              <NavLink to="/analytics" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Analytics</NavLink>
             </div>
           </div>
         </>

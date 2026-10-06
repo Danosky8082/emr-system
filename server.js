@@ -3705,10 +3705,32 @@ app.get('/api/paediatric/immunizations/:patientId',
       ];
 
       // Mark each item given/pending by matching on vaccine name (case-insensitive)
+            // Mark each item given/pending by matching on vaccine name AND dose.
+      //
+      // Previous version matched on the first word only (e.g. "opv" for
+      // "OPV 1", "OPV 2", "OPV 3"), which marked all doses as given
+      // as soon as one was recorded. The new logic:
+      //   1. Requires the base name (first word) to appear
+      //   2. If the schedule item has a numeric or "birth" dose token,
+      //      requires that token to also appear in the recorded name
       const schedule = EPI_SCHEDULE.map(item => {
-        const match = given.find(g =>
-          g.vaccineName.toLowerCase().includes(item.vaccine.toLowerCase().split(' ')[0])
-        );
+        const itemLower = item.vaccine.toLowerCase();
+        const itemParts = itemLower.split(/\s+/);
+        const itemBase = itemParts[0];
+        const itemDoseToken = itemParts[itemParts.length - 1]; // '1','2','3','birth','dose', or '(birth'
+
+        const match = given.find(g => {
+          const gLower = (g.vaccineName || '').toLowerCase();
+          if (!gLower.includes(itemBase)) return false;
+
+          const hasDoseNumber = /^[0-9]+$/.test(itemDoseToken);
+          const hasBirthToken = itemDoseToken === 'birth';
+          if (hasDoseNumber || hasBirthToken) {
+            return gLower.includes(itemDoseToken);
+          }
+          return true;
+        });
+
         return {
           vaccine: item.vaccine,
           dueAge: item.dueAge,
@@ -5681,6 +5703,7 @@ app.get('/api/services/categories', authenticate, async (req, res) => {
   try {
     const categories = await req.db.servicePricing.groupBy({
       by: ['category'],
+      where: { tenantId: req.tenantId },  
       _count: { category: true }
     });
     res.json(categories.map(c => ({ name: c.category, count: c._count.category })));
@@ -9509,8 +9532,9 @@ app.get('/api/dashboard/stats', authenticate, async (req, res) => {
     const role = req.user.role;
     let responseData = {};
 
-    const genderDataRaw = await req.db.patient.groupBy({
+        const genderDataRaw = await req.db.patient.groupBy({
       by: ['gender'],
+      where: { tenantId: req.tenantId },   // ← ADD
       _count: { gender: true }
     });
     const genderData = genderDataRaw.map(g => ({
@@ -11107,6 +11131,8 @@ app.get(
           select: {
             id: true, createdAt: true, staffId: true,
             transactionType: true, quantity: true, totalPrice: true,
+            patientId: true,         
+            medicationId: true,
             Medication: { select: { name: true } },
           },
           orderBy: { createdAt: 'desc' },
@@ -12108,44 +12134,58 @@ console.log('✅ Backup cron scheduled: 2:00 AM daily (Africa/Lagos)');
 
 cron.schedule('0 3 * * *', async () => {
   await withCronLock('imaging-cleanup', async () => {
-    console.log('\n🧹 [CRON] Imaging file cleanup starting...');
-    const startedAt = Date.now();
-    try {
-    const files = fs.readdirSync(uploadDir);
-    const cutoff = Date.now() - (7 * 24 * 60 * 60 * 1000);
-    let scanned = 0, orphaned = 0, kept = 0, skipped = 0;
-
-    for (const file of files) {
-      const filepath = path.join(uploadDir, file);
-      let stats;
-      try { stats = fs.statSync(filepath); } catch { continue; }
-      if (!stats.isFile()) continue;
-      scanned++;
-      if (stats.mtimeMs > cutoff) { skipped++; continue; }
-
-      const referenced = await prisma.imagingOrder.findFirst({
-        where: {
-          OR: [
-            { images: { contains: file } },
-            { imagesUrl: { contains: file } }
-          ]
-        },
-        select: { id: true }
-      });
-
-      if (referenced) { kept++; }
-      else {
-        try { fs.unlinkSync(filepath); orphaned++; }
-        catch (err) { console.error(`   ⚠️ Failed to delete ${file}: ${err.message}`); }
-      }
+    // Cleanup only applies to the local-disk backend.
+    // With STORAGE_BACKEND=cloudinary there are no orphaned files on
+    // the server's disk — Cloudinary handles its own lifecycle.
+    if ((process.env.STORAGE_BACKEND || 'local').toLowerCase() === 'cloudinary') {
+      return;
     }
 
-    console.log(`✅ [CRON] Cleanup complete in ${Date.now() - startedAt}ms`);
-    console.log(`   Scanned:  ${scanned} files`);
-    console.log(`   Kept:     ${kept} (referenced)`);
-    console.log(`   Deleted:  ${orphaned} orphaned files`);
-    console.log(`   Skipped:  ${skipped} (newer than 7 days)`);
-   } catch (error) {
+    console.log('\n🧹 [CRON] Imaging file cleanup starting...');
+    const startedAt = Date.now();
+
+    const uploadDir = path.join(__dirname, 'uploads', 'imaging');
+    if (!fs.existsSync(uploadDir)) {
+      console.log('ℹ️  [CRON] No local uploads directory — nothing to clean.');
+      return;
+    }
+
+    try {
+      const files = fs.readdirSync(uploadDir);
+      const cutoff = Date.now() - (7 * 24 * 60 * 60 * 1000);
+      let scanned = 0, orphaned = 0, kept = 0, skipped = 0;
+
+      for (const file of files) {
+        const filepath = path.join(uploadDir, file);
+        let stats;
+        try { stats = fs.statSync(filepath); } catch { continue; }
+        if (!stats.isFile()) continue;
+        scanned++;
+        if (stats.mtimeMs > cutoff) { skipped++; continue; }
+
+        const referenced = await prisma.imagingOrder.findFirst({
+          where: {
+            OR: [
+              { images: { contains: file } },
+              { imagesUrl: { contains: file } }
+            ]
+          },
+          select: { id: true }
+        });
+
+        if (referenced) { kept++; }
+        else {
+          try { fs.unlinkSync(filepath); orphaned++; }
+          catch (err) { console.error(`   ⚠️ Failed to delete ${file}: ${err.message}`); }
+        }
+      }
+
+      console.log(`✅ [CRON] Cleanup complete in ${Date.now() - startedAt}ms`);
+      console.log(`   Scanned:  ${scanned} files`);
+      console.log(`   Kept:     ${kept} (referenced)`);
+      console.log(`   Deleted:  ${orphaned} orphaned files`);
+      console.log(`   Skipped:  ${skipped} (newer than 7 days)`);
+    } catch (error) {
       console.error('❌ [CRON] Imaging cleanup failed:', error.message);
     }
   });
