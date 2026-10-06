@@ -60,6 +60,7 @@ import HospitalLogin from './pages/HospitalLogin';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
 import RegisterHospital from './pages/RegisterHospital';
 import Ledger from './pages/Ledger';
+import Analytics from './pages/Analytics';
 
 // ============ PATIENT PORTAL IMPORTS ============
 import PatientLogin from './pages/PatientLogin';
@@ -201,6 +202,7 @@ const AppContent = () => {
           <Route path="permissions" element={<ManagePermissions />} />
           <Route path="audit-logs" element={<AuditLogs />} />
           <Route path="ledger" element={<Ledger />} />
+          <Route path="analytics" element={<Analytics />} /> 
           <Route path="system-status" element={<SystemStatus />} />
 
           {/* Patient Profile */}

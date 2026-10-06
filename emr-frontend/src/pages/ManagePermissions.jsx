@@ -52,6 +52,8 @@ const ManagePermissions = () => {
     { key: 'pricing', label: '💲 Service Pricing', group: 'Finance' },
     { key: 'billingOfficer', label: '💳 Billing Desk', group: 'Finance' },
     { key: 'wallet', label: '💳 Patient Wallet', group: 'Finance' },
+    { key: 'ledger', label: '📒 Ledger', group: 'Finance' },       
+    { key: 'analytics', label: '📊 Analytics', group: 'Finance' },
     
     // ===== RECORDS MODULES =====
     { key: 'patientIntake', label: '📋 Patient Intake', group: 'Records' },

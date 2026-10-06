@@ -84,6 +84,7 @@ const Layout = () => {
       { path: '/wallet', label: 'Patient Wallet' },
       { path: '/service-config', label: 'Service Fees' },
       { path: '/ledger', label: '📒 Ledger' },
+      { path: '/analytics', label: '📊 Analytics' },
     ],
     '👔 HR': [
       { path: '/hr/dashboard', label: 'HR Dashboard' },
@@ -143,6 +144,7 @@ const Layout = () => {
     '/surgery': 'surgery',
     '/psychiatry': 'psychiatry',
     '/ledger': 'ledger',
+    '/analytics': 'analytics',
   };
 
   // ============================================================
