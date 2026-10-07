@@ -7,6 +7,7 @@ import { useSearch } from '../components/Layout';
 import toast from 'react-hot-toast';
 import { Link, Navigate } from 'react-router-dom';
 import api from '../api/client';
+import Skeleton from '../components/Skeleton';
 
 const Patients = () => {
   const { token, user } = useAuth();
@@ -289,13 +290,15 @@ const Patients = () => {
 
   // ✅ FIXED: Loading state with better UI
   if (loading && patients.length === 0) {
-    return (
-      <div className="dashboard" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
-        <div className="spinner" />
-        <p style={{ marginLeft: '16px', color: '#6b7280' }}>Loading patients...</p>
+  return (
+    <div className="dashboard">
+      <div className="page-header">
+        <Skeleton.Title width={220} />
       </div>
-    );
-  }
+      <Skeleton.Table rows={8} cols={7} />
+    </div>
+  );
+}
 
   return (
     <div className="dashboard">

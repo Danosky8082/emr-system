@@ -1025,3 +1025,101 @@ html,
         font-size: 14px !important;
     }
 }
+
+/* ============================================================
+   ANIMATIONS & TRANSITIONS
+   ============================================================ */
+
+/* Page-level fade-in — applied to route content */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.page-fade-in {
+    animation: fadeInUp 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Shimmer for skeleton loaders */
+@keyframes shimmer {
+    0% {
+        background-position: 200% 0;
+    }
+
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+.skeleton {
+    background: linear-gradient(90deg,
+            rgba(0, 0, 0, 0.06) 0%,
+            rgba(0, 0, 0, 0.10) 50%,
+            rgba(0, 0, 0, 0.06) 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.6s infinite linear;
+    border-radius: 6px;
+    display: inline-block;
+}
+
+/* Respect users who've asked to reduce motion */
+@media (prefers-reduced-motion: reduce) {
+
+    .page-fade-in,
+    .skeleton {
+        animation: none !important;
+    }
+
+    * {
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* Stat card hover lift — additive, does not override inline styles */
+.dashboard .stat-card {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    will-change: transform;
+}
+
+.dashboard .stat-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 24px rgba(15, 52, 96, 0.12);
+}
+
+/* Table row hover consistency */
+.table-container tbody tr {
+    transition: background-color 0.14s ease;
+}
+
+/* Buttons — subtle press feedback */
+.btn:not(:disabled) {
+    transition: background 0.15s ease, transform 0.08s ease, box-shadow 0.15s ease;
+}
+
+.btn:not(:disabled):active {
+    transform: scale(0.98);
+}
+
+/* Modal open animation (already partly in Modal.css but consolidated here) */
+@keyframes modalIn {
+    from {
+        opacity: 0;
+        transform: translateY(12px) scale(0.98);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.modal-content {
+    animation: modalIn 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+}

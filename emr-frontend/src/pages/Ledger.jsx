@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import api from '../api/client';
 import './Dashboard.css';
+import Skeleton from '../components/Skeleton';
 
 const Ledger = () => {
   const { token, user } = useAuth();
@@ -548,13 +549,11 @@ const Ledger = () => {
       {/* ═══ TABLE ═══ */}
       <div className="table-container">
         {loading ? (
-          <div style={{ textAlign: 'center', padding: '60px' }}>
-            <div className="spinner" />
-            <p style={{ color: '#6b7280', marginTop: '12px' }}>
-              {viewMode === 'transactions' ? 'Loading ledger…' : 'Scanning for anomalies…'}
-            </p>
-          </div>
-        ) : viewMode === 'transactions' ? (
+  <Skeleton.Table
+    rows={10}
+    cols={viewMode === 'transactions' ? 8 : 7}
+  />
+) : viewMode === 'transactions' ? (
           entries.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '60px 20px', color: '#6b7280' }}>
               <span style={{ fontSize: '48px' }}>📭</span>

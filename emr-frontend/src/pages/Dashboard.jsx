@@ -9,6 +9,8 @@ import { Link } from 'react-router-dom';
 import { PieChart, Pie, Tooltip, Legend, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
 import toast from 'react-hot-toast';
 import api from '../api/client';
+import Skeleton from '../components/Skeleton';
+import useCountUp from '../hooks/useCountUp';
 
 const Dashboard = () => {
   const { token, user } = useAuth();
@@ -22,6 +24,33 @@ const Dashboard = () => {
   useEffect(() => {
     if (user && token) fetchDashboardData();
   }, [user, token]);
+
+  // Renders a number that animates from 0 to its target on mount.
+// Strings (e.g. currency-formatted "₦1,234") are rendered as-is.
+const CountUpValue = ({ value, prefix = '', suffix = '' }) => {
+  const numeric =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string'
+        ? Number(String(value).replace(/[^0-9.-]/g, '')) || 0
+        : 0;
+
+  const animated = useCountUp(numeric, 900);
+
+  // If the original value was a formatted string like "₦5,000",
+  // preserve the original formatting for the final frame.
+  const isFormattedString = typeof value === 'string' && value !== String(numeric);
+
+  const displayed = isFormattedString && animated === numeric ? value : animated.toLocaleString();
+
+  return (
+    <>
+      {prefix}
+      {displayed}
+      {suffix}
+    </>
+  );
+};
 
   const fetchDashboardData = async () => {
     try {
@@ -60,7 +89,23 @@ const Dashboard = () => {
     }
   };
 
-  if (loading) return <div className="spinner" />;
+  if (loading) {
+  return (
+    <div className="dashboard">
+      <div className="page-header">
+        <div>
+          <Skeleton.Title width={180} />
+          <Skeleton.Text width={240} style={{ marginTop: 8 }} />
+        </div>
+      </div>
+      <div className="stats-grid">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Skeleton.StatCard key={i} />
+        ))}
+      </div>
+    </div>
+  );
+}
 
   // ============================================================
   // RENDER HELPERS FOR SPECIALIST DASHBOARDS
@@ -680,7 +725,7 @@ const Dashboard = () => {
         renderLabDashboard()
       ) : (
         <>
-          {statCards.length > 0 ? (
+                    {statCards.length > 0 ? (
             <div className="stats-grid">
               {statCards.map((stat, index) => (
                 <Link
@@ -691,22 +736,13 @@ const Dashboard = () => {
                     textDecoration: 'none',
                     color: 'inherit',
                     cursor: stat.to ? 'pointer' : 'default',
-                    transition: 'transform 0.2s, box-shadow 0.2s',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (stat.to) {
-                      e.currentTarget.style.transform = 'translateY(-3px)';
-                      e.currentTarget.style.boxShadow = '0 8px 20px rgba(0,0,0,0.12)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '';
                   }}
                 >
                   <div className="stat-icon">{stat.icon}</div>
                   <div className="stat-info">
-                    <div className="stat-value">{stat.value}</div>
+                    <div className="stat-value">
+                      <CountUpValue value={stat.value} />
+                    </div>
                     <div className="stat-label">
                       {stat.label}
                       {stat.to && <span style={{ marginLeft: 6, opacity: 0.5 }}>→</span>}

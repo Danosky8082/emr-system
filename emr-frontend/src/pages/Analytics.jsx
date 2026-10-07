@@ -8,6 +8,7 @@ import {
   ResponsiveContainer, LineChart, Line, Cell,
 } from 'recharts';
 import './Dashboard.css';
+import Skeleton from '../components/Skeleton';
 
 const COLORS = [
   '#0f3460', '#10b981', '#f59e0b', '#dc2626', '#8b5cf6',
@@ -292,11 +293,20 @@ const Analytics = () => {
       </div>
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '60px' }}>
-          <div className="spinner" />
-          <p style={{ color: '#6b7280', marginTop: '12px' }}>Crunching the numbers…</p>
-        </div>
-      ) : !data ? (
+  <>
+    <div className="stats-grid" style={{ marginBottom: 24 }}>
+      {Array.from({ length: 5 }).map((_, i) => (
+        <Skeleton.StatCard key={i} />
+      ))}
+    </div>
+    <Skeleton.Card style={{ marginBottom: 20 }}>
+      <Skeleton.Rows count={4} height={20} />
+    </Skeleton.Card>
+    <Skeleton.Card>
+      <Skeleton.Rows count={6} height={16} />
+    </Skeleton.Card>
+  </>
+) : !data ? (
         <p style={{ textAlign: 'center', color: '#6b7280', padding: '40px' }}>
           No analytics data available.
         </p>

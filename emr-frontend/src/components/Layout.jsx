@@ -940,8 +940,12 @@ const Layout = () => {
       </nav>
 
       <main className="main-content">
-        <Outlet context={{ searchTerm }} />
-      </main>
+  {/* The `key` forces React to remount the wrapper on every route change,
+      which re-triggers the CSS animation each time. */}
+  <div key={location.pathname} className="page-fade-in">
+    <Outlet context={{ searchTerm }} />
+  </div>
+</main>
 
       <MobileMenu
         isOpen={mobileMenuOpen}
