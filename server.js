@@ -11660,6 +11660,332 @@ app.get(
 
       const canSeeDoctors = ['Admin', 'ITAdmin'].includes(req.user.role);
 
+      // ============================================================
+// ANALYTICS — STAFF ACTIVITY
+//
+// Visible to: Admin, ITAdmin, HR, Accountant.
+//
+// Aggregates transaction data by staff member over a period
+// and flags outliers using a Z-score against the team mean.
+//
+// TENANT SAFETY: uses findMany (auto-scoped by the tenant
+// extension) and aggregates in JS. No groupBy, no $queryRaw.
+// ============================================================
+app.get(
+  '/api/analytics/staff-activity',
+  authenticate,
+  authorize('Admin', 'ITAdmin', 'HR', 'Accountant'),
+  async (req, res) => {
+    try {
+      const { period = 'month', from, to, staffId } = req.query;
+
+      // ── Window ─────────────────────────────────────────────
+      const now = new Date();
+      let startDate;
+
+      if (period === 'week') {
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      } else if (period === 'month') {
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      } else if (period === 'quarter') {
+        startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+      } else if (period === 'year') {
+        startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+      } else {
+        startDate = from
+          ? new Date(from)
+          : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      }
+
+      const endDate = to ? new Date(to + 'T23:59:59') : now;
+
+      if (startDate > endDate) {
+        return res.status(400).json({ error: 'from must be before to' });
+      }
+
+      // ── Fetch all four sources in parallel ─────────────────
+      const [medTx, prescriptions, bills, walletTx] = await Promise.all([
+        req.db.medicationTransaction.findMany({
+          where: {
+            createdAt: { gte: startDate, lte: endDate },
+            staffId: { not: null },
+          },
+          select: {
+            id: true,
+            staffId: true,
+            transactionType: true,
+            quantity: true,
+            totalPrice: true,
+            createdAt: true,
+          },
+        }),
+        req.db.prescription.findMany({
+          where: {
+            createdAt: { gte: startDate, lte: endDate },
+            prescribingStaffId: { not: null },
+          },
+          select: {
+            id: true,
+            prescribingStaffId: true,
+            dispensingStaffId: true,
+            dispensedAt: true,
+            createdAt: true,
+          },
+        }),
+        req.db.billingRecord.findMany({
+          where: {
+            OR: [
+              { paymentDate: { gte: startDate, lte: endDate } },
+              { createdAt: { gte: startDate, lte: endDate } },
+            ],
+          },
+          select: {
+            id: true,
+            processedBy: true,
+            status: true,
+            paidAmount: true,
+            balance: true,
+            paymentDate: true,
+            createdAt: true,
+          },
+        }),
+        req.db.walletTransaction.findMany({
+          where: {
+            createdAt: { gte: startDate, lte: endDate },
+            transactionType: { in: ['Deposit', 'Payment', 'Refund'] },
+          },
+          select: {
+            id: true,
+            paidToStaffId: true,
+            transactionType: true,
+            amount: true,
+            createdAt: true,
+          },
+        }),
+      ]);
+
+      // ── Aggregate per staff ────────────────────────────────
+      // { staffId → { ...counters } }
+      const map = new Map();
+
+      const ensure = (staffId) => {
+        if (!staffId) return null;
+        if (!map.has(staffId)) {
+          map.set(staffId, {
+            staffId,
+            prescriptionsWritten: 0,
+            prescriptionsDispensed: 0,
+            billsProcessed: 0,
+            amountHandled: 0,
+            walletDeposits: 0,
+            walletPayments: 0,
+            walletRefunds: 0,
+            refundAmount: 0,
+            medicationEvents: 0,
+            medicationDispensed: 0,
+            totalTransactions: 0,
+            lastActivityAt: null,
+          });
+        }
+        return map.get(staffId);
+      };
+
+      const bumpLastActivity = (row, date) => {
+        if (!row.lastActivityAt || new Date(date) > new Date(row.lastActivityAt)) {
+          row.lastActivityAt = date;
+        }
+      };
+
+      // Medication transactions
+      for (const tx of medTx) {
+        const row = ensure(tx.staffId);
+        if (!row) continue;
+        row.medicationEvents += 1;
+        row.totalTransactions += 1;
+        if (tx.transactionType === 'Dispensed') {
+          row.medicationDispensed += 1;
+        }
+        bumpLastActivity(row, tx.createdAt);
+      }
+
+      // Prescriptions — writer and dispenser get separate counters
+      for (const p of prescriptions) {
+        const writer = ensure(p.prescribingStaffId);
+        if (writer) {
+          writer.prescriptionsWritten += 1;
+          writer.totalTransactions += 1;
+          bumpLastActivity(writer, p.createdAt);
+        }
+        if (p.dispensingStaffId) {
+          const dispenser = ensure(p.dispensingStaffId);
+          if (dispenser) {
+            dispenser.prescriptionsDispensed += 1;
+            dispenser.totalTransactions += 1;
+            // Prefer dispensedAt when present, else createdAt
+            bumpLastActivity(dispenser, p.dispensedAt || p.createdAt);
+          }
+        }
+      }
+
+      // Billing — count only bills actually processed
+      for (const b of bills) {
+        if (!b.processedBy) continue;
+        const row = ensure(b.processedBy);
+        if (!row) continue;
+        if (b.status === 'Paid' || b.status === 'Partial') {
+          row.billsProcessed += 1;
+          row.totalTransactions += 1;
+          row.amountHandled += Number(b.paidAmount) || 0;
+          bumpLastActivity(row, b.paymentDate || b.createdAt);
+        }
+      }
+
+      // Wallet transactions
+      for (const w of walletTx) {
+        if (!w.paidToStaffId) continue;
+        const row = ensure(w.paidToStaffId);
+        if (!row) continue;
+        if (w.transactionType === 'Deposit') {
+          row.walletDeposits += 1;
+          row.amountHandled += Number(w.amount) || 0;
+        } else if (w.transactionType === 'Payment') {
+          row.walletPayments += 1;
+          row.amountHandled += Number(w.amount) || 0;
+        } else if (w.transactionType === 'Refund') {
+          row.walletRefunds += 1;
+          row.refundAmount += Number(w.amount) || 0;
+        }
+        row.totalTransactions += 1;
+        bumpLastActivity(row, w.createdAt);
+      }
+
+      // ── Batch-load staff names ────────────────────────────
+      const staffIds = [...map.keys()];
+      const staffRows = staffIds.length
+        ? await req.db.staff.findMany({
+            where: { id: { in: staffIds } },
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              role: true,
+              isActive: true,
+              department: { select: { id: true, name: true } },
+            },
+          })
+        : [];
+
+      const staffMap = Object.fromEntries(staffRows.map(s => [s.id, s]));
+
+      // ── Assemble per-staff rows ───────────────────────────
+      let rows = [...map.values()].map(r => {
+        const staff = staffMap[r.staffId] || null;
+        return {
+          ...r,
+          staff: staff
+            ? {
+                id: staff.id,
+                name: `${staff.firstName} ${staff.lastName}`,
+                role: staff.role,
+                isActive: staff.isActive,
+                department: staff.department?.name || null,
+              }
+            : { id: r.staffId, name: 'Unknown / Deleted Staff', role: null, isActive: false, department: null },
+        };
+      });
+
+      // Optional single-staff filter (drilldown)
+      if (staffId) {
+        rows = rows.filter(r => r.staffId === staffId);
+      }
+
+      // ── Sort by totalTransactions desc ────────────────────
+      rows.sort((a, b) => b.totalTransactions - a.totalTransactions);
+
+      // ── Z-score outlier detection ─────────────────────────
+      //
+      // For each of the key metrics we compute (mean, stddev) over the
+      // whole team, then flag any staff whose value is >2σ above the mean.
+      // Metrics with fewer than 3 participating staff are skipped — σ is
+      // not meaningful at that size.
+      const METRICS_TO_CHECK = [
+        { key: 'totalTransactions', label: 'transactions' },
+        { key: 'refundAmount', label: 'refund amount' },
+        { key: 'amountHandled', label: 'amount handled' },
+      ];
+
+      const stats = {};
+      for (const m of METRICS_TO_CHECK) {
+        const values = rows.map(r => Number(r[m.key]) || 0);
+        if (values.length < 3) {
+          stats[m.key] = null;
+          continue;
+        }
+        const mean = values.reduce((s, v) => s + v, 0) / values.length;
+        const variance =
+          values.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / values.length;
+        const stddev = Math.sqrt(variance);
+        stats[m.key] = { mean, stddev };
+      }
+
+      for (const row of rows) {
+        row.flags = [];
+        for (const m of METRICS_TO_CHECK) {
+          const stat = stats[m.key];
+          if (!stat || stat.stddev === 0) continue;
+          const v = Number(row[m.key]) || 0;
+          const z = (v - stat.mean) / stat.stddev;
+          if (z > 2) {
+            row.flags.push({
+              metric: m.key,
+              label: m.label,
+              value: v,
+              mean: Math.round(stat.mean * 100) / 100,
+              zScore: Math.round(z * 100) / 100,
+            });
+          }
+        }
+        row.isOutlier = row.flags.length > 0;
+      }
+
+      // ── Summary stats for cards ───────────────────────────
+      const activeStaffCount = rows.filter(r => r.totalTransactions > 0).length;
+      const outlierCount = rows.filter(r => r.isOutlier).length;
+      const totalTransactions = rows.reduce((s, r) => s + r.totalTransactions, 0);
+      const totalAmountHandled = rows.reduce((s, r) => s + r.amountHandled, 0);
+      const totalRefunds = rows.reduce((s, r) => s + r.refundAmount, 0);
+
+      res.json({
+        period: {
+          from: startDate.toISOString(),
+          to: endDate.toISOString(),
+          label: period,
+        },
+        summary: {
+          activeStaffCount,
+          outlierCount,
+          totalTransactions,
+          totalAmountHandled,
+          totalRefunds,
+        },
+        staff: rows,
+        metrics: METRICS_TO_CHECK.map(m => ({
+          key: m.key,
+          label: m.label,
+          mean: stats[m.key] ? Math.round(stats[m.key].mean * 100) / 100 : null,
+          stddev: stats[m.key] ? Math.round(stats[m.key].stddev * 100) / 100 : null,
+        })),
+      });
+    } catch (error) {
+      console.error('Staff activity error:', error);
+      res.status(500).json({
+        error: 'Failed to compute staff activity',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined,
+      });
+    }
+  }
+);
+
       // ═══════════════════════════════════════════════════════
       // 1. TOP PRESCRIBED DRUGS
       // ═══════════════════════════════════════════════════════

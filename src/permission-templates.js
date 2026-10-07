@@ -15,7 +15,7 @@ async function createDefaultRolePermissions(tx, hospitalId) {
     'nurseDashboard','doctorDashboard','antenatal','archivedPatients','archivedPatientsView',
     'queueManagement','doctorQueue','hrDashboard','hrEmployees','hrDepartments','hrLeaves',
     'hrAttendance','hrPerformance','hrTrainings','radiology','dental','optometry',
-    'immunizations','patientPortal','portalSetup','laborAndDelivery',
+    'immunizations','patientPortal','portalSetup','laborAndDelivery',, 'analytics', 'staffActivity', 
   ];
 
   const base = Object.fromEntries(allModules.map((m) => [m, false]));
@@ -31,7 +31,7 @@ async function createDefaultRolePermissions(tx, hospitalId) {
       dashboard: true, staff: true,
       hrDashboard: true, hrEmployees: true, hrDepartments: true,
       hrLeaves: true, hrAttendance: true, hrPerformance: true, hrTrainings: true,
-      archivedPatients: true, archivedPatientsView: true,
+      archivedPatients: true, archivedPatientsView: true, staffActivity: true,
     },
 
     // Clinical
@@ -112,7 +112,7 @@ async function createDefaultRolePermissions(tx, hospitalId) {
     // Finance
     Accountant: { ...base,
       dashboard: true, billing: true, pricing: true, wallet: true,
-      nhisManagement: true, nhisAuthorizations: true,
+      nhisManagement: true, nhisAuthorizations: true, staffActivity: true,
     },
     BillingOfficer: { ...base,
       dashboard: true, patients: true,

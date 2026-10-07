@@ -1101,6 +1101,7 @@ model RolePermission {
   laborAndDelivery     Boolean  @default(false)
   ledger               Boolean  @default(false)
   analytics            Boolean  @default(false)
+  staffActivity        Boolean  @default(false)
   optometry            Boolean  @default(false)
   patientPortal        Boolean  @default(false)
   portalSetup          Boolean  @default(false)

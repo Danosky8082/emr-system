@@ -85,12 +85,14 @@ const Layout = () => {
       { path: '/service-config', label: 'Service Fees' },
       { path: '/ledger', label: '📒 Ledger' },
       { path: '/analytics', label: '📊 Analytics' },
+      { path: '/staff-activity', label: '👥 Staff Activity' }, 
     ],
     '👔 HR': [
       { path: '/hr/dashboard', label: 'HR Dashboard' },
       { path: '/hr/employees', label: 'Employees' },
       { path: '/hr/departments', label: 'Departments' },
       { path: '/hr/leaves', label: 'Leave Management' },
+      { path: '/staff-activity', label: '👥 Staff Activity' }, 
     ],
     '🔐 Admin': [
       { path: '/staff', label: 'Staff Management' },
@@ -145,6 +147,7 @@ const Layout = () => {
     '/psychiatry': 'psychiatry',
     '/ledger': 'ledger',
     '/analytics': 'analytics',
+    '/staff-activity': 'staffActivity',
   };
 
   // ============================================================
@@ -203,9 +206,14 @@ const Layout = () => {
     // Analytics is available to Pharmacist and Accountant regardless of the
     // DB permission flag — they are the two roles that need it most and
     // we don't want a missing DB row to hide the link.
-    if (path === '/analytics') {
+        if (path === '/analytics') {
       if (['Admin', 'ITAdmin', 'Pharmacist', 'Accountant'].includes(user?.role)) return true;
       return permissions?.['analytics'] === true;
+    }
+
+    if (path === '/staff-activity') {
+      if (['Admin', 'ITAdmin', 'HR', 'Accountant'].includes(user?.role)) return true;
+      return permissions?.['staffActivity'] === true;
     }
 
     if (user?.role === 'HR') {
@@ -748,7 +756,8 @@ const Layout = () => {
               <NavLink to="/hr/dashboard" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 HR Dashboard</NavLink>
               <NavLink to="/hr/employees" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 Employees</NavLink>
               <NavLink to="/hr/departments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🏢 Departments</NavLink>
-              <NavLink to="/hr/leaves" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📋 Leave Management</NavLink>
+                            <NavLink to="/hr/leaves" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📋 Leave Management</NavLink>
+              <NavLink to="/staff-activity" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👥 Staff Activity</NavLink>
             </div>
           </div>
         </>
@@ -788,7 +797,8 @@ const Layout = () => {
               <NavLink to="/wallet" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💳 Patient Wallet</NavLink>
               <NavLink to="/billing-officer" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💳 Billing Desk</NavLink>
               <NavLink to="/ledger" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📒 Ledger</NavLink>
-              <NavLink to="/analytics" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Analytics</NavLink>
+                            <NavLink to="/analytics" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Analytics</NavLink>
+              <NavLink to="/staff-activity" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👥 Staff Activity</NavLink>
             </div>
           </div>
         </>
