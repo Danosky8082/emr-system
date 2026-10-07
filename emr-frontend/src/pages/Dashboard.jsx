@@ -11,6 +11,7 @@ import toast from 'react-hot-toast';
 import api from '../api/client';
 import Skeleton from '../components/Skeleton';
 import useCountUp from '../hooks/useCountUp';
+import OrbitLoader from '../components/OrbitLoader';
 
 const Dashboard = () => {
   const { token, user } = useAuth();
@@ -25,8 +26,8 @@ const Dashboard = () => {
     if (user && token) fetchDashboardData();
   }, [user, token]);
 
-  // Renders a number that animates from 0 to its target on mount.
-// Strings (e.g. currency-formatted "₦1,234") are rendered as-is.
+  // Renders a number that counts up dramatically. Each digit briefly
+// flashes when it changes, and the whole number pulses on settle.
 const CountUpValue = ({ value, prefix = '', suffix = '' }) => {
   const numeric =
     typeof value === 'number'
@@ -35,20 +36,26 @@ const CountUpValue = ({ value, prefix = '', suffix = '' }) => {
         ? Number(String(value).replace(/[^0-9.-]/g, '')) || 0
         : 0;
 
-  const animated = useCountUp(numeric, 900);
+  const { value: animated, isAnimating } = useCountUp(numeric, 2200);
 
-  // If the original value was a formatted string like "₦5,000",
-  // preserve the original formatting for the final frame.
-  const isFormattedString = typeof value === 'string' && value !== String(numeric);
+  // Preserve the original string on the final frame (e.g. "₦5,000")
+  const isFormattedString =
+    typeof value === 'string' && value !== String(numeric);
 
-  const displayed = isFormattedString && animated === numeric ? value : animated.toLocaleString();
+  const displayed =
+    isFormattedString && animated === numeric && !isAnimating
+      ? value
+      : animated.toLocaleString();
 
   return (
-    <>
+    <span
+      className={`count-up-value ${isAnimating ? 'is-animating' : 'is-settled'}`}
+      data-target={numeric}
+    >
       {prefix}
       {displayed}
       {suffix}
-    </>
+    </span>
   );
 };
 
@@ -92,6 +99,7 @@ const CountUpValue = ({ value, prefix = '', suffix = '' }) => {
   if (loading) {
   return (
     <div className="dashboard">
+       <OrbitLoader label="Loading dashboard…" />
       <div className="page-header">
         <div>
           <Skeleton.Title width={180} />

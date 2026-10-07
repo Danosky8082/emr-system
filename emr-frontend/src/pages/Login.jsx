@@ -11,6 +11,7 @@ const Login = () => {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [transitioning, setTransitioning] = useState(false);
 
   const { login } = useAuth();
   const { setTenant } = useTenant();
@@ -65,6 +66,11 @@ const Login = () => {
           setTenant(staff.tenantId);
         }
       }
+
+      // ── Door-opening transition ────────────────────────────────
+setTransitioning(true);
+await new Promise((resolve) => setTimeout(resolve, 900));
+// ── End transition ─────────────────────────────────────────
 
       // ─────────────────────────────────────────────────────────
       // 4. Redirect and greet

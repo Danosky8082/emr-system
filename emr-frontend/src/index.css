@@ -1123,3 +1123,256 @@ html,
 .modal-content {
     animation: modalIn 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
+
+/* ============================================================
+   DRAMATIC COUNT-UP
+   ============================================================ */
+
+.count-up-value {
+    display: inline-block;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+    transition: transform 0.2s ease, text-shadow 0.3s ease;
+}
+
+/* While animating — subtle cyan glow + slight scale */
+.count-up-value.is-animating {
+    color: #00d4ff;
+    text-shadow: 0 0 12px rgba(0, 212, 255, 0.5);
+    transform: scale(1.04);
+    animation: countPulse 0.4s ease-in-out infinite alternate;
+}
+
+/* On settle — a quick pop that resolves to the normal colour */
+.count-up-value.is-settled {
+    color: inherit;
+    text-shadow: none;
+    animation: settlePop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes countPulse {
+    from {
+        transform: scale(1.02);
+    }
+
+    to {
+        transform: scale(1.06);
+    }
+}
+
+@keyframes settlePop {
+    0% {
+        transform: scale(1.18);
+    }
+
+    40% {
+        transform: scale(0.96);
+    }
+
+    70% {
+        transform: scale(1.03);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* Digit-flip effect — each character gets a tiny 3D roll as it changes */
+@keyframes digitRoll {
+    from {
+        transform: rotateX(60deg);
+        opacity: 0.4;
+    }
+
+    to {
+        transform: rotateX(0);
+        opacity: 1;
+    }
+}
+
+.count-up-value .digit-flip {
+    animation: digitRoll 0.14s ease-out;
+    display: inline-block;
+    transform-origin: 50% 100%;
+}
+
+/* ============================================================
+   LOGIN DOOR-OPENING TRANSITION
+   ============================================================ */
+
+.door-transition {
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    pointer-events: none;
+}
+
+.door-left,
+.door-right {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 50%;
+    background: linear-gradient(135deg, #0f3460, #1a4a7a);
+    box-shadow:
+        inset 0 0 80px rgba(0, 0, 0, 0.4),
+        0 0 60px rgba(0, 0, 0, 0.5);
+}
+
+.door-left {
+    left: 0;
+    transform-origin: left center;
+    animation: doorLeft 0.9s cubic-bezier(0.7, 0, 0.3, 1) forwards;
+}
+
+.door-right {
+    right: 0;
+    transform-origin: right center;
+    animation: doorRight 0.9s cubic-bezier(0.7, 0, 0.3, 1) forwards;
+}
+
+/* Faint seam glow in the middle */
+.door-left::after,
+.door-right::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: linear-gradient(to bottom, transparent, #00d4ff, transparent);
+    opacity: 0.9;
+}
+
+.door-left::after {
+    right: 0;
+}
+
+.door-right::after {
+    left: 0;
+}
+
+@keyframes doorLeft {
+    0% {
+        transform: perspective(1200px) rotateY(0deg);
+    }
+
+    100% {
+        transform: perspective(1200px) rotateY(-110deg);
+    }
+}
+
+@keyframes doorRight {
+    0% {
+        transform: perspective(1200px) rotateY(0deg);
+    }
+
+    100% {
+        transform: perspective(1200px) rotateY(110deg);
+    }
+}
+
+/* Fade + scale the login card out as the doors swing */
+.login-screen.is-transitioning {
+    animation: loginFadeOut 0.5s ease-out forwards;
+}
+
+@keyframes loginFadeOut {
+    to {
+        opacity: 0;
+        transform: scale(0.96);
+    }
+}
+
+/* ============================================================
+   ORBIT LOADER
+   ============================================================ */
+
+.orbit-loader {
+    position: relative;
+    margin: 60px auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.orbit-ring {
+    position: absolute;
+    inset: 0;
+    animation: orbitSpin 2.4s linear infinite;
+}
+
+.orbit-dot {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    top: 50%;
+    left: 50%;
+    transform-origin: 0 0;
+}
+
+/* Place each dot 120° apart */
+.dot-1 {
+    background: #00d4ff;
+    box-shadow: 0 0 12px #00d4ff;
+    transform: rotate(0deg) translate(-50%, -50%) translateY(-56px);
+    animation-delay: 0s;
+}
+
+.dot-2 {
+    background: #8b5cf6;
+    box-shadow: 0 0 12px #8b5cf6;
+    transform: rotate(120deg) translate(-50%, -50%) translateY(-56px);
+    animation-delay: 0.15s;
+}
+
+.dot-3 {
+    background: #f59e0b;
+    box-shadow: 0 0 12px #f59e0b;
+    transform: rotate(240deg) translate(-50%, -50%) translateY(-56px);
+    animation-delay: 0.3s;
+}
+
+.orbit-logo {
+    width: 64px;
+    height: 64px;
+    object-fit: contain;
+    filter: drop-shadow(0 4px 16px rgba(0, 212, 255, 0.4));
+    animation: logoPulse 1.6s ease-in-out infinite;
+}
+
+.orbit-label {
+    position: absolute;
+    bottom: -32px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    font-size: 13px;
+    color: #6b7280;
+    letter-spacing: 0.5px;
+}
+
+@keyframes orbitSpin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes logoPulse {
+
+    0%,
+    100% {
+        transform: scale(1);
+        opacity: 0.95;
+    }
+
+    50% {
+        transform: scale(1.06);
+        opacity: 1;
+    }
+}
