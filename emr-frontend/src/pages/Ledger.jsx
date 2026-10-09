@@ -187,6 +187,7 @@ const Ledger = () => {
       case 'PRESCRIPTION': return { bg: '#fef3c7', color: '#92400e', icon: '📝' };
       case 'BILLING': return { bg: '#d1fae5', color: '#065f46', icon: '💰' };
       case 'WALLET': return { bg: '#e0e7ff', color: '#4338ca', icon: '👛' };
+      case 'TRANSFER': return { bg: '#f3e8ff', color: '#6b21a8', icon: '➡️' };
       default: return { bg: '#f3f4f6', color: '#374151', icon: '📋' };
     }
   };
@@ -375,6 +376,13 @@ const Ledger = () => {
               <div className="stat-label">Billing Events</div>
             </div>
           </div>
+      
+        <div className="stat-card" style={{ borderLeft: '4px solid #6b21a8' }}>
+          <div className="stat-icon">➡️</div>
+          <div className="stat-info">
+            <div className="stat-value">{summary.byType?.TRANSFER || 0}</div>
+            <div className="stat-label">Stock Transfers</div>
+          </div>
         </div>
       )}
 
@@ -493,6 +501,7 @@ const Ledger = () => {
                 <option value="PRESCRIPTION">📝 Prescription</option>
                 <option value="BILLING">💰 Billing</option>
                 <option value="WALLET">👛 Wallet</option>
+                <option value="TRANSFER">➡️ Transfer</option>
               </select>
             </div>
             <div>

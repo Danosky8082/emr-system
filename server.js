@@ -7249,10 +7249,10 @@ app.get('/api/ledger', authenticate, authorize('Admin', 'ITAdmin', 'Accountant',
     const medPatientMap = Object.fromEntries(medPatients.map(p => [p.id, p]));
     const medStaffMap = Object.fromEntries(medStaff.map(s => [s.id, s]));
 
-    entries.push(...medTx.map(t => ({
+        entries.push(...medTx.map(t => ({
       id: `med-${t.id}`,
       timestamp: t.createdAt,
-      type: 'MEDICATION',
+      type: t.transactionType === 'Transfer' ? 'TRANSFER' : 'MEDICATION',   // ← CHANGED
       subtype: t.transactionType,
       description: `${t.transactionType} · ${t.quantity} × ${t.Medication?.name || 'Unknown'}`,
       amount: t.totalPrice || 0,
