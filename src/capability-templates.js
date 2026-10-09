@@ -31,8 +31,14 @@ const ALL_CAPABILITIES = [
   // ── Billing ────────────────────────────────────────────────
   {
     key: 'billing.reverse_transaction',
-    label: 'Reverse transaction',
-    description: 'Reverse a completed payment or invoice',
+    label: 'Reverse transaction (under threshold)',
+    description: 'Reverse a completed payment below the approval threshold',
+    domain: 'Billing',
+  },
+  {
+    key: 'billing.reverse_large',
+    label: 'Reverse large transaction',
+    description: 'Reverse a payment above the approval threshold',
     domain: 'Billing',
   },
   {
@@ -51,12 +57,9 @@ const ALL_CAPABILITIES = [
   },
 
   // ── Pharmacy ───────────────────────────────────────────────
-  {
-    key: 'pharmacy.transfer_main_store',
-    label: 'Transfer from main store',
-    description: 'Move bulk stock from Main Store to Dispensing Counter',
-    domain: 'Pharmacy',
-  },
+  // NOTE: pharmacy.transfer_main_store is deferred until the
+  // two-store pharmacy feature is built. Do not add it back
+  // until POST /api/pharmacy/main-store/transfer exists.
 ];
 
 // Who gets each capability by default when a hospital is created.
@@ -67,18 +70,18 @@ const DEFAULT_ROLE_CAPABILITIES = {
     'records.edit_identity': 'STAFF',
     'records.delete_patient': 'STAFF',
     'billing.reverse_transaction': 'STAFF',
+    'billing.reverse_large': 'STAFF',
     'billing.void_receipt': 'STAFF',
     'wallet.freeze': 'STAFF',
-    'pharmacy.transfer_main_store': 'STAFF',
   },
   ITAdmin: {
     'records.edit_contact_info': 'STAFF',
     'records.edit_identity': 'STAFF',
     'records.delete_patient': 'STAFF',
     'billing.reverse_transaction': 'STAFF',
+    'billing.reverse_large': 'STAFF',
     'billing.void_receipt': 'STAFF',
     'wallet.freeze': 'STAFF',
-    'pharmacy.transfer_main_store': 'STAFF',
   },
   Records: {
     'records.edit_contact_info': 'STAFF',
@@ -87,16 +90,16 @@ const DEFAULT_ROLE_CAPABILITIES = {
   },
   Accountant: {
     'billing.reverse_transaction': 'SENIOR',
+    'billing.reverse_large': 'HOD',
     'billing.void_receipt': 'HOD',
     'wallet.freeze': 'HOD',
   },
   BillingOfficer: {
-    'billing.reverse_transaction': 'SENIOR',
+    'billing.reverse_transaction': 'HOD',
+    'billing.reverse_large': 'HOD',
     'wallet.freeze': 'HOD',
   },
-  Pharmacist: {
-    
-  },
+  // Pharmacist: no Wave-1 capabilities yet (main-store transfer deferred)
 };
 
 // Creates the RoleCapability rows for a new hospital

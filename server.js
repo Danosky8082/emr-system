@@ -6704,7 +6704,31 @@ app.patch(
   '/api/patient-journeys/:id/reverse',
   authenticate,
   authorize('Admin', 'Records', 'Accountant', 'BillingOfficer'),
-  requireCapability('billing.reverse_transaction'),
+  async (req, res, next) => {
+    // Look up the journey to check the amount
+    try {
+      const { id } = req.params;
+      const journey = await req.db.patientJourney.findUnique({
+        where: { id },
+        include: { BillingRecord: true },
+      });
+      if (!journey) {
+        return res.status(404).json({ error: 'Journey not found' });
+      }
+
+      const amount = journey.BillingRecord?.paidAmount || 0;
+      const THRESHOLD = 50000; // ₦50,000
+
+      const cap = amount > THRESHOLD
+        ? 'billing.reverse_large'
+        : 'billing.reverse_transaction';
+
+      return requireCapability(cap)(req, res, next);
+    } catch (err) {
+      console.error('Reversal capability check error:', err);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  },
   async (req, res) => {
   try {
     const { id } = req.params;
@@ -6889,16 +6913,18 @@ app.patch(
 
     // ── 8) Journey-level audit entry ──
     await req.db.auditLog.create({
-      data: {
-        staffId: req.user.id,
-        action: 'REVERSE_JOURNEY',
-        module: 'Records',
-        details:
-          `Reversed journey for ${journey.Patient?.hospitalId}. ` +
-          `Bill ${journey.BillingRecord?.invoiceNumber || 'N/A'} reset to Pending. ` +
-          `Reason: ${reason || 'Process error'}`
-      }
-    });
+  data: {
+    staffId: req.user.id,
+    action: 'REVERSE_JOURNEY',
+    module: 'Records',
+    details:
+      `Reversed journey for ${journey.Patient?.hospitalId}. ` +
+      `Bill ${journey.BillingRecord?.invoiceNumber || 'N/A'} reset to Pending. ` +
+      `Amount: ₦${amount.toLocaleString()}. ` +
+      `Capability: ${req.capability?.key}, required ${req.capability?.minSeniority}. ` +
+      `Reason: ${reason || 'Process error'}`
+  }
+});
 
     res.json({
       message: 'Journey reversed successfully',
