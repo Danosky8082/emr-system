@@ -13,9 +13,10 @@ const CAPABILITY_LABELS = {
   'records.edit_identity': '🆔 Edit patient identity',
   'records.delete_patient': '🗑️ Delete patient file',
   'billing.reverse_transaction': '↩️ Reverse transaction (under threshold)',
-  'billing.reverse_large': '↩️ Reverse large transaction',                     
+  'billing.reverse_large': '↩️ Reverse large transaction',
   'billing.void_receipt': '🚫 Void receipt',
   'wallet.freeze': '🧊 Freeze patient wallet',
+  'pharmacy.transfer_main_store': '➡️ Transfer from main store',  
 };
 
 const ManageCapabilities = () => {

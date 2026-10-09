@@ -5108,6 +5108,8 @@ app.post('/api/medications', authenticate, authorize('Admin', 'ITAdmin', 'Pharma
         name, genericName, category, supplier,
         unitPrice: parseFloat(unitPrice) || 0,
         stockQuantity: parseInt(stockQuantity) || 0,
+        mainStoreQuantity: 0,             
+        mainStoreReorderLevel: 50,
         reorderLevel: parseInt(reorderLevel) || 10,
         expiryDate: new Date(expiryDate), batchNumber
       }
@@ -5467,6 +5469,221 @@ app.patch('/api/medications/:id/stock', authenticate, authorize('Admin', 'ITAdmi
     res.status(400).json({ error: error.message });
   }
 });
+
+// ============================================================
+// PHARMACY — MAIN STORE MANAGEMENT
+//
+// Real Nigerian pharmacies have two stock locations:
+//   - The MAIN STORE (bulk stock from suppliers)
+//   - The DISPENSING COUNTER (working stock, what pharmacists
+//     actually hand to patients)
+//
+// Two new endpoints manage the flow between them:
+//   POST /api/pharmacy/main-store/restock   → add to main store
+//   POST /api/pharmacy/main-store/transfer  → main → dispensing
+//
+// All three endpoints use req.db — automatically tenant-scoped.
+// ============================================================
+
+// ── RESTOCK MAIN STORE ──────────────────────────────────────
+app.post(
+  '/api/pharmacy/main-store/restock',
+  authenticate,
+  authorize('Admin', 'ITAdmin', 'Pharmacist'),
+  async (req, res) => {
+    try {
+      const { medicationId, quantity, note, batchNumber, expiryDate } = req.body;
+
+      if (!medicationId || quantity === undefined || quantity === null) {
+        return res.status(400).json({ error: 'medicationId and quantity are required' });
+      }
+
+      const qty = parseInt(quantity, 10);
+      if (!qty || qty <= 0) {
+        return res.status(400).json({ error: 'quantity must be a positive integer' });
+      }
+
+      const med = await req.db.medication.findUnique({ where: { id: medicationId } });
+      if (!med) return res.status(404).json({ error: 'Medication not found' });
+
+      const result = await req.db.$transaction(async (tx) => {
+        const updated = await tx.medication.update({
+          where: { id: medicationId },
+          data: {
+            mainStoreQuantity: { increment: qty },
+            ...(batchNumber !== undefined && batchNumber !== '' && { batchNumber }),
+            ...(expiryDate !== undefined && expiryDate !== '' && { expiryDate: new Date(expiryDate) }),
+            updatedAt: new Date(),
+          },
+        });
+
+        const transaction = await tx.medicationTransaction.create({
+          data: {
+            medicationId,
+            transactionType: 'Purchase',
+            quantity: qty,
+            unitPrice: med.unitPrice,
+            totalPrice: qty * med.unitPrice,
+            note: note || `Restocked ${qty} units to Main Store`,
+            staffId: req.user.id,
+            reference: `MSR-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+          },
+        });
+
+        await tx.auditLog.create({
+          data: {
+            staffId: req.user.id,
+            action: 'MAIN_STORE_RESTOCK',
+            module: 'Pharmacy',
+            details: `Restocked ${qty} units of ${med.name} to Main Store. New main store total: ${updated.mainStoreQuantity}`,
+          },
+        });
+
+        return { updated, transaction };
+      });
+
+      res.json({
+        message: `Restocked ${qty} units to Main Store`,
+        medication: result.updated,
+        transaction: result.transaction,
+        mainStoreQuantity: result.updated.mainStoreQuantity,
+      });
+    } catch (error) {
+      console.error('Main store restock error:', error);
+      res.status(400).json({ error: error.message });
+    }
+  }
+);
+
+// ── TRANSFER MAIN → DISPENSING ──────────────────────────────
+// Gated by pharmacy.transfer_main_store capability.
+// Route is defined even if the capability has no DB row yet —
+// in that case the middleware returns 403 CAPABILITY_NOT_GRANTED,
+// which is the correct behaviour.
+app.post(
+  '/api/pharmacy/main-store/transfer',
+  authenticate,
+  authorize('Admin', 'ITAdmin', 'Pharmacist'),
+  requireCapability('pharmacy.transfer_main_store'),
+  async (req, res) => {
+    try {
+      const { medicationId, quantity, note } = req.body;
+
+      if (!medicationId || quantity === undefined || quantity === null) {
+        return res.status(400).json({ error: 'medicationId and quantity are required' });
+      }
+
+      const qty = parseInt(quantity, 10);
+      if (!qty || qty <= 0) {
+        return res.status(400).json({ error: 'quantity must be a positive integer' });
+      }
+
+      const med = await req.db.medication.findUnique({ where: { id: medicationId } });
+      if (!med) return res.status(404).json({ error: 'Medication not found' });
+
+      if (med.mainStoreQuantity < qty) {
+        return res.status(400).json({
+          error: `Insufficient Main Store stock. Available: ${med.mainStoreQuantity}, Requested: ${qty}`,
+          available: med.mainStoreQuantity,
+          requested: qty,
+        });
+      }
+
+      const result = await req.db.$transaction(async (tx) => {
+        const updated = await tx.medication.update({
+          where: { id: medicationId },
+          data: {
+            mainStoreQuantity: { decrement: qty },
+            stockQuantity: { increment: qty },
+            updatedAt: new Date(),
+          },
+        });
+
+        // A transfer is a zero-cost internal movement.
+        // totalPrice: 0 is deliberate — it stops the Ledger from
+        // double-counting inventory value.
+        const transaction = await tx.medicationTransaction.create({
+          data: {
+            medicationId,
+            transactionType: 'Transfer',
+            quantity: qty,
+            unitPrice: med.unitPrice,
+            totalPrice: 0,
+            note: note || `Transfer ${qty} units from Main Store to Dispensing Counter`,
+            staffId: req.user.id,
+            reference: `TRF-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+          },
+        });
+
+        await tx.auditLog.create({
+          data: {
+            staffId: req.user.id,
+            action: 'MAIN_STORE_TRANSFER',
+            module: 'Pharmacy',
+            details: `Transferred ${qty} units of ${med.name} from Main Store to counter. Main: ${updated.mainStoreQuantity}, Counter: ${updated.stockQuantity}. Capability: ${req.capability?.key}`,
+          },
+        });
+
+        return { updated, transaction };
+      });
+
+      res.json({
+        message: `Transferred ${qty} units to Dispensing Counter`,
+        medication: result.updated,
+        transaction: result.transaction,
+        mainStoreQuantity: result.updated.mainStoreQuantity,
+        dispensingQuantity: result.updated.stockQuantity,
+      });
+    } catch (error) {
+      console.error('Main store transfer error:', error);
+      res.status(400).json({ error: error.message });
+    }
+  }
+);
+
+// ── GET MAIN STORE INVENTORY ────────────────────────────────
+app.get(
+  '/api/pharmacy/main-store',
+  authenticate,
+  authorize('Admin', 'ITAdmin', 'Pharmacist'),
+  async (req, res) => {
+    try {
+      const { search, lowOnly } = req.query;
+
+      const where = {};
+      if (search) {
+        where.OR = [
+          { name: { contains: search, mode: 'insensitive' } },
+          { genericName: { contains: search, mode: 'insensitive' } },
+          { category: { contains: search, mode: 'insensitive' } },
+        ];
+      }
+
+      const medications = await req.db.medication.findMany({
+        where,
+        orderBy: { name: 'asc' },
+      });
+
+      let filtered = medications;
+      if (lowOnly === 'true') {
+        filtered = medications.filter(
+          (m) => m.mainStoreQuantity <= m.mainStoreReorderLevel
+        );
+      }
+
+      res.json({
+        data: filtered,
+        total: filtered.length,
+        lowStockCount: medications.filter(
+          (m) => m.mainStoreQuantity <= m.mainStoreReorderLevel
+        ).length,
+      });
+    } catch (error) {
+      console.error('Get main store error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
 
 app.get('/api/medications/stock/:name', authenticate, authorize('Admin', 'ITAdmin', 'Pharmacist', 'Doctor'), async (req, res) => {
   try {

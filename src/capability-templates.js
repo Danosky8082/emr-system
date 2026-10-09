@@ -56,10 +56,13 @@ const ALL_CAPABILITIES = [
     domain: 'Wallet',
   },
 
-  // ── Pharmacy ───────────────────────────────────────────────
-  // NOTE: pharmacy.transfer_main_store is deferred until the
-  // two-store pharmacy feature is built. Do not add it back
-  // until POST /api/pharmacy/main-store/transfer exists.
+    // ── Pharmacy ───────────────────────────────────────────────
+  {
+    key: 'pharmacy.transfer_main_store',
+    label: 'Transfer from main store',
+    description: 'Move bulk stock from Main Store to Dispensing Counter',
+    domain: 'Pharmacy',
+  },
 ];
 
 // Who gets each capability by default when a hospital is created.
@@ -73,6 +76,7 @@ const DEFAULT_ROLE_CAPABILITIES = {
     'billing.reverse_large': 'STAFF',
     'billing.void_receipt': 'STAFF',
     'wallet.freeze': 'STAFF',
+    'pharmacy.transfer_main_store': 'STAFF',   // ← ADD
   },
   ITAdmin: {
     'records.edit_contact_info': 'STAFF',
@@ -82,6 +86,7 @@ const DEFAULT_ROLE_CAPABILITIES = {
     'billing.reverse_large': 'STAFF',
     'billing.void_receipt': 'STAFF',
     'wallet.freeze': 'STAFF',
+    'pharmacy.transfer_main_store': 'STAFF',   
   },
   Records: {
     'records.edit_contact_info': 'STAFF',
@@ -99,7 +104,9 @@ const DEFAULT_ROLE_CAPABILITIES = {
     'billing.reverse_large': 'HOD',
     'wallet.freeze': 'HOD',
   },
-  // Pharmacist: no Wave-1 capabilities yet (main-store transfer deferred)
+  Pharmacist: {
+    'pharmacy.transfer_main_store': 'SENIOR',  
+  },
 };
 
 // Creates the RoleCapability rows for a new hospital
