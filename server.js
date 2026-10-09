@@ -24,6 +24,8 @@ const storage = require('./src/storage');
 const { prisma, getTenantPrisma } = require('./src/prisma-client');
 const { backupDatabase } = require('./scripts/backup-db');
 const { createDefaultHospitalData } = require('./src/hospital-templates');
+const { createDefaultRoleCapabilities } = require('./src/capability-templates');
+const { createDefaultRolePermissions } = require('./src/permission-templates');
 
 // ============================================================
 // JWT SECRET — hard-fail in production if missing
@@ -80,144 +82,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 
-// ============================================================
-// SHARED: Create default role permissions for a new hospital
-// ============================================================
-async function createDefaultRolePermissions(tx, hospitalId) {
-  const allModules = [
-    'dashboard','patients','staff','appointments','prescriptions','labOrders','billing',
-    'pharmacy','pharmacyDashboard','pharmacyInventory','nhisManagement','nhisAuthorizations',
-    'pharmacyStock','pharmacyTransactions','pharmacyBranches','clinics','wards','pricing',
-    'billingOfficer','wallet','patientIntake','admissions','patientHistory','roiRequests',
-    'nurseDashboard','doctorDashboard','antenatal','archivedPatients','archivedPatientsView',
-    'queueManagement','doctorQueue','hrDashboard','hrEmployees','hrDepartments','hrLeaves',
-    'hrAttendance','hrPerformance','hrTrainings','radiology','dental','optometry',
-    'immunizations','patientPortal','portalSetup','laborAndDelivery', 'ledger', 
-  ];
 
-  const base = Object.fromEntries(allModules.map((m) => [m, false]));
-  const allTrue = Object.fromEntries(allModules.map((m) => [m, true]));
-
-  const rolePerms = {
-    Admin: allTrue,
-    ITAdmin: allTrue,
-
-    HR: { ...base,
-      dashboard: true, staff: true,
-      hrDashboard: true, hrEmployees: true, hrDepartments: true,
-      hrLeaves: true, hrAttendance: true, hrPerformance: true, hrTrainings: true,
-      archivedPatients: true, archivedPatientsView: true,
-    },
-
-    Doctor: { ...base,
-      dashboard: true, patients: true, appointments: true,
-      prescriptions: true, labOrders: true,
-      doctorDashboard: true, doctorQueue: true, patientHistory: true,
-      archivedPatientsView: true, immunizations: true,
-    },
-
-    Obstetrician: { ...base,
-      dashboard: true, patients: true, appointments: true,
-      prescriptions: true, labOrders: true,
-      doctorDashboard: true, doctorQueue: true,
-      antenatal: true, laborAndDelivery: true,
-      archivedPatientsView: true, immunizations: true,
-    },
-
-    Nurse: { ...base,
-      dashboard: true, patients: true,
-      nurseDashboard: true, queueManagement: true,
-      antenatal: true, laborAndDelivery: true,
-      immunizations: true, archivedPatientsView: true,
-    },
-
-    Midwife: { ...base,
-      dashboard: true, patients: true,
-      nurseDashboard: true, queueManagement: true,
-      antenatal: true, laborAndDelivery: true,
-      archivedPatientsView: true, immunizations: true,
-    },
-
-    Pharmacist: { ...base,
-      dashboard: true, prescriptions: true,
-      pharmacy: true, pharmacyDashboard: true, pharmacyInventory: true,
-      pharmacyStock: true, pharmacyTransactions: true,
-      nhisManagement: true, nhisAuthorizations: true,
-    },
-
-    LabTechnician: { ...base,
-      dashboard: true, patients: true, labOrders: true,
-    },
-
-    LabScientist: { ...base,
-      dashboard: true, patients: true, labOrders: true,
-      patientHistory: true, archivedPatientsView: true,
-    },
-
-    Radiologist: { ...base,
-      dashboard: true, patients: true, radiology: true,
-      archivedPatientsView: true,
-    },
-
-    Dentist: { ...base,
-      dashboard: true, patients: true, appointments: true,
-      prescriptions: true, dental: true, archivedPatientsView: true,
-    },
-
-    Optometrist: { ...base,
-      dashboard: true, patients: true, appointments: true,
-      prescriptions: true, optometry: true, archivedPatientsView: true,
-    },
-
-    Paediatrician: { ...base,
-      dashboard: true, patients: true, appointments: true,
-      prescriptions: true, labOrders: true,
-      immunizations: true, archivedPatientsView: true,
-    },
-
-    Surgeon: { ...base,
-      dashboard: true, patients: true, appointments: true,
-      prescriptions: true, labOrders: true, archivedPatientsView: true,
-    },
-
-    Psychiatrist: { ...base,
-      dashboard: true, patients: true, appointments: true,
-      prescriptions: true, labOrders: true, archivedPatientsView: true,
-    },
-
-    Accountant: { ...base,
-      dashboard: true, billing: true, pricing: true, wallet: true,
-      nhisManagement: true, nhisAuthorizations: true,
-      ledger: true, 
-    },
-
-    BillingOfficer: { ...base,
-      dashboard: true, patients: true,
-      billingOfficer: true, wallet: true,
-      ledger: true, 
-    },
-
-    Records: { ...base,
-      dashboard: true, patients: true,
-      patientIntake: true, admissions: true, patientHistory: true,
-      roiRequests: true, queueManagement: true, antenatal: true,
-      archivedPatients: true, archivedPatientsView: true,
-      patientPortal: true, portalSetup: true,
-    },
-
-    Receptionist: { ...base,
-      dashboard: true, patients: true, appointments: true,
-    },
-  };
-
-  for (const [role, perms] of Object.entries(rolePerms)) {
-    await tx.rolePermission.create({
-      data: { tenantId: hospitalId, role, ...perms },
-    });
-  }
-
-  return Object.keys(rolePerms).length;
-}
 
 // ============================================================
 // 2. CORS — before routes
@@ -395,6 +260,131 @@ function authorize(...roles) {
       });
     }
     next();
+  };
+}
+
+// ============================================================
+// CAPABILITY MIDDLEWARE
+//
+// Enforces action-level authorization on top of role checks.
+//
+// Layered checks:
+//   1. Does this role have the capability at all? (RoleCapability row)
+//   2. Is the user's seniority at or above the required minimum?
+//   3. Auto-promotes department managers to HOD for their own department.
+//   4. Admin/ITAdmin always pass.
+//
+// On success, attaches req.capability so the route handler can
+// include it in the audit log.
+// ============================================================
+const SENIORITY_ORDER = {
+  JUNIOR: 0,
+  STAFF: 1,
+  SENIOR: 2,
+  HOD: 3,
+  ADMIN: 4,
+};
+
+function requireCapability(capabilityKey) {
+  return async (req, res, next) => {
+    try {
+      const userRole = req.user?.role;
+      const userId = req.user?.id;
+      const tenantId = req.tenantId;
+
+      if (!userRole || !userId || !tenantId) {
+        return res.status(401).json({ error: 'Not authenticated' });
+      }
+
+      // Admin / ITAdmin bypass — they run the hospital
+      if (['Admin', 'ITAdmin'].includes(userRole)) {
+        req.capability = {
+          key: capabilityKey,
+          minSeniority: 'ADMIN',
+          userLevel: 'ADMIN',
+          effectiveLevel: 'ADMIN',
+          bypassed: true,
+        };
+        return next();
+      }
+
+      // ── Layer 1: does this role have the capability? ──
+      const rule = await prisma.roleCapability.findFirst({
+        where: {
+          tenantId,
+          role: userRole,
+          capability: capabilityKey,
+          isEnabled: true,
+        },
+      });
+
+      if (!rule) {
+        return res.status(403).json({
+          error: `Your role (${userRole}) is not permitted to perform this action.`,
+          code: 'CAPABILITY_NOT_GRANTED',
+          capability: capabilityKey,
+        });
+      }
+
+      // ── Layer 2: seniority check ──
+      const staff = await req.db.staff.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          role: true,
+          seniorityLevel: true,
+          departmentId: true,
+        },
+      });
+
+      if (!staff) {
+        return res.status(401).json({ error: 'Staff record not found' });
+      }
+
+      const rawUserLevel = SENIORITY_ORDER[staff.seniorityLevel || 'STAFF'] ?? 1;
+      const requiredLevel = SENIORITY_ORDER[rule.minSeniority] ?? 1;
+
+      // ── Auto-promote department managers to HOD ──
+      let effectiveLevel = rawUserLevel;
+      if (staff.departmentId) {
+        const dept = await req.db.department.findFirst({
+          where: { id: staff.departmentId, managerId: userId },
+          select: { id: true },
+        });
+        if (dept) {
+          effectiveLevel = Math.max(effectiveLevel, SENIORITY_ORDER.HOD);
+        }
+      }
+
+      if (effectiveLevel < requiredLevel) {
+        return res.status(403).json({
+          error:
+            `Insufficient seniority for this action. ` +
+            `Required: ${rule.minSeniority}, yours: ${staff.seniorityLevel || 'STAFF'}. ` +
+            `Ask your HOD to perform this action or delegate it to you.`,
+          code: 'INSUFFICIENT_SENIORITY',
+          capability: capabilityKey,
+          required: rule.minSeniority,
+          userLevel: staff.seniorityLevel || 'STAFF',
+        });
+      }
+
+      // ── All checks passed ──
+      req.capability = {
+        key: capabilityKey,
+        minSeniority: rule.minSeniority,
+        userLevel: staff.seniorityLevel || 'STAFF',
+        effectiveLevel: Object.keys(SENIORITY_ORDER).find(
+          (k) => SENIORITY_ORDER[k] === effectiveLevel
+        ),
+        bypassed: false,
+      };
+
+      next();
+    } catch (error) {
+      console.error('Capability check error:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
   };
 }
 
@@ -965,20 +955,25 @@ app.post('/api/super-admin/hospitals', authenticate, requireSuperAdmin, async (r
         data: { tenantId: hospital.id, hospitalId: hospital.id },
       });
 
-            // 3) Default role permissions (20 roles)
+      // 3) Default role permissions (20 roles)
       const rolesCreated = await createDefaultRolePermissions(tx, hospital.id);
 
-      // 4) Default clinics, wards, departments, services
+      // 4) Default role capabilities (7 capabilities mapped to roles)
+      const capsCreated = await createDefaultRoleCapabilities(tx, hospital.id);
+
+      // 5) Default clinics, wards, departments, services
       const starterData = await createDefaultHospitalData(tx, hospital.id);
 
-      return { hospital, rolesCreated, starterData };
+      // ✅ Return everything so the response can report the counts
+      return { hospital, rolesCreated, capsCreated, starterData };
     }, { timeout: 120000 });
 
     res.status(201).json({
       ...result.hospital,
       _meta: {
         rolesCreated: result.rolesCreated,
-        ...result.starterData, // clinics, wards, departments, services
+        capsCreated: result.capsCreated,
+        ...result.starterData,   // clinics, wards, departments, services, configs
       },
     });
   } catch (error) {
@@ -986,19 +981,6 @@ app.post('/api/super-admin/hospitals', authenticate, requireSuperAdmin, async (r
     if (error.code === 'P2002') {
       return res.status(400).json({ error: 'Slug or code already exists' });
     }
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Update hospital
-app.patch('/api/super-admin/hospitals/:id', authenticate, requireSuperAdmin, async (req, res) => {
-  try {
-    const hospital = await prisma.hospital.update({
-      where: { id: req.params.id },
-      data: req.body
-    });
-    res.json(hospital);
-  } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
@@ -1131,9 +1113,11 @@ app.post('/api/public/register-hospital', async (req, res) => {
 
       // 4) Full 20-role permission matrix
       const rolesCreated = await createDefaultRolePermissions(tx, hospital.id);
+      const capsCreated = await createDefaultRoleCapabilities(tx, hospital.id);
 
       // 5) Default clinics, wards, departments, services
       const starterData = await createDefaultHospitalData(tx, hospital.id);
+    
 
       return { hospital, admin, rolesCreated, starterData };
     });
@@ -2630,16 +2614,62 @@ app.get('/api/patients/search/:query', authenticate, async (req, res) => {
   }
 });
 
-app.put('/api/patients/:id', authenticate, authorize('Admin', 'Records', 'ITAdmin'), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const {
-      firstName, lastName, dateOfBirth, gender, phone, email, address,
-      emergencyContact, allergies, nextOfKinName, nextOfKinPhone,
-      nextOfKinRelationship, patientCategory, insuranceProvider,
-      insuranceId, corporateCompany
-    } = req.body;
-    const patient = await req.db.patient.update({
+app.put(
+  '/api/patients/:id',
+  authenticate,
+  authorize('Admin', 'Records', 'ITAdmin'),
+  async (req, res, next) => {
+    // Decide which capability this update needs:
+    //   - Identity change (name/DOB/gender/next-of-kin) → HOD
+    //   - Contact-only change → STAFF
+    try {
+      const { id } = req.params;
+      const existing = await req.db.patient.findUnique({
+        where: { id },
+        select: {
+          firstName: true, lastName: true, dateOfBirth: true, gender: true,
+          nextOfKinName: true, nextOfKinRelationship: true,
+        },
+      });
+      if (!existing) return res.status(404).json({ error: 'Patient not found' });
+
+      const identityFields = [
+        'firstName', 'lastName', 'dateOfBirth', 'gender',
+        'nextOfKinName', 'nextOfKinRelationship',
+      ];
+
+      const touchedIdentity = identityFields.some((f) => {
+        const incoming = req.body[f];
+        if (incoming === undefined) return false;
+        const prior = existing[f];
+        // DOB comparison: incoming is a string, prior is a Date
+        if (f === 'dateOfBirth') {
+          return new Date(incoming).toISOString() !==
+                 new Date(prior).toISOString();
+        }
+        return incoming !== prior;
+      });
+
+      const cap = touchedIdentity
+        ? 'records.edit_identity'
+        : 'records.edit_contact_info';
+
+      return requireCapability(cap)(req, res, next);
+    } catch (err) {
+      console.error('Patient update capability check error:', err);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const {
+        firstName, lastName, dateOfBirth, gender, phone, email, address,
+        emergencyContact, allergies, nextOfKinName, nextOfKinPhone,
+        nextOfKinRelationship, patientCategory, insuranceProvider,
+        insuranceId, corporateCompany
+      } = req.body;
+      const patient = await req.db.patient.update({
       where: { id },
       data: {
         firstName, lastName,
@@ -2652,17 +2682,35 @@ app.put('/api/patients/:id', authenticate, authorize('Admin', 'Records', 'ITAdmi
         corporateCompany: corporateCompany || null
       }
     });
-    res.json(patient);
-  } catch (error) {
-    console.error('Update patient error:', error);
-    res.status(400).json({ error: error.message });
+         // Audit log with capability trail
+      if (req.capability) {
+        await req.db.auditLog.create({
+          data: {
+            staffId: req.user.id,
+            action: 'UPDATE_PATIENT',
+            module: 'Patient',
+            details: `Updated patient ${patient.hospitalId}. Capability: ${req.capability.key} (required: ${req.capability.minSeniority})`,
+          },
+        });
+      }
+
+      res.json(patient);
+    } catch (error) {
+      console.error('Update patient error:', error);
+      res.status(400).json({ error: error.message });
+    }
   }
-});
+);
 
 // ============================================================
 // SOFT-DELETE PATIENT
 // ============================================================
-app.delete('/api/patients/:id', authenticate, authorize('Admin', 'Records', 'ITAdmin'), async (req, res) => {
+app.delete(
+  '/api/patients/:id',
+  authenticate,
+  authorize('Admin', 'Records', 'ITAdmin'),
+  requireCapability('records.delete_patient'),
+  async (req, res) => {
   try {
     const { id } = req.params;
     const { reason } = req.body || {};
@@ -2694,14 +2742,14 @@ app.delete('/api/patients/:id', authenticate, authorize('Admin', 'Records', 'ITA
     });
 
     await req.db.auditLog.create({
-      data: {
-        tenantId: req.tenantId,
-        staffId: req.user.id,
-        action: 'SOFT_DELETE_PATIENT',
-        module: 'Patient',
-        details: `Soft-deleted patient ${existingPatient.hospitalId} (${existingPatient.firstName} ${existingPatient.lastName}). Reason: ${reason || 'Not specified'}`
-      }
-    });
+  data: {
+    tenantId: req.tenantId,
+    staffId: req.user.id,
+    action: 'SOFT_DELETE_PATIENT',
+    module: 'Patient',
+    details: `Soft-deleted patient ${existingPatient.hospitalId} (${existingPatient.firstName} ${existingPatient.lastName}). Reason: ${reason || 'Not specified'}. Capability: records.delete_patient`,
+  }
+});
 
     res.json({
       success: true,
@@ -3012,7 +3060,7 @@ app.get('/api/staff/:id', authenticate, authorize('Admin', 'ITAdmin', 'HR'), asy
 
 app.post('/api/staff', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
   try {
-    const { employeeId, firstName, lastName, email, role, department, password } = req.body;
+    const { employeeId, firstName, lastName, email, role, department, password, seniorityLevel } = req.body;
 
     if (!employeeId || !firstName || !lastName || !email || !role || !password) {
       return res.status(400).json({ error: 'Missing required fields' });
@@ -3068,6 +3116,7 @@ app.post('/api/staff', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async 
           departmentId,
           password: hashedPassword,
           isActive: true,
+          seniorityLevel: seniorityLevel || 'STAFF', 
           updatedAt: new Date(),
         },
         include: {
@@ -3104,7 +3153,7 @@ app.post('/api/staff', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async 
 app.put('/api/staff/:id', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
   try {
     const { id } = req.params;
-    const { employeeId, firstName, lastName, username, email, role, department, isActive } = req.body;
+    const { employeeId, firstName, lastName, username, email, role, department, isActive, seniorityLevel } = req.body;
 
     const staff = await prisma.$transaction(async (tx) => {
       // Resolve department only if the key was sent
@@ -3139,6 +3188,7 @@ app.put('/api/staff/:id', authenticate, authorize('Admin', 'ITAdmin', 'HR'), asy
           role,
           departmentId,
           isActive,
+          seniorityLevel: seniorityLevel || undefined,
           updatedAt: new Date(),
         },
         include: {
@@ -6650,7 +6700,12 @@ app.patch('/api/patient-journeys/:id', authenticate, authorize('Admin', 'Records
 // ============================================================
 // REVERSE A JOURNEY
 // ============================================================
-app.patch('/api/patient-journeys/:id/reverse', authenticate, authorize('Admin', 'Records'), async (req, res) => {
+app.patch(
+  '/api/patient-journeys/:id/reverse',
+  authenticate,
+  authorize('Admin', 'Records', 'Accountant', 'BillingOfficer'),
+  requireCapability('billing.reverse_transaction'),
+  async (req, res) => {
   try {
     const { id } = req.params;
     const { reason } = req.body;
@@ -9231,7 +9286,12 @@ app.post('/api/patients/:patientId/wallet/pay', authenticate, authorize('Admin',
   }
 });
 
-app.patch('/api/patients/:patientId/wallet/status', authenticate, authorize('Admin', 'Accountant', 'BillingOfficer'), async (req, res) => {
+app.patch(
+  '/api/patients/:patientId/wallet/status',
+  authenticate,
+  authorize('Admin', 'Accountant', 'BillingOfficer'),
+  requireCapability('wallet.freeze'),
+  async (req, res) => {
   try {
     const { patientId } = req.params;
     const { status } = req.body;
@@ -9274,6 +9334,70 @@ app.get('/api/permissions', authenticate, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// ============================================================
+// CAPABILITIES — Admin/ITAdmin view & management
+// ============================================================
+app.get(
+  '/api/capabilities',
+  authenticate,
+  authorize('Admin', 'ITAdmin'),
+  async (req, res) => {
+    try {
+      const caps = await prisma.roleCapability.findMany({
+        where: { tenantId: req.tenantId },
+        orderBy: [{ role: 'asc' }, { capability: 'asc' }],
+      });
+      res.json(caps);
+    } catch (error) {
+      console.error('Get capabilities error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
+
+app.patch(
+  '/api/capabilities/:id',
+  authenticate,
+  authorize('Admin', 'ITAdmin'),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { minSeniority, isEnabled } = req.body;
+
+      const valid = ['JUNIOR', 'STAFF', 'SENIOR', 'HOD', 'ADMIN'];
+      if (minSeniority !== undefined && !valid.includes(minSeniority)) {
+        return res.status(400).json({ error: 'Invalid minSeniority' });
+      }
+
+      const updated = await prisma.roleCapability.update({
+        where: { id },
+        data: {
+          ...(minSeniority !== undefined && { minSeniority }),
+          ...(isEnabled !== undefined && { isEnabled }),
+          updatedAt: new Date(),
+        },
+      });
+
+      await req.db.auditLog.create({
+        data: {
+          staffId: req.user.id,
+          action: 'UPDATE_CAPABILITY',
+          module: 'Admin',
+          details: `Updated capability ${updated.role} → ${updated.capability} to minSeniority=${updated.minSeniority}, enabled=${updated.isEnabled}`,
+        },
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error('Update capability error:', error);
+      if (error.code === 'P2025') {
+        return res.status(404).json({ error: 'Capability not found' });
+      }
+      res.status(400).json({ error: error.message });
+    }
+  }
+);
 
 app.patch('/api/permissions/:role', authenticate, authorize('Admin'), async (req, res) => {
   try {

@@ -8,6 +8,7 @@ const jwt = require('jsonwebtoken');
 const { prisma } = require('../prisma-client');
 const { createDefaultRolePermissions } = require('../permission-templates');
 const { createDefaultHospitalData } = require('../hospital-templates');
+const { createDefaultRoleCapabilities } = require('../capability-templates');
 
 // ============================================================
 // JWT SECRET
@@ -358,18 +359,22 @@ router.post('/backfill-permissions', authenticatePlatform, requirePlatformAdmin,
 
     for (const h of hospitals) {
       await prisma.rolePermission.deleteMany({ where: { tenantId: h.id } });
+      await prisma.roleCapability.deleteMany({ where: { tenantId: h.id } }); 
 
             const created = await prisma.$transaction(
         async (tx) => {
-                    return await createDefaultRolePermissions(tx, h.id);
+          const roles = await createDefaultRolePermissions(tx, h.id);
+          const caps  = await createDefaultRoleCapabilities(tx, h.id);         
+          return { roles, caps };
         },
         { timeout: 120000 }
       );
 
-      results.push({
+        results.push({
         hospital: h.name,
         tenantId: h.id,
-        rolesCreated: created,
+        rolesCreated: created.roles,
+        capsCreated: created.caps,
       });
     }
 
@@ -404,7 +409,7 @@ router.post('/backfill-starter-data', authenticatePlatform, requirePlatformAdmin
 
             const created = await prisma.$transaction(
         async (tx) => {
-          return await createDefaultRolePermissions(tx, h.id);
+          return await createDefaultHospitalData(tx, h.id); 
         },
         { timeout: 120000 }
       );

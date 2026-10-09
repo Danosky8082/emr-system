@@ -37,6 +37,7 @@ const StaffManagement = () => {
     role: 'Records',
     department: '',
     password: '',
+    seniorityLevel: 'STAFF',
   });
 
   // Assignment state
@@ -145,6 +146,7 @@ const StaffManagement = () => {
     role: 'Records',
     department: '',
     password: '',
+    seniorityLevel: 'STAFF',
   };
 
   const fetchStaff = async () => {
@@ -326,7 +328,7 @@ const StaffManagement = () => {
       role: createdStaff.role,
     });
 
-    // If this role needs clinic/ward assignment, reopen the modal in edit mode
+        // If this role needs clinic/ward assignment, reopen the modal in edit mode
     // so the admin can assign immediately.
     if (rolesRequiringAssignment.includes(formData.role)) {
       setNewStaffName(`${formData.firstName} ${formData.lastName}`);
@@ -342,6 +344,7 @@ const StaffManagement = () => {
         role: createdStaff.role,
         department: createdStaff.department || '',
         password: '',
+        seniorityLevel: createdStaff.seniorityLevel || 'STAFF',   
       });
 
       await fetchAssignments(createdStaff.id);
@@ -364,47 +367,6 @@ const StaffManagement = () => {
     toast.error(message);
   }
 };
-
-  const handleEdit = async (staffMember) => {
-    setEditingStaff(staffMember);
-    setFormData({
-      employeeId: staffMember.employeeId,
-      firstName: staffMember.firstName,
-      lastName: staffMember.lastName,
-      email: staffMember.email,
-      role: staffMember.role,
-      department: staffMember.department || '',
-      password: '',
-    });
-
-    if (rolesRequiringAssignment.includes(staffMember.role)) {
-      await fetchAssignments(staffMember.id);
-    } else {
-      setAssignedClinicIds([]);
-      setAssignedWardIds([]);
-    }
-
-    setShowModal(true);
-  };
-
-  const handleDeactivate = async (staffMember) => {
-    if (
-      !window.confirm(
-        `Are you sure you want to deactivate ${staffMember.firstName} ${staffMember.lastName}?`
-      )
-    )
-      return;
-    try {
-      await api.delete(`/staff/${staffMember.id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      toast.success('Staff deactivated successfully');
-      fetchStaff();
-    } catch (error) {
-      toast.error(error.response?.data?.error || 'Operation failed');
-    }
-  };
-
   const handleReactivate = async (staffMember) => {
     try {
       await api.patch(`/staff/${staffMember.id}/reactivate`,
@@ -563,13 +525,14 @@ const StaffManagement = () => {
 
       <div className="table-container">
         <table>
-          <thead>
+                    <thead>
             <tr>
               <th>Employee ID</th>
               <th>Username</th>
               <th>Name</th>
               <th>Email</th>
               <th>Role</th>
+              <th>Seniority</th>
               <th>Department</th>
               <th>Status</th>
               <th>Actions</th>
@@ -633,6 +596,31 @@ const StaffManagement = () => {
                       <span style={{ fontSize: '8px', opacity: 0.7, marginLeft: '2px' }}>
                         ({roleGroup})
                       </span>
+                    </span>
+                  </td>
+                                    <td>
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        padding: '2px 10px',
+                        borderRadius: '10px',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        background:
+                          s.seniorityLevel === 'ADMIN' ? '#fee2e2' :
+                          s.seniorityLevel === 'HOD'   ? '#ede9fe' :
+                          s.seniorityLevel === 'SENIOR'? '#dbeafe' :
+                          s.seniorityLevel === 'JUNIOR'? '#f3f4f6' :
+                                                          '#d1fae5',
+                        color:
+                          s.seniorityLevel === 'ADMIN' ? '#991b1b' :
+                          s.seniorityLevel === 'HOD'   ? '#5b21b6' :
+                          s.seniorityLevel === 'SENIOR'? '#1e40af' :
+                          s.seniorityLevel === 'JUNIOR'? '#374151' :
+                                                          '#065f46',
+                      }}
+                    >
+                      {s.seniorityLevel || 'STAFF'}
                     </span>
                   </td>
                   <td>{s.department || '-'}</td>
@@ -722,7 +710,7 @@ const StaffManagement = () => {
             })}
             {filteredStaff.length === 0 && (
               <tr>
-                <td colSpan="8" className="text-center">
+                <td colSpan="9" className="text-center">
                   No matching staff found.
                 </td>
               </tr>
@@ -894,6 +882,29 @@ const StaffManagement = () => {
                 </small>
               </div>
             </div>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label>Seniority Level</label>
+                <select
+                  name="seniorityLevel"
+                  value={formData.seniorityLevel}
+                  onChange={handleInputChange}
+                >
+                  <option value="JUNIOR">🟢 Junior — Trainee / Intern</option>
+                  <option value="STAFF">🔵 Staff — Default</option>
+                  <option value="SENIOR">🟣 Senior — Delegated authority</option>
+                  <option value="HOD">🟠 HOD — Head of Department</option>
+                  <option value="ADMIN">🔴 Admin — Hospital-wide override</option>
+                </select>
+                <small style={{ color: '#6b7280' }}>
+                  Controls who can perform sensitive actions like reversals,
+                  deletions, and identity edits. Higher = more authority.
+                </small>
+              </div>
+            </div>
+
+            
 
             <div className="form-row">
               <div className="form-group">
