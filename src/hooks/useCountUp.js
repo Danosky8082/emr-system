@@ -7,7 +7,7 @@
 //
 import { useState, useEffect, useRef } from 'react';
 
-export const useCountUp = (target, duration = 2200) => {
+export const useCountUp = (target, duration = 6000) => {
   const numericTarget =
     typeof target === 'number' && Number.isFinite(target) ? Math.max(0, target) : 0;
 

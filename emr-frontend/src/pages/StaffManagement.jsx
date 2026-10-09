@@ -362,11 +362,53 @@ const StaffManagement = () => {
     setAssignedClinicIds([]);
     setAssignedWardIds([]);
     fetchStaff();
-  } catch (error) {
+    } catch (error) {
     const message = error.response?.data?.error || 'Operation failed';
     toast.error(message);
   }
 };
+
+  const handleEdit = async (staffMember) => {
+    setEditingStaff(staffMember);
+    setFormData({
+      employeeId: staffMember.employeeId,
+      firstName: staffMember.firstName,
+      lastName: staffMember.lastName,
+      email: staffMember.email,
+      role: staffMember.role,
+      department: staffMember.department || '',
+      password: '',
+      seniorityLevel: staffMember.seniorityLevel || 'STAFF',
+    });
+
+    if (rolesRequiringAssignment.includes(staffMember.role)) {
+      await fetchAssignments(staffMember.id);
+    } else {
+      setAssignedClinicIds([]);
+      setAssignedWardIds([]);
+    }
+
+    setShowModal(true);
+  };
+
+  const handleDeactivate = async (staffMember) => {
+    if (
+      !window.confirm(
+        `Are you sure you want to deactivate ${staffMember.firstName} ${staffMember.lastName}?`
+      )
+    )
+      return;
+    try {
+      await api.delete(`/staff/${staffMember.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      toast.success('Staff deactivated successfully');
+      fetchStaff();
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Operation failed');
+    }
+  };
+
   const handleReactivate = async (staffMember) => {
     try {
       await api.patch(`/staff/${staffMember.id}/reactivate`,

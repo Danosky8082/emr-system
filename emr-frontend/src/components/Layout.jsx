@@ -99,6 +99,7 @@ const Layout = () => {
       { path: '/clinics', label: 'Manage Clinics' },
       { path: '/wards', label: 'Manage Wards' },
       { path: '/permissions', label: 'Role Permissions' },
+      { path: '/capabilities', label: 'Capabilities' },
       { path: '/audit-logs', label: 'Audit Logs' },
       { path: '/system-status', label: 'System Status' },
       { path: '/ledger', label: '📒 Ledger' },
@@ -148,6 +149,8 @@ const Layout = () => {
     '/ledger': 'ledger',
     '/analytics': 'analytics',
     '/staff-activity': 'staffActivity',
+    '/permissions': 'staff',
+    '/capabilities': 'staff',
   };
 
   // ============================================================

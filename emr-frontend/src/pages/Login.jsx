@@ -68,7 +68,8 @@ const Login = () => {
       }
 
       // ── Door-opening transition ────────────────────────────────
-setTransitioning(true);
+      setTransitioning(true);
+      console.log('DOORS OPENING');
 await new Promise((resolve) => setTimeout(resolve, 900));
 // ── End transition ─────────────────────────────────────────
 
@@ -95,9 +96,18 @@ await new Promise((resolve) => setTimeout(resolve, 900));
     }
   };
 
-  return (
-    <div className="login-screen app-container">
-      <div className="login-container">
+    return (
+    <>
+      {/* ═══ DOOR-OPENING TRANSITION OVERLAY ═══ */}
+      {transitioning && (
+        <div className="door-transition">
+          <div className="door-left" />
+          <div className="door-right" />
+        </div>
+      )}
+
+      <div className={`login-screen app-container ${transitioning ? 'is-transitioning' : ''}`}>
+        <div className="login-container">
         <div className="login-header" style={{ textAlign: 'center' }}>
   <img
     src="/logo.png"
@@ -179,8 +189,9 @@ await new Promise((resolve) => setTimeout(resolve, 900));
             Sign in here
           </Link>
         </p>
+              </div>
       </div>
-    </div>
+    </>
   );
 };
 

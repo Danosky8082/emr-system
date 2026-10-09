@@ -84,6 +84,7 @@ model Hospital {
   Prescription          Prescription[]
   ROIRequest            ROIRequest[]
   RolePermission        RolePermission[]
+  RoleCapability        RoleCapability[]
   ServiceConfiguration  ServiceConfiguration[]
   ServicePrice          ServicePrice[]
   ServicePricing        ServicePricing[]
@@ -1113,6 +1114,23 @@ model RolePermission {
   @@index([tenantId])
 }
 
+model RoleCapability {
+  id           String   @id @default(cuid())
+  tenantId     String
+  role         String
+  capability   String
+  minSeniority String   @default("SENIOR")
+  isEnabled    Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  Hospital Hospital @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, role, capability])
+  @@index([tenantId])
+  @@index([tenantId, role])
+}
+
 model ServicePrice {
   id          String   @id @default(cuid())
   name        String
@@ -1178,6 +1196,7 @@ model Staff {
   password                                                   String
   isActive                                                   Boolean                    @default(true)
   isSuperAdmin                                               Boolean                    @default(false)
+  seniorityLevel                                             String   @default("STAFF") 
   manager_id                                                 String?
   dateOfBirth                                                DateTime?
   gender                                                     String?

@@ -15,7 +15,7 @@ async function createDefaultRolePermissions(tx, hospitalId) {
     'nurseDashboard','doctorDashboard','antenatal','archivedPatients','archivedPatientsView',
     'queueManagement','doctorQueue','hrDashboard','hrEmployees','hrDepartments','hrLeaves',
     'hrAttendance','hrPerformance','hrTrainings','radiology','dental','optometry',
-    'immunizations','patientPortal','portalSetup','laborAndDelivery',, 'analytics', 'staffActivity', 
+    'immunizations','patientPortal','portalSetup','laborAndDelivery', 'analytics', 'staffActivity', 
   ];
 
   const base = Object.fromEntries(allModules.map((m) => [m, false]));
