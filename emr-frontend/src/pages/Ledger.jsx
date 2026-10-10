@@ -369,19 +369,20 @@ const Ledger = () => {
               <div className="stat-label">Medication Events</div>
             </div>
           </div>
-          <div className="stat-card" style={{ borderLeft: '4px solid #f59e0b' }}>
+                    <div className="stat-card" style={{ borderLeft: '4px solid #f59e0b' }}>
             <div className="stat-icon">💰</div>
             <div className="stat-info">
               <div className="stat-value">{summary.byType?.BILLING || 0}</div>
               <div className="stat-label">Billing Events</div>
             </div>
           </div>
-      
-        <div className="stat-card" style={{ borderLeft: '4px solid #6b21a8' }}>
-          <div className="stat-icon">➡️</div>
-          <div className="stat-info">
-            <div className="stat-value">{summary.byType?.TRANSFER || 0}</div>
-            <div className="stat-label">Stock Transfers</div>
+
+          <div className="stat-card" style={{ borderLeft: '4px solid #6b21a8' }}>
+            <div className="stat-icon">➡️</div>
+            <div className="stat-info">
+              <div className="stat-value">{summary.byType?.TRANSFER || 0}</div>
+              <div className="stat-label">Stock Transfers</div>
+            </div>
           </div>
         </div>
       )}
@@ -600,12 +601,19 @@ const Ledger = () => {
                         )}
                       </td>
                       <td style={{ fontSize: '13px', maxWidth: '260px' }}>{e.description}</td>
-                      <td style={{ fontSize: '13px' }}>
+                                            <td style={{ fontSize: '13px' }}>
                         {e.patient ? (
                           <>
                             <div style={{ fontWeight: '500' }}>{e.patient.name}</div>
                             <div style={{ fontSize: '11px', color: '#6b7280' }}>{e.patient.hospitalId}</div>
                           </>
+                        ) : e.subtype === 'Transfer' ? (
+                          <span
+                            style={{ fontSize: '11px', color: '#6b21a8', fontStyle: 'italic' }}
+                            title="Stock moves between store locations, not to a patient"
+                          >
+                            🏬 Main Store → 💊 Counter
+                          </span>
                         ) : (
                           <span style={{ color: '#9ca3af' }}>—</span>
                         )}
