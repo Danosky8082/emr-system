@@ -1,11 +1,62 @@
 // src/components/Layout.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, NavLink, useNavigate, useOutletContext, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTenant } from '../context/TenantContext';
 import api from '../api/client';
 import MobileMenu from './MobileMenu';
 import './Layout.css';
+
+// ============================================================
+// NAV DROPDOWN — reusable hover-controlled dropdown
+// Opens on mouseenter, closes on mouseleave after a grace period
+// so the pointer can travel from the trigger into the panel.
+// ============================================================
+const NavDropdown = ({ label, children }) => {
+  const [open, setOpen] = useState(false);
+  const timeoutRef = useRef(null);
+
+  const handleEnter = () => {
+    clearTimeout(timeoutRef.current);
+    setOpen(true);
+  };
+
+  const handleLeave = () => {
+    // 150ms grace period so the mouse can travel to the panel
+    timeoutRef.current = setTimeout(() => setOpen(false), 150);
+  };
+
+  // Close dropdown when clicking a link inside
+  const handleContentClick = () => {
+    setOpen(false);
+  };
+
+  useEffect(() => {
+    return () => clearTimeout(timeoutRef.current);
+  }, []);
+
+  return (
+    <div
+      className="nav-dropdown"
+      onMouseEnter={handleEnter}
+      onMouseLeave={handleLeave}
+    >
+      <button className="nav-dropdown-header">{label} ▼</button>
+      <div
+        className="dropdown-content"
+        onClick={handleContentClick}
+        style={{
+          opacity: open ? 1 : 0,
+          visibility: open ? 'visible' : 'hidden',
+          transform: open ? 'translateY(0)' : 'translateY(10px)',
+          pointerEvents: open ? 'auto' : 'none',
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+};
 
 const Layout = () => {
   const { user, logout } = useAuth();
@@ -17,8 +68,8 @@ const Layout = () => {
   const [loadingPermissions, setLoadingPermissions] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isMobileView, setIsMobileView] = useState(
-  typeof window !== 'undefined' ? window.innerWidth < 1400 : false
-);
+    typeof window !== 'undefined' ? window.innerWidth < 1400 : false
+  );
 
   // ============================================================
   // MENU STRUCTURE — drives both desktop nav and mobile menu
@@ -85,14 +136,14 @@ const Layout = () => {
       { path: '/service-config', label: 'Service Fees' },
       { path: '/ledger', label: '📒 Ledger' },
       { path: '/analytics', label: '📊 Analytics' },
-      { path: '/staff-activity', label: '👥 Staff Activity' }, 
+      { path: '/staff-activity', label: '👥 Staff Activity' },
     ],
     '👔 HR': [
       { path: '/hr/dashboard', label: 'HR Dashboard' },
       { path: '/hr/employees', label: 'Employees' },
       { path: '/hr/departments', label: 'Departments' },
       { path: '/hr/leaves', label: 'Leave Management' },
-      { path: '/staff-activity', label: '👥 Staff Activity' }, 
+      { path: '/staff-activity', label: '👥 Staff Activity' },
     ],
     '🔐 Admin': [
       { path: '/staff', label: 'Staff Management' },
@@ -176,14 +227,13 @@ const Layout = () => {
 
   // ============================================================
   // VIEWPORT TRACKING — swap between desktop nav and mobile menu
-  // Breakpoint at 1300px so medium laptops get the sidebar
   // ============================================================
   useEffect(() => {
     const handleResize = () => {
-  const mobile = window.innerWidth < 1400;
-  setIsMobileView(mobile);
-  if (!mobile) setMobileMenuOpen(false);
-};
+      const mobile = window.innerWidth < 1400;
+      setIsMobileView(mobile);
+      if (!mobile) setMobileMenuOpen(false);
+    };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
@@ -203,13 +253,10 @@ const Layout = () => {
   // ============================================================
   // PERMISSION CHECK
   // ============================================================
-    const canAccess = (path) => {
+  const canAccess = (path) => {
     if (['Admin', 'ITAdmin'].includes(user?.role)) return true;
 
-    // Analytics is available to Pharmacist and Accountant regardless of the
-    // DB permission flag — they are the two roles that need it most and
-    // we don't want a missing DB row to hide the link.
-        if (path === '/analytics') {
+    if (path === '/analytics') {
       if (['Admin', 'ITAdmin', 'Pharmacist', 'Accountant'].includes(user?.role)) return true;
       return permissions?.['analytics'] === true;
     }
@@ -372,9 +419,6 @@ const Layout = () => {
 
   // ============================================================
   // RENDER NAV — desktop only (mobile uses MobileMenu)
-  //
-  // Consolidated to 6 top-level items so the navbar never overflows:
-  //   Dashboard | Patients | Clinical | Pharmacy | Finance | More
   // ============================================================
   const renderNav = () => {
     if (loadingPermissions) {
@@ -411,7 +455,6 @@ const Layout = () => {
 
     // Admin / ITAdmin — CONSOLIDATED 6-item nav
     if (['Admin', 'ITAdmin'].includes(user?.role)) {
-      // Groups that go into "More ▼"
       const moreGroups = [
         { key: '🔬 Lab', title: '🔬 Laboratory' },
         { key: '📷 Radiology', title: '📷 Radiology' },
@@ -433,395 +476,332 @@ const Layout = () => {
           </NavLink>
 
           {/* Patients */}
-          <div className="nav-dropdown">
-            <button className="nav-dropdown-header">👤 Patients ▼</button>
-            <div className="dropdown-content">
-              {renderDropdownItems(menuStructure['👤 Patients'])}
-            </div>
-          </div>
+          <NavDropdown label="👤 Patients">
+            {renderDropdownItems(menuStructure['👤 Patients'])}
+          </NavDropdown>
 
           {/* Clinical — includes Maternity */}
-          <div className="nav-dropdown">
-            <button className="nav-dropdown-header">👨‍⚕️ Clinical ▼</button>
-            <div className="dropdown-content">
-              {renderDropdownItems(menuStructure['👨‍⚕️ Clinical'])}
-              <div className="dropdown-divider" />
-              <div className="dropdown-section-title">Maternity</div>
-              {renderDropdownItems(menuStructure['🤰 Maternity'])}
-            </div>
-          </div>
+          <NavDropdown label="👨‍⚕️ Clinical">
+            {renderDropdownItems(menuStructure['👨‍⚕️ Clinical'])}
+            <div className="dropdown-divider" />
+            <div className="dropdown-section-title">Maternity</div>
+            {renderDropdownItems(menuStructure['🤰 Maternity'])}
+          </NavDropdown>
 
           {/* Pharmacy */}
-          <div className="nav-dropdown">
-            <button className="nav-dropdown-header">💊 Pharmacy ▼</button>
-            <div className="dropdown-content">
-              {renderDropdownItems(menuStructure['💊 Pharmacy'])}
-            </div>
-          </div>
+          <NavDropdown label="💊 Pharmacy">
+            {renderDropdownItems(menuStructure['💊 Pharmacy'])}
+          </NavDropdown>
 
           {/* Finance */}
-          <div className="nav-dropdown">
-            <button className="nav-dropdown-header">💰 Finance ▼</button>
-            <div className="dropdown-content">
-              {renderDropdownItems(menuStructure['💰 Finance'])}
-            </div>
-          </div>
+          <NavDropdown label="💰 Finance">
+            {renderDropdownItems(menuStructure['💰 Finance'])}
+          </NavDropdown>
 
           {/* More — everything else */}
-          <div className="nav-dropdown">
-            <button className="nav-dropdown-header">⋯ More ▼</button>
-            <div className="dropdown-content dropdown-content-tall">
-              {moreGroups.map((group, idx) => {
-                const items = (menuStructure[group.key] || []).filter((i) => canAccess(i.path));
-                if (items.length === 0) return null;
-                return (
-                  <div key={group.key}>
-                    {idx > 0 && <div className="dropdown-divider" />}
-                    <div className="dropdown-section-title">{group.title}</div>
-                    {items.map((item) => (
-                      <NavLink
-                        key={item.path}
-                        to={item.path}
-                        className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-                      >
-                        {item.label}
-                      </NavLink>
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <NavDropdown label="⋯ More">
+            {moreGroups.map((group, idx) => {
+              const items = (menuStructure[group.key] || []).filter((i) => canAccess(i.path));
+              if (items.length === 0) return null;
+              return (
+                <div key={group.key}>
+                  {idx > 0 && <div className="dropdown-divider" />}
+                  <div className="dropdown-section-title">{group.title}</div>
+                  {items.map((item) => (
+                    <NavLink
+                      key={item.path}
+                      to={item.path}
+                      className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+                    >
+                      {item.label}
+                    </NavLink>
+                  ))}
+                </div>
+              );
+            })}
+          </NavDropdown>
         </>
       );
     }
 
-    // All other roles — keep existing per-role navs but they're short enough
-    // to fit on one line
+    // Paediatrician
     if (user?.role === 'Paediatrician') {
       return (
         <>
           <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
           <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 Patients</NavLink>
-          <div className="nav-dropdown">
-            <button className="nav-dropdown-header" style={{ color: '#f472b6', fontWeight: 'bold' }}>👶 Paediatrics ▼</button>
-            <div className="dropdown-content">
-              <NavLink to="/paediatric" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👶 Paediatric Patients</NavLink>
-              <NavLink to="/appointments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📅 Appointments</NavLink>
-            </div>
-          </div>
+          <NavDropdown label="👶 Paediatrics">
+            <NavLink to="/paediatric" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👶 Paediatric Patients</NavLink>
+            <NavLink to="/appointments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📅 Appointments</NavLink>
+          </NavDropdown>
           <NavLink to="/archived-patients-view" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📦 Archived (View)</NavLink>
         </>
       );
     }
 
+    // Surgeon
     if (user?.role === 'Surgeon') {
       return (
         <>
           <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
           <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 Patients</NavLink>
-          <div className="nav-dropdown">
-            <button className="nav-dropdown-header" style={{ color: '#dc2626', fontWeight: 'bold' }}>🏥 Surgery ▼</button>
-            <div className="dropdown-content">
-              <NavLink to="/surgery" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🏥 Surgery Patients</NavLink>
-              <NavLink to="/appointments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📅 Appointments</NavLink>
-            </div>
-          </div>
+          <NavDropdown label="🏥 Surgery">
+            <NavLink to="/surgery" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🏥 Surgery Patients</NavLink>
+            <NavLink to="/appointments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📅 Appointments</NavLink>
+          </NavDropdown>
           <NavLink to="/archived-patients-view" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📦 Archived (View)</NavLink>
         </>
       );
     }
 
+    // Psychiatrist
     if (user?.role === 'Psychiatrist') {
       return (
         <>
           <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
           <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 Patients</NavLink>
-          <div className="nav-dropdown">
-            <button className="nav-dropdown-header" style={{ color: '#7c3aed', fontWeight: 'bold' }}>🧠 Psychiatry ▼</button>
-            <div className="dropdown-content">
-              <NavLink to="/psychiatry" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🧠 Psychiatry Patients</NavLink>
-              <NavLink to="/appointments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📅 Appointments</NavLink>
-            </div>
-          </div>
+          <NavDropdown label="🧠 Psychiatry">
+            <NavLink to="/psychiatry" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🧠 Psychiatry Patients</NavLink>
+            <NavLink to="/appointments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📅 Appointments</NavLink>
+          </NavDropdown>
           <NavLink to="/archived-patients-view" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📦 Archived (View)</NavLink>
         </>
       );
     }
 
+    // Dentist
     if (user?.role === 'Dentist') {
       return (
         <>
           <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
           <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 Patients</NavLink>
-          <div className="nav-dropdown">
-            <button className="nav-dropdown-header" style={{ color: '#0f3460', fontWeight: 'bold' }}>🦷 Dental ▼</button>
-            <div className="dropdown-content">
-              <NavLink to="/dental" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🦷 Dental Clinic</NavLink>
-              <NavLink to="/appointments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📅 Appointments</NavLink>
-            </div>
-          </div>
+          <NavDropdown label="🦷 Dental">
+            <NavLink to="/dental" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🦷 Dental Clinic</NavLink>
+            <NavLink to="/appointments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📅 Appointments</NavLink>
+          </NavDropdown>
           <NavLink to="/archived-patients-view" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📦 Archived (View)</NavLink>
         </>
       );
     }
 
+    // Optometrist
     if (user?.role === 'Optometrist') {
       return (
         <>
           <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
           <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 Patients</NavLink>
-          <div className="nav-dropdown">
-            <button className="nav-dropdown-header" style={{ color: '#06b6d4', fontWeight: 'bold' }}>👁️ Optometry ▼</button>
-            <div className="dropdown-content">
-              <NavLink to="/optometry" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👁️ Eye Clinic</NavLink>
-              <NavLink to="/appointments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📅 Appointments</NavLink>
-            </div>
-          </div>
+          <NavDropdown label="👁️ Optometry">
+            <NavLink to="/optometry" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👁️ Eye Clinic</NavLink>
+            <NavLink to="/appointments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📅 Appointments</NavLink>
+          </NavDropdown>
           <NavLink to="/archived-patients-view" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📦 Archived (View)</NavLink>
         </>
       );
     }
 
+    // Obstetrician
     if (user?.role === 'Obstetrician') {
       return (
         <>
           <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
           <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 Patients</NavLink>
-          <div className="nav-dropdown">
-            <button className="nav-dropdown-header" style={{ color: '#dc2626', fontWeight: 'bold' }}>🤱 Maternity ▼</button>
-            <div className="dropdown-content">
-              <NavLink to="/antenatal" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🤰 Antenatal Care</NavLink>
-              <NavLink to="/labor-delivery" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🤱 Labor & Delivery</NavLink>
-            </div>
-          </div>
-          <div className="nav-dropdown">
-            <button className="nav-dropdown-header">👨‍⚕️ Clinical ▼</button>
-            <div className="dropdown-content">
-              <NavLink to="/appointments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📅 Appointments</NavLink>
-              <NavLink to="/prescriptions" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💊 Prescriptions</NavLink>
-              <NavLink to="/lab-orders" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🔬 Lab Orders</NavLink>
-              <NavLink to="/doctor-queue" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🏥 My Queue</NavLink>
-            </div>
-          </div>
+          <NavDropdown label="🤱 Maternity">
+            <NavLink to="/antenatal" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🤰 Antenatal Care</NavLink>
+            <NavLink to="/labor-delivery" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🤱 Labor & Delivery</NavLink>
+          </NavDropdown>
+          <NavDropdown label="👨‍⚕️ Clinical">
+            <NavLink to="/appointments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📅 Appointments</NavLink>
+            <NavLink to="/prescriptions" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💊 Prescriptions</NavLink>
+            <NavLink to="/lab-orders" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🔬 Lab Orders</NavLink>
+            <NavLink to="/doctor-queue" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🏥 My Queue</NavLink>
+          </NavDropdown>
           <NavLink to="/archived-patients-view" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📦 Archived (View)</NavLink>
         </>
       );
     }
 
+    // Midwife
     if (user?.role === 'Midwife') {
       return (
         <>
           <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
           <NavLink to="/nurse-dashboard" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👩‍⚕️ My Patients</NavLink>
-          <div className="nav-dropdown">
-            <button className="nav-dropdown-header" style={{ color: '#dc2626', fontWeight: 'bold' }}>🤱 Maternity ▼</button>
-            <div className="dropdown-content">
-              <NavLink to="/antenatal" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🤰 Antenatal Care</NavLink>
-              <NavLink to="/labor-delivery" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🤱 Labor & Delivery</NavLink>
-            </div>
-          </div>
-          <div className="nav-dropdown">
-            <button className="nav-dropdown-header">📋 Records ▼</button>
-            <div className="dropdown-content">
-              <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 All Patients</NavLink>
-              <NavLink to="/queue" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🏥 Queue</NavLink>
-              <NavLink to="/archived-patients-view" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📦 Archived (View)</NavLink>
-            </div>
-          </div>
+          <NavDropdown label="🤱 Maternity">
+            <NavLink to="/antenatal" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🤰 Antenatal Care</NavLink>
+            <NavLink to="/labor-delivery" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🤱 Labor & Delivery</NavLink>
+          </NavDropdown>
+          <NavDropdown label="📋 Records">
+            <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 All Patients</NavLink>
+            <NavLink to="/queue" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🏥 Queue</NavLink>
+            <NavLink to="/archived-patients-view" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📦 Archived (View)</NavLink>
+          </NavDropdown>
         </>
       );
     }
 
+    // Doctor
     if (user?.role === 'Doctor') {
       return (
         <>
           <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
           <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 Patients</NavLink>
-          <div className="nav-dropdown">
-            <button className="nav-dropdown-header">🤱 Maternity ▼</button>
-            <div className="dropdown-content">
-              <NavLink to="/antenatal" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🤰 Antenatal Care</NavLink>
-              <NavLink to="/labor-delivery" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🤱 Labor & Delivery</NavLink>
-            </div>
-          </div>
-          <div className="nav-dropdown">
-            <button className="nav-dropdown-header">👨‍⚕️ Clinical ▼</button>
-            <div className="dropdown-content">
-              <NavLink to="/appointments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📅 Appointments</NavLink>
-              <NavLink to="/prescriptions" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💊 Prescriptions</NavLink>
-              <NavLink to="/lab-orders" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🔬 Lab Orders</NavLink>
-              <NavLink to="/doctor-dashboard" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👨‍⚕️ My Patients</NavLink>
-              <NavLink to="/doctor-queue" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🏥 My Queue</NavLink>
-            </div>
-          </div>
+          <NavDropdown label="🤱 Maternity">
+            <NavLink to="/antenatal" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🤰 Antenatal Care</NavLink>
+            <NavLink to="/labor-delivery" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🤱 Labor & Delivery</NavLink>
+          </NavDropdown>
+          <NavDropdown label="👨‍⚕️ Clinical">
+            <NavLink to="/appointments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📅 Appointments</NavLink>
+            <NavLink to="/prescriptions" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💊 Prescriptions</NavLink>
+            <NavLink to="/lab-orders" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🔬 Lab Orders</NavLink>
+            <NavLink to="/doctor-dashboard" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👨‍⚕️ My Patients</NavLink>
+            <NavLink to="/doctor-queue" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🏥 My Queue</NavLink>
+          </NavDropdown>
           <NavLink to="/archived-patients-view" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📦 Archived (View)</NavLink>
         </>
       );
     }
 
+    // Nurse
     if (user?.role === 'Nurse') {
       return (
         <>
           <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
           <NavLink to="/nurse-dashboard" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👩‍⚕️ My Patients</NavLink>
-          <div className="nav-dropdown">
-            <button className="nav-dropdown-header">🤱 Maternity ▼</button>
-            <div className="dropdown-content">
-              <NavLink to="/antenatal" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🤰 Antenatal Care</NavLink>
-              <NavLink to="/labor-delivery" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🤱 Labor & Delivery</NavLink>
-            </div>
-          </div>
-          <div className="nav-dropdown">
-            <button className="nav-dropdown-header">📋 Records ▼</button>
-            <div className="dropdown-content">
-              <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 All Patients</NavLink>
-              <NavLink to="/queue" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🏥 Queue</NavLink>
-              <NavLink to="/archived-patients-view" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📦 Archived (View)</NavLink>
-            </div>
-          </div>
+          <NavDropdown label="🤱 Maternity">
+            <NavLink to="/antenatal" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🤰 Antenatal Care</NavLink>
+            <NavLink to="/labor-delivery" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🤱 Labor & Delivery</NavLink>
+          </NavDropdown>
+          <NavDropdown label="📋 Records">
+            <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 All Patients</NavLink>
+            <NavLink to="/queue" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🏥 Queue</NavLink>
+            <NavLink to="/archived-patients-view" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📦 Archived (View)</NavLink>
+          </NavDropdown>
         </>
       );
     }
 
+    // Receptionist
     if (user?.role === 'Receptionist') {
       return (
         <>
           <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
           <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 Patients</NavLink>
-          <div className="nav-dropdown">
-            <button className="nav-dropdown-header">📋 Records ▼</button>
-            <div className="dropdown-content">
-              <NavLink to="/patient-intake" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🔄 Patient Intake</NavLink>
-              <NavLink to="/appointments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📅 Appointments</NavLink>
-              <NavLink to="/queue" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🏥 Queue</NavLink>
-            </div>
-          </div>
+          <NavDropdown label="📋 Records">
+            <NavLink to="/patient-intake" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🔄 Patient Intake</NavLink>
+            <NavLink to="/appointments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📅 Appointments</NavLink>
+            <NavLink to="/queue" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🏥 Queue</NavLink>
+          </NavDropdown>
         </>
       );
     }
 
-        if (user?.role === 'Pharmacist') {
+    // Pharmacist
+    if (user?.role === 'Pharmacist') {
       return (
         <>
           <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
-          <div className="nav-dropdown">
-            <button className="nav-dropdown-header">💊 Pharmacy ▼</button>
-            <div className="dropdown-content">
-              <NavLink to="/pharmacy-patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 Patient List</NavLink>
-              <NavLink to="/pharmacy" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💊 Inventory</NavLink>
-              <NavLink to="/pharmacy-dashboard" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
-              <NavLink to="/nhis-drugs" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🏥 NHIS Drugs</NavLink>
-              <NavLink to="/analytics" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Analytics</NavLink>
-            </div>
-          </div>
+          <NavDropdown label="💊 Pharmacy">
+            <NavLink to="/pharmacy-patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 Patient List</NavLink>
+            <NavLink to="/pharmacy" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💊 Inventory</NavLink>
+            <NavLink to="/pharmacy-dashboard" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
+            <NavLink to="/nhis-drugs" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🏥 NHIS Drugs</NavLink>
+            <NavLink to="/analytics" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Analytics</NavLink>
+          </NavDropdown>
         </>
       );
     }
 
+    // LabTechnician / LabScientist
     if (['LabTechnician', 'LabScientist'].includes(user?.role)) {
       return (
         <>
           <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
-          <div className="nav-dropdown">
-            <button className="nav-dropdown-header">🔬 Laboratory ▼</button>
-            <div className="dropdown-content">
-              <NavLink to="/lab-patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 Patient List</NavLink>
-              <NavLink to="/lab-orders" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🔬 Lab Orders</NavLink>
-            </div>
-          </div>
+          <NavDropdown label="🔬 Laboratory">
+            <NavLink to="/lab-patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 Patient List</NavLink>
+            <NavLink to="/lab-orders" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🔬 Lab Orders</NavLink>
+          </NavDropdown>
         </>
       );
     }
 
+    // Radiologist
     if (user?.role === 'Radiologist') {
       return (
         <>
           <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
-          <div className="nav-dropdown">
-            <button className="nav-dropdown-header">📷 Radiology ▼</button>
-            <div className="dropdown-content">
-              <NavLink to="/radiology-patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 Patient List</NavLink>
-              <NavLink to="/radiology-dashboard" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📷 Dashboard</NavLink>
-            </div>
-          </div>
+          <NavDropdown label="📷 Radiology">
+            <NavLink to="/radiology-patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 Patient List</NavLink>
+            <NavLink to="/radiology-dashboard" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📷 Dashboard</NavLink>
+          </NavDropdown>
         </>
       );
     }
 
+    // HR
     if (user?.role === 'HR') {
       return (
         <>
           <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
-          <div className="nav-dropdown">
-            <button className="nav-dropdown-header">👔 HR ▼</button>
-            <div className="dropdown-content">
-              <NavLink to="/hr/dashboard" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 HR Dashboard</NavLink>
-              <NavLink to="/hr/employees" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 Employees</NavLink>
-              <NavLink to="/hr/departments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🏢 Departments</NavLink>
-                            <NavLink to="/hr/leaves" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📋 Leave Management</NavLink>
-              <NavLink to="/staff-activity" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👥 Staff Activity</NavLink>
-            </div>
-          </div>
+          <NavDropdown label="👔 HR">
+            <NavLink to="/hr/dashboard" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 HR Dashboard</NavLink>
+            <NavLink to="/hr/employees" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 Employees</NavLink>
+            <NavLink to="/hr/departments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🏢 Departments</NavLink>
+            <NavLink to="/hr/leaves" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📋 Leave Management</NavLink>
+            <NavLink to="/staff-activity" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👥 Staff Activity</NavLink>
+          </NavDropdown>
         </>
       );
     }
 
+    // Records
     if (user?.role === 'Records') {
       return (
         <>
           <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
           <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 Patients</NavLink>
-          <div className="nav-dropdown">
-            <button className="nav-dropdown-header">📋 Records ▼</button>
-            <div className="dropdown-content">
-              <NavLink to="/patient-intake" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🔄 Patient Intake</NavLink>
-              <NavLink to="/admissions" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🏥 ADT</NavLink>
-              <NavLink to="/patient-history" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📂 Patient History</NavLink>
-              <NavLink to="/roi-requests" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📄 ROI Requests</NavLink>
-              <NavLink to="/archived-patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📦 Archived Patients</NavLink>
-              <NavLink to="/queue" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🏥 Queue Management</NavLink>
-            </div>
-          </div>
+          <NavDropdown label="📋 Records">
+            <NavLink to="/patient-intake" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🔄 Patient Intake</NavLink>
+            <NavLink to="/admissions" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🏥 ADT</NavLink>
+            <NavLink to="/patient-history" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📂 Patient History</NavLink>
+            <NavLink to="/roi-requests" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📄 ROI Requests</NavLink>
+            <NavLink to="/archived-patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📦 Archived Patients</NavLink>
+            <NavLink to="/queue" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🏥 Queue Management</NavLink>
+          </NavDropdown>
           <NavLink to="/patient-login" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} style={{ color: '#60a5fa' }}>🚑 Patient Portal</NavLink>
         </>
       );
     }
 
-        if (user?.role === 'Accountant') {
+    // Accountant
+    if (user?.role === 'Accountant') {
       return (
         <>
           <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
-          <div className="nav-dropdown">
-            <button className="nav-dropdown-header">💰 Finance ▼</button>
-            <div className="dropdown-content">
-              <NavLink to="/billing" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💰 Billing</NavLink>
-              <NavLink to="/pricing" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💲 Service Pricing</NavLink>
-              <NavLink to="/wallet" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💳 Patient Wallet</NavLink>
-              <NavLink to="/billing-officer" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💳 Billing Desk</NavLink>
-              <NavLink to="/ledger" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📒 Ledger</NavLink>
-                            <NavLink to="/analytics" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Analytics</NavLink>
-              <NavLink to="/staff-activity" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👥 Staff Activity</NavLink>
-            </div>
-          </div>
+          <NavDropdown label="💰 Finance">
+            <NavLink to="/billing" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💰 Billing</NavLink>
+            <NavLink to="/pricing" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💲 Service Pricing</NavLink>
+            <NavLink to="/wallet" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💳 Patient Wallet</NavLink>
+            <NavLink to="/billing-officer" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💳 Billing Desk</NavLink>
+            <NavLink to="/ledger" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📒 Ledger</NavLink>
+            <NavLink to="/analytics" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Analytics</NavLink>
+            <NavLink to="/staff-activity" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👥 Staff Activity</NavLink>
+          </NavDropdown>
         </>
       );
     }
 
+    // BillingOfficer
     if (user?.role === 'BillingOfficer') {
       return (
         <>
           <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
-          <div className="nav-dropdown">
-            <button className="nav-dropdown-header">💰 Finance ▼</button>
-            <div className="dropdown-content">
-              <NavLink to="/billing" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💰 Billing</NavLink>
-              <NavLink to="/billing-officer" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💳 Billing Desk</NavLink>
-               <NavLink to="/wallet" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💳 Patient Wallet</NavLink>
-              <NavLink to="/ledger" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📒 Ledger</NavLink>
-              <NavLink to="/analytics" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Analytics</NavLink>
-            </div>
-          </div>
+          <NavDropdown label="💰 Finance">
+            <NavLink to="/billing" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💰 Billing</NavLink>
+            <NavLink to="/billing-officer" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💳 Billing Desk</NavLink>
+            <NavLink to="/wallet" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💳 Patient Wallet</NavLink>
+            <NavLink to="/ledger" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📒 Ledger</NavLink>
+            <NavLink to="/analytics" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Analytics</NavLink>
+          </NavDropdown>
         </>
       );
     }
@@ -858,7 +838,6 @@ const Layout = () => {
     navigate('/login');
   };
 
-  // Prepare mobile menu groups
   const menuGroupsForMobile = Object.entries(menuStructure).map(
     ([title, items]) => ({
       title: title.replace(/^[^\w]+\s*/, '') || title,
@@ -882,15 +861,15 @@ const Layout = () => {
 
         <div className="nav-brand">
           <img
-  src={hospitalLogo || '/logo.png'}
-  alt={hospitalName || 'NexGen EMR'}
-  className="unique-logo"
-  style={{
-    height: '38px',
-    width: '38px',
-    objectFit: 'contain',
-  }}
-/>
+            src={hospitalLogo || '/logo.png'}
+            alt={hospitalName || 'NexGen EMR'}
+            className="unique-logo"
+            style={{
+              height: '38px',
+              width: '38px',
+              objectFit: 'contain',
+            }}
+          />
           <span>{hospitalName || 'NexGen EMR'}</span>
         </div>
 
@@ -910,45 +889,43 @@ const Layout = () => {
         )}
 
         <div className="nav-user">
-  <span>{user?.firstName} {user?.lastName}</span>
-  <span className="role-badge">{user?.role}</span>
-  <button
-    onClick={() => {
-      if (window.confirm('Switch to another hospital? You will be logged out.')) {
-        handleLogout();
-      }
-    }}
-    className="btn btn-secondary btn-sm"
-    style={{ background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)' }}
-    title="Change hospital"
-  >
-    🏥 Switch
-          </button>
-          
+          <span>{user?.firstName} {user?.lastName}</span>
+          <span className="role-badge">{user?.role}</span>
           <button
-  onClick={() => navigate('/change-password')}
-  className="btn btn-secondary btn-sm"
-  style={{
-    background: 'rgba(255,255,255,0.15)',
-    color: '#fff',
-    border: '1px solid rgba(255,255,255,0.2)',
-  }}
-  title="Change your password"
->
-  🔑
+            onClick={() => {
+              if (window.confirm('Switch to another hospital? You will be logged out.')) {
+                handleLogout();
+              }
+            }}
+            className="btn btn-secondary btn-sm"
+            style={{ background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)' }}
+            title="Change hospital"
+          >
+            🏥 Switch
           </button>
-          
-  <button onClick={handleLogout} className="btn btn-danger btn-sm">Logout</button>
-</div>
+
+          <button
+            onClick={() => navigate('/change-password')}
+            className="btn btn-secondary btn-sm"
+            style={{
+              background: 'rgba(255,255,255,0.15)',
+              color: '#fff',
+              border: '1px solid rgba(255,255,255,0.2)',
+            }}
+            title="Change your password"
+          >
+            🔑
+          </button>
+
+          <button onClick={handleLogout} className="btn btn-danger btn-sm">Logout</button>
+        </div>
       </nav>
 
       <main className="main-content">
-  {/* The `key` forces React to remount the wrapper on every route change,
-      which re-triggers the CSS animation each time. */}
-  <div key={location.pathname} className="page-fade-in">
-    <Outlet context={{ searchTerm }} />
-  </div>
-</main>
+        <div key={location.pathname} className="page-fade-in">
+          <Outlet context={{ searchTerm }} />
+        </div>
+      </main>
 
       <MobileMenu
         isOpen={mobileMenuOpen}
