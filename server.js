@@ -5089,7 +5089,14 @@ app.post('/api/billing-officer/process-payment', authenticate, authorize('Admin'
 // ============================================================
 app.get('/api/medications', authenticate, async (req, res) => {
   try {
-    const medications = await req.db.medication.findMany({ orderBy: { name: 'asc' } });
+    const includeInactive = String(req.query.includeInactive).toLowerCase() === 'true';
+    const where = includeInactive ? {} : { isActive: true };
+
+    const medications = await req.db.medication.findMany({
+      where,
+      orderBy: { name: 'asc' },
+    });
+
     res.json(medications);
   } catch (error) {
     console.error('Get medications error:', error);
@@ -5176,27 +5183,40 @@ app.put('/api/medications/:id', authenticate, authorize('Admin', 'ITAdmin', 'Pha
   }
 });
 
-app.delete('/api/medications/:id', authenticate, authorize('Admin', 'ITAdmin', 'Pharmacist'), async (req, res) => {
+app.patch('/api/medications/:id/active', authenticate, authorize('Admin', 'ITAdmin', 'Pharmacist'), async (req, res) => {
   try {
     const { id } = req.params;
-    const existingMedication = await req.db.medication.findUnique({ where: { id } });
-    if (!existingMedication) return res.status(404).json({ error: 'Medication not found' });
-    const transactions = await req.db.medicationTransaction.count({ where: { medicationId: id } });
-    if (transactions > 0) {
-      return res.status(400).json({ error: 'Cannot delete medication with transaction history.' });
+    const { isActive } = req.body;
+
+    if (typeof isActive !== 'boolean') {
+      return res.status(400).json({ error: 'isActive (boolean) is required in the request body' });
     }
-    await req.db.medication.delete({ where: { id } });
+
+    const existing = await req.db.medication.findUnique({ where: { id } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Medication not found' });
+    }
+
+    const med = await req.db.medication.update({
+      where: { id },
+      data: { isActive, updatedAt: new Date() },
+    });
+
     await req.db.auditLog.create({
       data: {
         staffId: req.user.id,
-        action: 'DELETE_MEDICATION',
+        action: isActive ? 'REACTIVATE_MEDICATION' : 'DEACTIVATE_MEDICATION',
         module: 'Pharmacy',
-        details: `Deleted medication ${existingMedication.name}`
-      }
+        details: `${isActive ? 'Reactivated' : 'Deactivated'} medication "${med.name}" (${med.id})`,
+      },
     });
-    res.json({ message: 'Medication deleted successfully' });
+
+    res.json(med);
   } catch (error) {
-    console.error('Delete medication error:', error);
+    console.error('Toggle medication active error:', error);
+    if (error.code === 'P2025') {
+      return res.status(404).json({ error: 'Medication not found' });
+    }
     res.status(400).json({ error: error.message });
   }
 });

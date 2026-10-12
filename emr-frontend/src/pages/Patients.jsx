@@ -646,7 +646,7 @@ const Patients = () => {
                         background: 'white'
                       }}
                     >
-                      <option value="FPP">💰 FPP - Free Paying Patient (Full Payment)</option>
+                      <option value="FPP">💰 FPP - Fee Paying Patient (Full Payment)</option>
                       <option value="NHIS">🏥 NHIS - National Health Insurance (10% Payment)</option>
                       <option value="RETAINER">🏢 Retainer - Corporate/Company (Double Rate)</option>
                     </select>

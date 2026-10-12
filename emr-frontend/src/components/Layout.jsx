@@ -12,7 +12,7 @@ import './Layout.css';
 // Opens on mouseenter, closes on mouseleave after a grace period
 // so the pointer can travel from the trigger into the panel.
 // ============================================================
-const NavDropdown = ({ label, children }) => {
+const NavDropdown = ({ label, children, contentClassName = '' }) => {
   const [open, setOpen] = useState(false);
   const timeoutRef = useRef(null);
 
@@ -22,11 +22,9 @@ const NavDropdown = ({ label, children }) => {
   };
 
   const handleLeave = () => {
-    // 150ms grace period so the mouse can travel to the panel
     timeoutRef.current = setTimeout(() => setOpen(false), 150);
   };
 
-  // Close dropdown when clicking a link inside
   const handleContentClick = () => {
     setOpen(false);
   };
@@ -43,7 +41,7 @@ const NavDropdown = ({ label, children }) => {
     >
       <button className="nav-dropdown-header">{label} ▼</button>
       <div
-        className="dropdown-content"
+        className={`dropdown-content ${contentClassName}`.trim()}
         onClick={handleContentClick}
         style={{
           opacity: open ? 1 : 0,
@@ -58,6 +56,9 @@ const NavDropdown = ({ label, children }) => {
   );
 };
 
+// ============================================================
+// LAYOUT — the main app shell
+// ============================================================
 const Layout = () => {
   const { user, logout } = useAuth();
   const { clearTenant, hospitalName, hospitalLogo, primaryColor } = useTenant();
@@ -499,27 +500,27 @@ const Layout = () => {
           </NavDropdown>
 
           {/* More — everything else */}
-          <NavDropdown label="⋯ More">
-            {moreGroups.map((group, idx) => {
-              const items = (menuStructure[group.key] || []).filter((i) => canAccess(i.path));
-              if (items.length === 0) return null;
-              return (
-                <div key={group.key}>
-                  {idx > 0 && <div className="dropdown-divider" />}
-                  <div className="dropdown-section-title">{group.title}</div>
-                  {items.map((item) => (
-                    <NavLink
-                      key={item.path}
-                      to={item.path}
-                      className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-                    >
-                      {item.label}
-                    </NavLink>
-                  ))}
-                </div>
-              );
-            })}
-          </NavDropdown>
+<NavDropdown label="⋯ More" contentClassName="dropdown-content-tall">
+  {moreGroups.map((group, idx) => {
+    const items = (menuStructure[group.key] || []).filter((i) => canAccess(i.path));
+    if (items.length === 0) return null;
+    return (
+      <div key={group.key}>
+        {idx > 0 && <div className="dropdown-divider" />}
+        <div className="dropdown-section-title">{group.title}</div>
+        {items.map((item) => (
+          <NavLink
+            key={item.path}
+            to={item.path}
+            className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+          >
+            {item.label}
+          </NavLink>
+        ))}
+      </div>
+    );
+  })}
+</NavDropdown>
         </>
       );
     }

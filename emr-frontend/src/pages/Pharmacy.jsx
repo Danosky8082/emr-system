@@ -1,16 +1,14 @@
-// src/pages/Pharmacy.jsx — WITH TWO-STORE MANAGEMENT
+// src/pages/Pharmacy.jsx — WITH TWO-STORE MANAGEMENT + LOCAL SEARCH + DELETE/DEACTIVATE
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import './Dashboard.css';
-import { useSearch } from '../components/Layout';
 import toast from 'react-hot-toast';
 import api from '../api/client';
 
 const Pharmacy = () => {
   const { token, user } = useAuth();
-  const { searchTerm } = useSearch();
 
   // ── Existing state ─────────────────────────────────────────
   const [medications, setMedications] = useState([]);
@@ -18,6 +16,12 @@ const Pharmacy = () => {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
+
+  // ✅ LOCAL SEARCH — replaces the shared Layout search
+  const [localSearch, setLocalSearch] = useState('');
+  const [mainStoreSearch, setMainStoreSearch] = useState('');
+  const [showInactive, setShowInactive] = useState(false);
+
   const [formData, setFormData] = useState({
     name: '',
     genericName: '',
@@ -61,7 +65,7 @@ const Pharmacy = () => {
   const fetchMedications = async () => {
     try {
       const [medRes, nhisRes] = await Promise.all([
-        api.get('/medications'),
+        api.get(`/medications${showInactive ? '?includeInactive=true' : ''}`),
         api.get('/pharmacy/nhis-prices').catch(() => ({ data: [] })),
       ]);
 
@@ -97,7 +101,8 @@ const Pharmacy = () => {
   // ── Initial load ───────────────────────────────────────────
   useEffect(() => {
     fetchMedications();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showInactive]);
 
   useEffect(() => {
     if (activeTab === 'main-store') {
@@ -231,6 +236,90 @@ const Pharmacy = () => {
     setShowModal(true);
   };
 
+  // ── ✅ DELETE with three-tier fallback ─────────────────────
+  const handleDeleteMedication = async (med) => {
+    if (!med?.id) {
+      toast.error('Invalid medication. Please refresh and try again.');
+      return;
+    }
+
+    // Tier 1 — try a plain delete first
+    const confirm1 = window.confirm(
+      `Delete "${med.name}" permanently?\n\n` +
+      `This will only work if the medication has no transaction history.`
+    );
+    if (!confirm1) return;
+
+    try {
+      await api.delete(`/medications/${med.id}`);
+      toast.success(`✅ "${med.name}" deleted`);
+      fetchMedications();
+      if (activeTab === 'main-store') fetchMainStore();
+      return;
+    } catch (error) {
+      const status = error.response?.status;
+      const data = error.response?.data;
+
+      // Tier 2 — has references; offer deactivate OR force-delete
+      if (status === 409 && data?.forceable) {
+        const refs = data.references || {};
+        const refLines = [];
+        if (refs.transactions) refLines.push(`  • ${refs.transactions} transaction(s)`);
+        if (refs.nhisPrices) refLines.push(`  • ${refs.nhisPrices} NHIS price(s)`);
+        if (refs.nhisFormulary) refLines.push(`  • ${refs.nhisFormulary} formulary entry(ies)`);
+
+        const deactivate = window.confirm(
+          `"${med.name}" has history:\n` +
+          refLines.join('\n') +
+          `\n\nClick OK to DEACTIVATE it instead (recommended — keeps all history).\n` +
+          `Click Cancel to see the FORCE DELETE option.`
+        );
+
+        if (deactivate) {
+          await handleToggleActive(med, false);
+          return;
+        }
+
+        const force = window.confirm(
+          `⚠️ FORCE DELETE "${med.name}"?\n\n` +
+          `This will PERMANENTLY erase:\n` +
+          refLines.join('\n') +
+          `\n\nAn audit log will record what was erased. This cannot be undone.`
+        );
+
+        if (force) {
+          try {
+            await api.delete(`/medications/${med.id}?force=true`);
+            toast.success(`✅ "${med.name}" force-deleted`);
+            fetchMedications();
+            if (activeTab === 'main-store') fetchMainStore();
+          } catch (err) {
+            toast.error(err.response?.data?.error || 'Force delete failed');
+          }
+        }
+        return;
+      }
+
+      // Other errors — surface whatever the server said
+      toast.error(data?.error || 'Delete failed');
+    }
+  };
+
+  // ── ✅ DEACTIVATE / REACTIVATE ─────────────────────────────
+  const handleToggleActive = async (med, isActive) => {
+    if (!med?.id) return;
+    try {
+      await api.patch(`/medications/${med.id}/active`, { isActive });
+      toast.success(
+        isActive ? `✅ "${med.name}" reactivated` : `🧊 "${med.name}" deactivated`
+      );
+      fetchMedications();
+      if (activeTab === 'main-store') fetchMainStore();
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to update status');
+    }
+  };
+
   // ── Two-stores handlers ────────────────────────────────────
   const handleOpenRestockModal = (med) => {
     setSelectedMainStoreMed(med);
@@ -309,10 +398,19 @@ const Pharmacy = () => {
     }
   };
 
-  // ── Filters ────────────────────────────────────────────────
+  // ── ✅ LOCAL FILTERS (no shared searchTerm) ────────────────
   const filteredMedications = medications.filter((m) => {
-    const searchString = `${m.name} ${m.genericName || ''} ${m.category || ''}`.toLowerCase();
-    return searchString.includes(searchTerm.toLowerCase());
+    const q = localSearch.trim().toLowerCase();
+    if (!q) return true;
+    const hay = `${m.name || ''} ${m.genericName || ''} ${m.category || ''} ${m.supplier || ''} ${m.batchNumber || ''}`.toLowerCase();
+    return hay.includes(q);
+  });
+
+  const filteredMainStore = mainStore.filter((m) => {
+    const q = mainStoreSearch.trim().toLowerCase();
+    if (!q) return true;
+    const hay = `${m.name || ''} ${m.genericName || ''} ${m.category || ''}`.toLowerCase();
+    return hay.includes(q);
   });
 
   if (loading) return <div className="spinner" />;
@@ -406,6 +504,77 @@ const Pharmacy = () => {
           ═══════════════════════════════════════════════════════ */}
       {activeTab === 'dispensing' && (
         <>
+          {/* ✅ SEARCH + FILTER BAR */}
+          <div
+            style={{
+              display: 'flex',
+              gap: '12px',
+              marginBottom: '16px',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+            }}
+          >
+            <input
+              type="text"
+              placeholder="🔍 Search by name, generic, category, supplier, batch…"
+              value={localSearch}
+              onChange={(e) => setLocalSearch(e.target.value)}
+              style={{
+                flex: 1,
+                minWidth: '240px',
+                padding: '10px 14px',
+                borderRadius: '8px',
+                border: '1px solid #d1d5db',
+                fontSize: '14px',
+                background: 'white',
+              }}
+            />
+            {localSearch && (
+              <button
+                onClick={() => setLocalSearch('')}
+                style={{
+                  background: '#e5e7eb',
+                  color: '#1f2937',
+                  border: 'none',
+                  padding: '8px 14px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  fontSize: '13px',
+                }}
+              >
+                ✕ Clear
+              </button>
+            )}
+            <label
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 14px',
+                background: showInactive ? '#fef3c7' : '#f8fafc',
+                border: showInactive ? '1px solid #f59e0b' : '1px solid #d1d5db',
+                borderRadius: '8px',
+                fontSize: '13px',
+                fontWeight: '600',
+                color: showInactive ? '#92400e' : '#374151',
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={showInactive}
+                onChange={(e) => setShowInactive(e.target.checked)}
+                style={{ accentColor: '#f59e0b' }}
+              />
+              🧊 Show inactive
+            </label>
+            <span style={{ fontSize: '13px', color: '#6b7280' }}>
+              {filteredMedications.length} of {medications.length} medications
+            </span>
+          </div>
+
           {/* Stats Summary */}
           <div className="stats-grid" style={{ marginBottom: '16px' }}>
             <div className="stat-card" style={{ borderLeft: '4px solid #3b82f6' }}>
@@ -464,20 +633,39 @@ const Pharmacy = () => {
                   const nhisPrice = nhisPrices[m.id];
                   const isLowStock = m.stockQuantity <= m.reorderLevel;
                   const isOutOfStock = m.stockQuantity <= 0;
+                  const isInactive = m.isActive === false;
 
                   return (
                     <tr
                       key={m.id}
                       style={{
-                        background: isOutOfStock
+                        background: isInactive
+                          ? '#f3f4f6'
+                          : isOutOfStock
                           ? '#fee2e2'
                           : isLowStock
                           ? '#fef3c7'
                           : 'white',
+                        opacity: isInactive ? 0.6 : 1,
                       }}
                     >
                       <td>
                         <strong>{m.name}</strong>
+                        {isInactive && (
+                          <span
+                            style={{
+                              marginLeft: '8px',
+                              padding: '1px 8px',
+                              background: '#6b7280',
+                              color: 'white',
+                              borderRadius: '10px',
+                              fontSize: '10px',
+                              fontWeight: 600,
+                            }}
+                          >
+                            INACTIVE
+                          </span>
+                        )}
                       </td>
                       <td>{m.genericName || '-'}</td>
                       <td>{m.category}</td>
@@ -545,6 +733,48 @@ const Pharmacy = () => {
                               📦 Stock
                             </button>
                           )}
+                          {isPharmacist && (
+                            <button
+                              className="btn btn-sm"
+                              onClick={() => handleToggleActive(m, !m.isActive)}
+                              title={
+                                m.isActive
+                                  ? 'Hide from lists (keeps history)'
+                                  : 'Show in lists again'
+                              }
+                              style={{
+                                background: m.isActive ? '#f59e0b' : '#10b981',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                padding: '4px 10px',
+                                cursor: 'pointer',
+                                fontSize: '11px',
+                                fontWeight: '600',
+                              }}
+                            >
+                              {m.isActive ? '🧊 Deactivate' : '✅ Activate'}
+                            </button>
+                          )}
+                          {isPharmacist && (
+                            <button
+                              className="btn btn-sm"
+                              onClick={() => handleDeleteMedication(m)}
+                              title="Permanently remove this medication"
+                              style={{
+                                background: '#ef4444',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                padding: '4px 10px',
+                                cursor: 'pointer',
+                                fontSize: '11px',
+                                fontWeight: '600',
+                              }}
+                            >
+                              🗑️ Delete
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -553,7 +783,9 @@ const Pharmacy = () => {
                 {filteredMedications.length === 0 && (
                   <tr>
                     <td colSpan="9" className="text-center">
-                      No medications found
+                      {localSearch
+                        ? `No medications match "${localSearch}"`
+                        : 'No medications found'}
                     </td>
                   </tr>
                 )}
@@ -568,6 +800,53 @@ const Pharmacy = () => {
           ═══════════════════════════════════════════════════════ */}
       {activeTab === 'main-store' && (
         <>
+          {/* ✅ MAIN STORE SEARCH */}
+          <div
+            style={{
+              display: 'flex',
+              gap: '12px',
+              marginBottom: '16px',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+            }}
+          >
+            <input
+              type="text"
+              placeholder="🔍 Search main store by name, generic, or category…"
+              value={mainStoreSearch}
+              onChange={(e) => setMainStoreSearch(e.target.value)}
+              style={{
+                flex: 1,
+                minWidth: '240px',
+                padding: '10px 14px',
+                borderRadius: '8px',
+                border: '1px solid #d1d5db',
+                fontSize: '14px',
+                background: 'white',
+              }}
+            />
+            {mainStoreSearch && (
+              <button
+                onClick={() => setMainStoreSearch('')}
+                style={{
+                  background: '#e5e7eb',
+                  color: '#1f2937',
+                  border: 'none',
+                  padding: '8px 14px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  fontSize: '13px',
+                }}
+              >
+                ✕ Clear
+              </button>
+            )}
+            <span style={{ fontSize: '13px', color: '#6b7280' }}>
+              {filteredMainStore.length} of {mainStore.length} medications
+            </span>
+          </div>
+
           {/* Summary cards */}
           <div className="stats-grid" style={{ marginBottom: '20px' }}>
             <div className="stat-card" style={{ borderLeft: '4px solid #0f3460' }}>
@@ -649,14 +928,16 @@ const Pharmacy = () => {
                       Loading main store...
                     </td>
                   </tr>
-                ) : mainStore.length === 0 ? (
+                ) : filteredMainStore.length === 0 ? (
                   <tr>
                     <td colSpan="7" className="text-center">
-                      No medications found. Add some from the Dispensing Counter tab.
+                      {mainStoreSearch
+                        ? `No medications match "${mainStoreSearch}"`
+                        : 'No medications found. Add some from the Dispensing Counter tab.'}
                     </td>
                   </tr>
                 ) : (
-                  mainStore.map((m) => {
+                  filteredMainStore.map((m) => {
                     const isLow = m.mainStoreQuantity <= m.mainStoreReorderLevel;
                     const isOut = m.mainStoreQuantity <= 0;
 
@@ -761,7 +1042,8 @@ const Pharmacy = () => {
                                 border: 'none',
                                 padding: '6px 12px',
                                 borderRadius: '6px',
-                                cursor: m.mainStoreQuantity > 0 ? 'pointer' : 'not-allowed',
+                                cursor:
+                                  m.mainStoreQuantity > 0 ? 'pointer' : 'not-allowed',
                                 fontSize: '12px',
                                 fontWeight: '600',
                               }}
@@ -924,7 +1206,7 @@ const Pharmacy = () => {
       )}
 
       {/* ═══════════════════════════════════════════════════════
-          STOCK MANAGEMENT MODAL (existing)
+          STOCK MANAGEMENT MODAL
           ═══════════════════════════════════════════════════════ */}
       {showStockModal && selectedMedication && (
         <div className="modal-overlay" onClick={() => setShowStockModal(false)}>

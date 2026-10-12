@@ -473,11 +473,12 @@ model Medication {
   supplier              String?
   unitPrice             Float
   stockQuantity         Int
-  mainStoreQuantity     Int                     @default(0)   
+  mainStoreQuantity     Int                     @default(0)
   mainStoreReorderLevel Int                     @default(50)
   reorderLevel          Int
   expiryDate            DateTime
   batchNumber           String?
+  isActive              Boolean                 @default(true)
   createdAt             DateTime                @default(now())
   updatedAt             DateTime                @updatedAt
   tenantId              String
@@ -489,6 +490,7 @@ model Medication {
 
   @@index([tenantId])
   @@index([tenantId, name])
+  @@index([tenantId, isActive])
 }
 
 model MedicationTransaction {
