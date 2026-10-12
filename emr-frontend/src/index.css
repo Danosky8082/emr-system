@@ -181,16 +181,18 @@ html,
     top: 100%;
     left: 0;
     width: 100%;
-    height: 12px;
+    height: 8px;
     pointer-events: auto;
 }
 
-.nav-dropdown:hover .dropdown-content,
-.nav-dropdown:focus-within .dropdown-content {
-    opacity: 1;
-    visibility: visible;
-    transform: translateY(0);
-    pointer-events: auto;
+/* Explicitly close when the pointer leaves the dropdown tree */
+.nav-dropdown:not(:hover):not(:focus-within) .dropdown-content {
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(10px);
+    pointer-events: none;
+    /* delay hiding so the mouse can cross the bridge */
+    transition-delay: 0.12s;
 }
 
 .dropdown-content .nav-link {
