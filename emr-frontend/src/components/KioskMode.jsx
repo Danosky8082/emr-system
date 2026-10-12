@@ -21,6 +21,21 @@ const KioskMode = () => {
   const [processingDeduction, setProcessingDeduction] = useState(false);
   const inputRef = useRef(null);
 
+  const KioskLogo = ({ size = 32 }) => (
+  <img
+    src="/logo.png"
+    alt=""
+    style={{
+      width: `${size}px`,
+      height: `${size}px`,
+      objectFit: 'contain',
+      marginRight: '8px',
+      verticalAlign: 'middle',
+    }}
+    onError={(e) => { e.target.style.display = 'none'; }}
+  />
+);
+
   // Auto-focus on input when step changes
   useEffect(() => {
     if (step === 'input' && inputRef.current) {
@@ -249,31 +264,41 @@ const KioskMode = () => {
   // ============================================================
 
   const renderWelcome = () => (
-    <div className="kiosk-welcome">
-      <div className="kiosk-logo">
-        <span>🏥</span>
-        <h1>Welcome to NexGen EMR</h1>
-        <p>Please check in using your Hospital ID or Phone Number</p>
-      </div>
-      <button 
-        className="kiosk-button kiosk-button-primary"
-        onClick={() => setStep('input')}
-      >
-        👤 Check In
-      </button>
-      <div className="kiosk-footer">
-        <span>🕐 {new Date().toLocaleTimeString()}</span>
-        <span>📅 {new Date().toLocaleDateString()}</span>
-      </div>
+  <div className="kiosk-welcome">
+    <div className="kiosk-logo">
+      <img
+        src="/logo.png"
+        alt="NexGen EMR"
+        onError={(e) => {
+          e.target.style.display = 'none';
+          const fallback = document.createElement('span');
+          fallback.textContent = '🏥';
+          fallback.style.cssText = 'font-size: 64px; display: block; margin-bottom: 16px;';
+          e.target.parentElement.insertBefore(fallback, e.target);
+        }}
+      />
+      <h1>Welcome to NexGen EMR</h1>
+      <p>Please check in using your Hospital ID or Phone Number</p>
     </div>
-  );
+    <button 
+      className="kiosk-button kiosk-button-primary"
+      onClick={() => setStep('input')}
+    >
+      👤 Check In
+    </button>
+    <div className="kiosk-footer">
+      <span>🕐 {new Date().toLocaleTimeString()}</span>
+      <span>📅 {new Date().toLocaleDateString()}</span>
+    </div>
+  </div>
+);
 
   const renderInput = () => (
     <div className="kiosk-input">
       <div className="kiosk-header">
-        <button className="kiosk-back" onClick={resetKiosk}>← Back</button>
-        <h2>Enter Your Details</h2>
-      </div>
+  <button className="kiosk-back" onClick={resetKiosk}>← Back</button>
+  <h2><KioskLogo size={28} /> Enter Your Details</h2>
+</div>
       <div className="kiosk-form">
         <div className="kiosk-input-group">
           <label>Hospital ID or Phone Number</label>

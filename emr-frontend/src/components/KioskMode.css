@@ -1,11 +1,16 @@
 /* src/components/KioskMode.css */
 .kiosk-container {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
   background: linear-gradient(135deg, #0f3460 0%, #1a4a7a 100%);
   padding: 20px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .kiosk-welcome,
@@ -329,4 +334,12 @@
     opacity: 0.6;
     cursor: not-allowed;
   }
+    .kiosk-logo img {
+      width: 96px;
+      height: 96px;
+      object-fit: contain;
+      display: block;
+      margin: 0 auto 16px;
+      filter: drop-shadow(0 6px 20px rgba(0, 0, 0, 0.35));
+    }
 }
