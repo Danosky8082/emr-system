@@ -74,6 +74,23 @@ const TENANT_SCOPED_MODELS = [
 ];
 
 // ============================================================
+// Helper: does the caller's `where` use a compound unique key?
+//
+// Prisma's typed `update` and `delete` require a WhereUniqueInput,
+// which accepts ONLY the model's declared unique fields (id, and
+// any @@unique compound keys). If we inject a bare `tenantId`
+// alongside `id`, Prisma throws a validation error.
+//
+// We detect the compound-key form by looking for any property
+// that starts with `tenantId_` (e.g. `tenantId_email`,
+// `tenantId_hospitalId`, `tenantId_role`).
+// ============================================================
+function hasCompoundUniqueKey(where) {
+  if (!where || typeof where !== 'object') return false;
+  return Object.keys(where).some((k) => k.startsWith('tenantId_'));
+}
+
+// ============================================================
 // Get a tenant-scoped Prisma client
 // All queries on TENANT_SCOPED_MODELS auto-inject tenantId
 // ============================================================
@@ -92,33 +109,12 @@ function getTenantPrisma(tenantId) {
           }
 
           // ============================================================
-          // ✅ SAFETY: convert findUnique → findFirst
-          //
-          // Prisma's findUnique requires an exact unique constraint name
-          // (e.g. `tenantId_role: { tenantId, role }`). The tenant extension
-          // only knows how to inject `tenantId` as a flat field — which
-          // causes Prisma to reject the query with:
-          //   "Argument `where` of type XWhereUniqueInput needs at least
-          //    one of `id` or `tenantId_role` arguments"
-          //
-          // findFirst accepts ordinary filters and works with the
-          // auto-injected tenantId. So we transparently fall back to it.
+          // findUnique / findUniqueOrThrow → findFirst / findFirstOrThrow
           // ============================================================
           if (operation === 'findUnique' || operation === 'findUniqueOrThrow') {
-            // If the caller supplied the compound unique key explicitly,
-            // keep using findUnique — they know what they're doing.
-            const hasCompoundKey = args.where && (
-              args.where.tenantId_role !== undefined ||
-              args.where.tenantId_email !== undefined ||
-              args.where.tenantId_medicationId_nhisCode !== undefined ||
-              args.where.tenantId_username !== undefined ||
-              args.where.tenantId_employeeId !== undefined ||
-              // add more compound key names here as your schema grows
-              Object.keys(args.where).some(k => k.startsWith('tenantId_'))
-            );
-
-            if (hasCompoundKey) {
-              // Let it run as findUnique — but still inject tenantId for safety
+            if (hasCompoundUniqueKey(args.where)) {
+              // Caller supplied the compound key explicitly — inject
+              // tenantId as a safety net and run as-is.
               args.where = { ...args.where, tenantId };
               return query(args);
             }
@@ -129,7 +125,6 @@ function getTenantPrisma(tenantId) {
               where: { ...(args.where || {}), tenantId },
             };
 
-            // findUniqueOrThrow → findFirstOrThrow for semantic parity
             if (operation === 'findUniqueOrThrow') {
               return prisma[model].findFirstOrThrow(findFirstArgs);
             }
@@ -140,7 +135,6 @@ function getTenantPrisma(tenantId) {
           // Soft-delete filter for Patient reads
           // ============================================================
           if (model === 'Patient') {
-            // ⚠️ groupBy is EXCLUDED — Prisma rejects auto-injected fields for groupBy
             const isReadOp = [
               'findFirst', 'findMany', 'count',
               'aggregate', 'findFirstOrThrow',
@@ -154,7 +148,9 @@ function getTenantPrisma(tenantId) {
             }
           }
 
+          // ============================================================
           // READ operations — inject tenantId into WHERE
+          // ============================================================
           if ([
             'findFirst', 'findMany', 'count',
             'aggregate', 'groupBy', 'findFirstOrThrow',
@@ -162,40 +158,113 @@ function getTenantPrisma(tenantId) {
             args.where = { ...args.where, tenantId };
           }
 
-          // UPDATE / DELETE operations — inject tenantId into WHERE
-          if ([
-            'update', 'updateMany', 'delete', 'deleteMany',
-          ].includes(operation)) {
+          // ============================================================
+          // UPDATE / DELETE — the tricky case
+          //
+          // Prisma's `update` and `delete` require a WhereUniqueInput.
+          // If the caller passed only `{ id }`, we can't just add
+          // `tenantId` to the same object — Prisma rejects it.
+          //
+          // Solution: rewrite to `updateMany` / `deleteMany` and then
+          // fetch the affected row back with findFirst. This preserves
+          // the "return the updated/removed object" contract that the
+          // rest of the codebase expects.
+          // ============================================================
+          if (operation === 'update' || operation === 'delete') {
+            // If the caller used a compound unique key, Prisma accepts
+            // both `tenantId_...` AND `tenantId` as filters — but only
+            // when the compound key is present. So we can just inject
+            // tenantId and let Prisma run it.
+            if (hasCompoundUniqueKey(args.where)) {
+              args.where = { ...args.where, tenantId };
+              return query(args);
+            }
+
+            // Plain `{ id }` (or `{ walletId }` etc.) — rewrite to Many.
+            const whereWithTenant = { ...args.where, tenantId };
+
+            if (operation === 'update') {
+              const result = await prisma[model].updateMany({
+                where: whereWithTenant,
+                data: args.data,
+              });
+
+              if (result.count === 0) {
+                const err = new Error(
+                  `Prisma update failed: no ${model} record matched the given where clause within this tenant.`
+                );
+                err.code = 'P2025';
+                throw err;
+              }
+
+              // Return the updated row with the same shape the caller
+              // would have gotten from `update`.
+              return prisma[model].findFirst({
+                where: whereWithTenant,
+                include: args.include,
+                select: args.select,
+              });
+            }
+
+            // operation === 'delete'
+            // Snapshot the row so we can return it — Prisma's delete
+            // returns the deleted row, and callers may depend on that.
+            const rowToDelete = await prisma[model].findFirst({
+              where: whereWithTenant,
+            });
+
+            if (!rowToDelete) {
+              const err = new Error(
+                `Prisma delete failed: no ${model} record matched the given where clause within this tenant.`
+              );
+              err.code = 'P2025';
+              throw err;
+            }
+
+            await prisma[model].deleteMany({ where: whereWithTenant });
+
+            return rowToDelete;
+          }
+
+          // ============================================================
+          // updateMany / deleteMany — no unique constraint, so plain
+          // tenantId injection works.
+          // ============================================================
+          if (operation === 'updateMany' || operation === 'deleteMany') {
             args.where = { ...args.where, tenantId };
           }
 
+          // ============================================================
           // CREATE operations — inject tenantId into DATA
+          // ============================================================
           if (operation === 'create') {
             args.data = { ...args.data, tenantId };
           }
           if (operation === 'createMany') {
             if (Array.isArray(args.data)) {
-              args.data = args.data.map(d => ({ ...d, tenantId }));
+              args.data = args.data.map((d) => ({ ...d, tenantId }));
             } else {
               args.data = { ...args.data, tenantId };
             }
           }
 
+          // ============================================================
           // UPSERT — inject tenantId into both create and where
+          // ============================================================
           if (operation === 'upsert') {
             args.create = { ...args.create, tenantId };
             args.where = { ...args.where, tenantId };
           }
 
           return query(args);
-        }
-      }
-    }
+        },
+      },
+    },
   });
 }
 
 module.exports = {
   prisma,           // Unscoped — use only for Hospital, HospitalSettings, RolePermission
   getTenantPrisma,  // Scoped — use for everything else
-  TENANT_SCOPED_MODELS
+  TENANT_SCOPED_MODELS,
 };
