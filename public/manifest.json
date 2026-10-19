@@ -1,0 +1,21 @@
+{
+  "name": "NexGen EMR",
+  "short_name": "NexGen",
+  "description": "Electronic Medical Records System for CareTech General Hospital",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f3460",
+  "theme_color": "#0f3460",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
