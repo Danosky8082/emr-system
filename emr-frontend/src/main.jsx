@@ -8,7 +8,7 @@ import './index.css';
 import './styles/responsive.css';
 
 // ✅ Ignore browser extension errors
-window.addEventListener('error', function(e) {
+window.addEventListener('error', function (e) {
   if (e.message && e.message.includes('startTime')) {
     e.preventDefault();
     e.stopPropagation();
@@ -22,7 +22,7 @@ window.addEventListener('error', function(e) {
   return true;
 });
 
-window.addEventListener('unhandledrejection', function(e) {
+window.addEventListener('unhandledrejection', function (e) {
   if (e.reason && e.reason.message && e.reason.message.includes('startTime')) {
     e.preventDefault();
     e.stopPropagation();
@@ -33,12 +33,12 @@ window.addEventListener('unhandledrejection', function(e) {
 
 // Suppress console errors from extensions
 const originalConsoleError = console.error;
-console.error = function(...args) {
+console.error = function (...args) {
   const message = args[0] || '';
-  if (typeof message === 'string' && 
-      (message.includes('startTime') || 
-       message.includes('chrome-extension') ||
-       message.includes('content script'))) {
+  if (typeof message === 'string' &&
+    (message.includes('startTime') ||
+      message.includes('chrome-extension') ||
+      message.includes('content script'))) {
     return;
   }
   originalConsoleError.apply(console, args);
@@ -47,7 +47,7 @@ console.error = function(...args) {
 // ✅ WRAP APP WITH BrowserRouter
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <BrowserRouter>  {}
+    <BrowserRouter>  { }
       <App />
     </BrowserRouter>
   </React.StrictMode>
