@@ -1,4 +1,4 @@
-// src/pages/PatientProfile.jsx — COMPLETE ROLE-SCOPED VERSION + WALLET
+// src/pages/PatientProfile.jsx — COMPLETE ROLE-SCOPED VERSION + WALLET + AI SUGGESTIONS
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -8,6 +8,7 @@ import './PatientProfile.css';
 import './Dashboard.css';
 import toast from 'react-hot-toast';
 import api from '../api/client';
+import ClinicalSuggestionEngine from '../components/ClinicalSuggestionEngine';
 
 
 const PatientProfile = () => {
@@ -122,6 +123,7 @@ const PatientProfile = () => {
   // Clinical note modal
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [editingNote, setEditingNote] = useState(null);
+  const [liveNoteText, setLiveNoteText] = useState(''); // ✅ NEW: For AI suggestions
   const [noteForm, setNoteForm] = useState({
     type: 'SOAP',
     subjective: '',
@@ -928,6 +930,7 @@ const PatientProfile = () => {
         toast.success('Note added successfully!');
       }
       setShowNoteModal(false);
+      setLiveNoteText(''); // ✅ Clear AI text on save
       setEditingNote(null);
       setNoteForm({ type: 'SOAP', subjective: '', objective: '', assessment: '', plan: '', fullContent: '' });
       fetchAllData();
@@ -938,6 +941,7 @@ const PatientProfile = () => {
 
   const handleStartEditNote = (note) => {
     setEditingNote(note);
+    setLiveNoteText(note.subjective || ''); // ✅ Load AI text
     setNoteForm({
       type: note.type,
       subjective: note.subjective || '',
@@ -1097,6 +1101,32 @@ const handleClosePrescriptionModal = () => {
   const handleImagingInputChange = (e) => {
     const { name, value } = e.target;
     setImagingForm(prev => ({ ...prev, [name]: value }));
+  };
+
+  // ============================================================
+  // AI SUGGESTION HANDLER (Phase 2 Automation)
+  // ============================================================
+  const handleAISuggestionAction = (actionType, payload) => {
+    if (actionType === 'LAB') {
+      setLabOrderForm({
+        testName: payload.testName,
+        testType: payload.testType || 'Haematology',
+        priority: 'Routine',
+        notes: 'Auto-suggested by Clinical Assistant'
+      });
+      setLabTestSearchTerm(payload.testName);
+      setShowLabOrderModal(true);
+    } else if (actionType === 'PRESCRIPTION') {
+      setPrescriptionForm({
+        medication: payload.medication,
+        dosage: payload.dosage || '',
+        frequency: payload.frequency || '',
+        duration: payload.duration || '',
+        instructions: 'Take as directed'
+      });
+      setMedicationSearchTerm(payload.medication);
+      setShowPrescriptionModal(true);
+    }
   };
 
   // ============================================================
@@ -1664,6 +1694,7 @@ const handleClosePrescriptionModal = () => {
               {canWriteNotes && !isDischarged && (
                 <button className="btn btn-secondary" onClick={() => {
                   setEditingNote(null);
+                  setLiveNoteText(''); // ✅ Clear on new
                   setNoteForm({ type: 'SOAP', subjective: '', objective: '', assessment: '', plan: '', fullContent: '' });
                   setShowNoteModal(true);
                 }}>+ Add Note</button>
@@ -2917,7 +2948,10 @@ const handleClosePrescriptionModal = () => {
                 <div className="form-group">
                   <label>Subjective</label>
                   <textarea rows="3" value={noteForm.subjective}
-                    onChange={e => setNoteForm({ ...noteForm, subjective: e.target.value })} />
+                    onChange={e => {
+                      setNoteForm({ ...noteForm, subjective: e.target.value });
+                      setLiveNoteText(e.target.value); // ✅ TRIGGER AI
+                    }} />
                 </div>
                 <div className="form-group">
                   <label>Objective</label>
@@ -2942,6 +2976,16 @@ const handleClosePrescriptionModal = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* ============================================================
+          AI SUGGESTION ENGINE (Intellisense-style)
+          ============================================================ */}
+      {showNoteModal && (
+        <ClinicalSuggestionEngine 
+          noteText={liveNoteText} 
+          onActionClick={handleAISuggestionAction} 
+        />
       )}
 
       {/* ============================================================
