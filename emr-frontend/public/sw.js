@@ -1,30 +1,44 @@
 const CACHE_NAME = 'nexgen-emr-v1';
-const ASSETS_TO_CACHE = [
-  '/',
-  '/index.html',
-  '/logo.png'
-];
 
-// Install event: cache basic assets and force update
+// Install event: activate immediately
 self.addEventListener('install', (event) => {
-  self.skipWaiting(); // Tells the browser to activate the new SW immediately
+  self.skipWaiting();
+});
+
+// Activate event: clean up any old caches and take control
+self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE);
-    })
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.map((cacheName) => {
+          if (cacheName !== CACHE_NAME) {
+            return caches.delete(cacheName);
+          }
+        })
+      );
+    }).then(() => clients.claim())
   );
 });
 
-// Activate event: clean up old caches
-self.addEventListener('activate', (event) => {
-  event.waitUntil(clients.claim()); // Take control of open pages immediately
-});
-
-// Fetch event: serve from cache or network
+// Fetch event: Network-First strategy
+// This ALWAYS tries to get the latest file from the internet first.
+// If the internet is down, it falls back to the cache.
 self.addEventListener('fetch', (event) => {
   event.respondWith(
-    caches.match(event.request).then((response) => {
-      return response || fetch(event.request);
-    })
+    fetch(event.request)
+      .then((response) => {
+        // If the request is successful, clone it and put it in the cache
+        if (response && response.status === 200 && response.type === 'basic') {
+          const responseClone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseClone);
+          });
+        }
+        return response;
+      })
+      .catch(() => {
+        // If the network fails (offline), try to serve from cache
+        return caches.match(event.request);
+      })
   );
 });
