@@ -172,6 +172,9 @@ const Patients = () => {
   };
 
   // ✅ FIXED: Handle Enable Portal Access
+  // Fixes applied:
+  //   #2 — credential is no longer echoed back to the screen in a toast
+  //   #3 — password length is checked against non-space characters only
   const handleEnablePortal = async (patient) => {
     // Ask user which method to use
     const method = window.confirm(
@@ -206,8 +209,9 @@ const Patients = () => {
       return;
     }
 
-    if (!isPin && credential.length < 6) {
-      toast.error('Password must be at least 6 characters');
+    // ✅ Fix #3 — count non-space characters for password length
+    if (!isPin && credential.trim().length < 6) {
+      toast.error('Password must be at least 6 non-space characters');
       return;
     }
 
@@ -231,20 +235,52 @@ const Patients = () => {
 
       await api.post('/patient/setup-portal', payload);
       
-      toast.success(`✅ Portal access enabled for ${patient.firstName} ${patient.lastName}`);
-      toast.success(`🔑 ${isPin ? 'PIN' : 'Password'} set: ${credential}`);
-      
-      if (forceChange !== false) {
-        toast.error(`⚠️ Patient MUST change credentials on first login!`, {
-          duration: 5000,
-          icon: '⚠️',
-        });
-      }
+      // ✅ Fix #2 — DO NOT echo the plaintext credential back to the screen.
+      // The staff member just typed it; they know it. Reproducing it on screen
+      // leaks it to anyone glancing at the monitor, to screen recordings, and
+      // to the toast history panel.
+      toast.success(
+        `✅ Portal access enabled for ${patient.firstName} ${patient.lastName}` +
+        (forceChange !== false
+          ? ' — they must change the credential on first login'
+          : '')
+      );
       
       setRefreshKey(prev => prev + 1);
     } catch (error) {
       console.error('Enable portal error:', error);
       toast.error(error.response?.data?.error || 'Failed to enable portal access');
+    }
+  };
+
+  // ✅ NEW — Change an existing portal PIN without disabling access first.
+  // Reuses /patient/setup-portal (which accepts an existing patient that
+  // already has portalAccess: true).
+  const handleChangePortalPin = async (patient) => {
+    const newPin = prompt(
+      `🔑 Enter a NEW 4-6 digit PIN for ${patient.firstName} ${patient.lastName}:`,
+      ''
+    );
+
+    if (newPin === null) return; // cancelled
+    if (!/^\d{4,6}$/.test(newPin)) {
+      toast.error('PIN must be 4-6 digits (numbers only)');
+      return;
+    }
+
+    try {
+      await api.post('/patient/setup-portal', {
+        patientId: patient.id,
+        pinCode: newPin,
+        forceChange: true, // recommended — patient must change on next login
+      });
+      toast.success(
+        `✅ New PIN set for ${patient.firstName} ${patient.lastName} — must change on next login`
+      );
+      setRefreshKey(prev => prev + 1);
+    } catch (error) {
+      console.error('Change portal PIN error:', error);
+      toast.error(error.response?.data?.error || 'Failed to set new PIN');
     }
   };
 
@@ -483,29 +519,54 @@ const Patients = () => {
                             ✏️ Edit
                           </button>
                           
-                          {/* Enable Portal Access Button */}
+                          {/* Enable / Manage Portal Access */}
                           {p.portalAccess ? (
-                            <button 
-                              className="btn btn-sm"
-                              style={{ 
-                                background: '#10b981', 
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '4px',
-                                padding: '4px 10px',
-                                cursor: 'pointer',
-                                fontSize: '11px',
-                                fontWeight: '600',
-                                whiteSpace: 'nowrap',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '4px'
-                              }}
-                              onClick={() => handleResetPortal(p)}
-                              title="Click to reset/disable portal access"
-                            >
-                              ✅ Portal Active
-                            </button>
+                            <>
+                              {/* ✅ NEW — Change PIN without disabling portal */}
+                              <button 
+                                className="btn btn-sm"
+                                style={{ 
+                                  background: '#3b82f6', 
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  padding: '4px 10px',
+                                  cursor: 'pointer',
+                                  fontSize: '11px',
+                                  fontWeight: '600',
+                                  whiteSpace: 'nowrap',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}
+                                onClick={() => handleChangePortalPin(p)}
+                                title="Change the portal PIN without disabling access"
+                              >
+                                🔑 Change PIN
+                              </button>
+
+                              <button 
+                                className="btn btn-sm"
+                                style={{ 
+                                  background: '#10b981', 
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  padding: '4px 10px',
+                                  cursor: 'pointer',
+                                  fontSize: '11px',
+                                  fontWeight: '600',
+                                  whiteSpace: 'nowrap',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}
+                                onClick={() => handleResetPortal(p)}
+                                title="Click to reset/disable portal access"
+                              >
+                                ✅ Portal Active
+                              </button>
+                            </>
                           ) : (
                             <button 
                               className="btn btn-sm"

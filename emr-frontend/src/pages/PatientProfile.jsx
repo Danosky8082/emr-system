@@ -361,6 +361,48 @@ const PatientProfile = () => {
     return map[cat] || map['FPP'];
   };
 
+  // ============================================================
+// CURRENT VISIT DETECTION
+//
+// "Current visit" = today's records, OR (if the patient has an
+// active PatientJourney) everything from the journey's start.
+// Anything older goes into "Historical".
+// ============================================================
+const currentVisitStart = React.useMemo(() => {
+  const activeJourney = (patient?.PatientJourney || []).find(
+    (j) => j.status !== 'COMPLETED'
+  );
+  if (activeJourney?.createdAt) return new Date(activeJourney.createdAt);
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}, [patient?.PatientJourney]);
+
+const splitByVisit = (items = [], dateField = 'createdAt') => {
+  const current = [];
+  const historical = [];
+  for (const item of items) {
+    const d = new Date(item[dateField]);
+    if (isNaN(d)) { historical.push(item); continue; }
+    (d >= currentVisitStart ? current : historical).push(item);
+  }
+  return { current, historical };
+};
+
+const vitalsSplit        = splitByVisit(vitals,        'recordedAt');
+const notesSplit         = splitByVisit(notes,         'createdAt');
+const prescriptionsSplit = splitByVisit(prescriptions, 'createdAt');
+const labSplit           = splitByVisit(labOrders,     'createdAt');
+const imagingSplit       = splitByVisit(imagingOrders, 'createdAt');
+
+// Per-tab toggle for the "Historical" collapsible
+const [openHistory, setOpenHistory] = useState({
+  vitals: false, notes: false, prescriptions: false,
+  lab: false, imaging: false,
+});
+const toggleHistory = (key) =>
+  setOpenHistory((prev) => ({ ...prev, [key]: !prev[key] }));
+
   const getWalletStatusInfo = (status) => {
     const map = {
       'Active': { bg: '#d1fae5', color: '#065f46', icon: '✅' },
@@ -1646,7 +1688,7 @@ const handleClosePrescriptionModal = () => {
 )}
 
         {/* ============ VITALS TAB ============ */}
-        {currentTab === 'vitals' && canViewVitals && (
+                {currentTab === 'vitals' && canViewVitals && (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
               <h3 style={{ border: 'none', padding: 0, margin: 0 }}>Vital Signs History</h3>
@@ -1654,18 +1696,37 @@ const handleClosePrescriptionModal = () => {
                 <button className="btn btn-primary" onClick={() => setShowVitalModal(true)}>➕ Record Vitals</button>
               )}
             </div>
-            {vitals.length > 0 ? (
-              <div className="table-container">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Date/Time</th><th>Nurse</th><th>BP (mmHg)</th><th>HR (bpm)</th>
-                      <th>Temp (°C)</th><th>SpO₂ (%)</th><th>RR (/min)</th>
-                      <th>Weight (kg)</th><th>Height (cm)</th><th>Notes</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {vitals.map(v => (
+
+            {/* ═══ CURRENT VISIT ═══ */}
+            <div className="table-container" style={{ marginBottom: '16px' }}>
+              <div style={{
+                padding: '10px 16px',
+                background: '#eff6ff',
+                borderBottom: '1px solid #dbeafe',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '8px'
+              }}>
+                <strong style={{ color: '#1e3a5f', fontSize: '14px' }}>
+                  🩺 This Visit — {vitalsSplit.current.length} reading(s)
+                </strong>
+                <span style={{ fontSize: '12px', color: '#64748b' }}>
+                  since {currentVisitStart.toLocaleDateString()}
+                </span>
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date/Time</th><th>Nurse</th><th>BP (mmHg)</th><th>HR (bpm)</th>
+                    <th>Temp (°C)</th><th>SpO₂ (%)</th><th>RR (/min)</th>
+                    <th>Weight (kg)</th><th>Height (cm)</th><th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {vitalsSplit.current.length > 0 ? (
+                    vitalsSplit.current.map(v => (
                       <tr key={v.id}>
                         <td>{new Date(v.recordedAt).toLocaleString()}</td>
                         <td>{getStaffName(v.Staff)}</td>
@@ -1678,30 +1739,99 @@ const handleClosePrescriptionModal = () => {
                         <td>{v.height}</td>
                         <td>{v.notes || '-'}</td>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="10" className="text-center" style={{ padding: '24px', color: '#94a3b8' }}>
+                        No vitals recorded during this visit yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* ═══ HISTORICAL ═══ */}
+            {vitalsSplit.historical.length > 0 && (
+              <div className={`profile-info-group ${openHistory.vitals ? 'open' : ''}`}>
+                <button
+                  type="button"
+                  className="profile-info-group-title"
+                  onClick={() => toggleHistory('vitals')}
+                >
+                  <span className="group-icon">📚</span>
+                  <span className="group-label">
+                    Past Vitals ({vitalsSplit.historical.length})
+                  </span>
+                  <span className="group-chevron">▾</span>
+                </button>
+                <div className="profile-info-group-body">
+                  <div className="table-container">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Date/Time</th><th>Nurse</th><th>BP</th><th>HR</th>
+                          <th>Temp</th><th>SpO₂</th><th>RR</th><th>Weight</th><th>Height</th><th>Notes</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {vitalsSplit.historical.map(v => (
+                          <tr key={v.id}>
+                            <td style={{ whiteSpace: 'nowrap', fontSize: '13px' }}>
+                              {new Date(v.recordedAt).toLocaleDateString()}
+                            </td>
+                            <td>{getStaffName(v.Staff)}</td>
+                            <td>{v.bloodPressureSystolic}/{v.bloodPressureDiastolic}</td>
+                            <td>{v.heartRate}</td>
+                            <td>{v.temperature}</td>
+                            <td>{v.oxygenSaturation}</td>
+                            <td>{v.respiratoryRate}</td>
+                            <td>{v.weight}</td>
+                            <td>{v.height}</td>
+                            <td>{v.notes || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
-            ) : (<p>No vitals recorded yet.</p>)}
+            )}
           </>
         )}
 
         {/* ============ NOTES TAB ============ */}
-        {currentTab === 'notes' && canViewNotes && (
+                {currentTab === 'notes' && canViewNotes && (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <h3 style={{ border: 'none', padding: 0, margin: 0 }}>Clinical Notes (SOAP)</h3>
               {canWriteNotes && !isDischarged && (
                 <button className="btn btn-secondary" onClick={() => {
                   setEditingNote(null);
-                  setLiveNoteText(''); // ✅ Clear on new
+                  setLiveNoteText('');
                   setNoteForm({ type: 'SOAP', subjective: '', objective: '', assessment: '', plan: '', fullContent: '' });
                   setShowNoteModal(true);
                 }}>+ Add Note</button>
               )}
             </div>
-            {notes.length > 0 ? (
-              notes.map(n => (
+
+            {/* ═══ CURRENT VISIT ═══ */}
+            <div style={{
+              background: '#eff6ff', border: '1px solid #dbeafe', borderRadius: '8px',
+              padding: '10px 16px', marginBottom: '12px', marginTop: '12px',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              flexWrap: 'wrap', gap: '8px'
+            }}>
+              <strong style={{ color: '#1e3a5f', fontSize: '14px' }}>
+                🩺 This Visit — {notesSplit.current.length} note(s)
+              </strong>
+              <span style={{ fontSize: '12px', color: '#64748b' }}>
+                since {currentVisitStart.toLocaleDateString()}
+              </span>
+            </div>
+
+            {notesSplit.current.length > 0 ? (
+              notesSplit.current.map(n => (
                 <div key={n.id} className={`note-card type-${n.type.replace(/ /g, '')}`}>
                   <div className="note-header">
                     <div className={`note-tag tag-${n.type.replace(/ /g, '')}`}>{n.type}</div>
@@ -1725,27 +1855,69 @@ const handleClosePrescriptionModal = () => {
                   </div>
                 </div>
               ))
-            ) : (<p>No clinical notes.</p>)}
+            ) : (
+              <p style={{ color: '#94a3b8', padding: '20px', textAlign: 'center' }}>
+                No clinical notes recorded during this visit yet.
+              </p>
+            )}
+
+            {/* ═══ HISTORICAL ═══ */}
+            {notesSplit.historical.length > 0 && (
+              <div className={`profile-info-group ${openHistory.notes ? 'open' : ''}`} style={{ marginTop: '16px' }}>
+                <button
+                  type="button"
+                  className="profile-info-group-title"
+                  onClick={() => toggleHistory('notes')}
+                >
+                  <span className="group-icon">📚</span>
+                  <span className="group-label">
+                    Past Clinical Notes ({notesSplit.historical.length})
+                  </span>
+                  <span className="group-chevron">▾</span>
+                </button>
+                <div className="profile-info-group-body">
+                  {notesSplit.historical.map(n => (
+                    <div key={n.id} className={`note-card type-${n.type.replace(/ /g, '')}`}>
+                      <div className="note-header">
+                        <div className={`note-tag tag-${n.type.replace(/ /g, '')}`}>{n.type}</div>
+                        <span><strong>{n.type}</strong> by {getStaffName(n.Staff)}</span>
+                        <span className="note-date">{new Date(n.createdAt).toLocaleString()}</span>
+                      </div>
+                      <div className="note-body">
+                        {n.subjective && <div><strong>S:</strong> {n.subjective}</div>}
+                        {n.objective && <div><strong>O:</strong> {n.objective}</div>}
+                        {n.assessment && <div><strong>A:</strong> {n.assessment}</div>}
+                        {n.plan && <div><strong>P:</strong> {n.plan}</div>}
+                        {!n.subjective && !n.objective && !n.assessment && !n.plan && (
+                          <div style={{ opacity: 0.7 }}>{n.fullContent || 'No structured content'}</div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </>
         )}
 
         {/* ============ PRESCRIPTIONS TAB ============ */}
         {currentTab === 'prescriptions' && canViewPrescriptions && (
-          <div className="table-container">
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
+                {currentTab === 'prescriptions' && canViewPrescriptions && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', flexWrap: 'wrap', gap: '8px' }}>
               <h3 style={{ border: 'none', padding: 0, margin: 0 }}>💊 Prescriptions</h3>
               {canCreatePrescription && !isDischarged && (
                 <button
-  className="btn btn-primary btn-sm"
-  onClick={() => {
-    setPrescriptionCart([]);
-    setPrescriptionForm({ medication: '', dosage: '', frequency: '', duration: '', instructions: '' });
-    setMedicationSearchTerm('');
-    setShowPrescriptionModal(true);
-  }}
->
-  ➕ New Prescription
-</button>
+                  className="btn btn-primary btn-sm"
+                  onClick={() => {
+                    setPrescriptionCart([]);
+                    setPrescriptionForm({ medication: '', dosage: '', frequency: '', duration: '', instructions: '' });
+                    setMedicationSearchTerm('');
+                    setShowPrescriptionModal(true);
+                  }}
+                >
+                  ➕ New Prescription
+                </button>
               )}
             </div>
 
@@ -1761,120 +1933,274 @@ const handleClosePrescriptionModal = () => {
               </div>
             )}
 
-            <table>
-              <thead>
-                <tr>
-                  <th>Medication</th><th>Dosage</th><th>Frequency</th><th>Status</th>
-                  <th>Prescribed By</th><th>Dispensed By</th>
-                  {canDispense && <th>Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {prescriptions.length > 0 ? (
-                  prescriptions.map(p => (
-                    <tr key={p.id} style={{ background: p.status === 'Prescribed' && canDispense && !isDischarged ? '#fefce8' : 'white' }}>
-                      <td><strong>{p.medication}</strong></td>
-                      <td>{p.dosage}</td>
-                      <td>{p.frequency}</td>
-                      <td>
-                        <span className="status-badge" style={{
-                          background: p.status === 'Dispensed' ? '#10b981' : p.status === 'Cancelled' ? '#ef4444' : '#f59e0b',
-                          color: p.status === 'Dispensed' || p.status === 'Cancelled' ? 'white' : '#1a1a2e',
-                          padding: '4px 12px', borderRadius: '12px', fontSize: '12px',
-                          fontWeight: '600', display: 'inline-block'
-                        }}>
-                          {p.status || 'Prescribed'}
-                        </span>
-                      </td>
-                      <td>{getStaffName(p.prescribedBy)}</td>
-                      <td>{p.status === 'Dispensed' ? getStaffName(p.dispensedBy) : '-'}</td>
-                      {canDispense && (
+            {/* ═══ CURRENT VISIT ═══ */}
+            <div className="table-container" style={{ marginBottom: '16px' }}>
+              <div style={{
+                padding: '10px 16px',
+                background: '#eff6ff',
+                borderBottom: '1px solid #dbeafe',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '8px'
+              }}>
+                <strong style={{ color: '#1e3a5f', fontSize: '14px' }}>
+                  🩺 This Visit — {prescriptionsSplit.current.length} prescription(s)
+                </strong>
+                <span style={{ fontSize: '12px', color: '#64748b' }}>
+                  since {currentVisitStart.toLocaleDateString()}
+                </span>
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Medication</th><th>Dosage</th><th>Frequency</th><th>Status</th>
+                    <th>Prescribed By</th><th>Dispensed By</th>
+                    {canDispense && <th>Actions</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {prescriptionsSplit.current.length > 0 ? (
+                    prescriptionsSplit.current.map(p => (
+                      <tr key={p.id} style={{ background: p.status === 'Prescribed' && canDispense && !isDischarged ? '#fefce8' : 'white' }}>
+                        <td><strong>{p.medication}</strong></td>
+                        <td>{p.dosage}</td>
+                        <td>{p.frequency}</td>
                         <td>
-                          {p.status === 'Prescribed' && !isDischarged ? (
-                            <button className="btn btn-sm" onClick={() => handleOpenDispenseModal(p)}
-                              style={{
-                                background: '#10b981', color: 'white', border: 'none',
-                                padding: '6px 14px', borderRadius: '6px', cursor: 'pointer',
-                                fontSize: '12px', fontWeight: '600'
-                              }}>
-                              💊 Dispense
-                            </button>
-                          ) : p.status === 'Dispensed' ? (
-                            <span style={{ color: '#10b981', fontSize: '12px', fontWeight: '600' }}>✅ Dispensed</span>
-                          ) : (
-                            <span style={{ fontSize: '11px', color: '#6b7280' }}>
-                              {isDischarged ? '🔒 Locked' : '⏳ Awaiting'}
-                            </span>
-                          )}
+                          <span className="status-badge" style={{
+                            background: p.status === 'Dispensed' ? '#10b981' : p.status === 'Cancelled' ? '#ef4444' : '#f59e0b',
+                            color: p.status === 'Dispensed' || p.status === 'Cancelled' ? 'white' : '#1a1a2e',
+                            padding: '4px 12px', borderRadius: '12px', fontSize: '12px',
+                            fontWeight: '600', display: 'inline-block'
+                          }}>
+                            {p.status || 'Prescribed'}
+                          </span>
                         </td>
-                      )}
+                        <td>{getStaffName(p.prescribedBy)}</td>
+                        <td>{p.status === 'Dispensed' ? getStaffName(p.dispensedBy) : '-'}</td>
+                        {canDispense && (
+                          <td>
+                            {p.status === 'Prescribed' && !isDischarged ? (
+                              <button className="btn btn-sm" onClick={() => handleOpenDispenseModal(p)}
+                                style={{
+                                  background: '#10b981', color: 'white', border: 'none',
+                                  padding: '6px 14px', borderRadius: '6px', cursor: 'pointer',
+                                  fontSize: '12px', fontWeight: '600'
+                                }}>
+                                💊 Dispense
+                              </button>
+                            ) : p.status === 'Dispensed' ? (
+                              <span style={{ color: '#10b981', fontSize: '12px', fontWeight: '600' }}>✅ Dispensed</span>
+                            ) : (
+                              <span style={{ fontSize: '11px', color: '#6b7280' }}>
+                                {isDischarged ? '🔒 Locked' : '⏳ Awaiting'}
+                              </span>
+                            )}
+                          </td>
+                        )}
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={canDispense ? 7 : 6} className="text-center" style={{ padding: '24px', color: '#94a3b8' }}>
+                        No prescriptions written during this visit yet.
+                      </td>
                     </tr>
-                  ))
-                ) : (
-                  <tr><td colSpan={canDispense ? 7 : 6} className="text-center">No prescriptions found.</td></tr>
-                )}
-              </tbody>
-            </table>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* ═══ HISTORICAL (collapsible) ═══ */}
+            {prescriptionsSplit.historical.length > 0 && (
+              <div className={`profile-info-group ${openHistory.prescriptions ? 'open' : ''}`} style={{ marginBottom: '8px' }}>
+                <button
+                  type="button"
+                  className="profile-info-group-title"
+                  onClick={() => toggleHistory('prescriptions')}
+                >
+                  <span className="group-icon">📚</span>
+                  <span className="group-label">
+                    Past Prescriptions ({prescriptionsSplit.historical.length})
+                  </span>
+                  <span className="group-chevron">▾</span>
+                </button>
+                <div className="profile-info-group-body">
+                  <div className="table-container">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Date</th><th>Medication</th><th>Dosage</th><th>Frequency</th>
+                          <th>Status</th><th>Prescribed By</th><th>Dispensed By</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {prescriptionsSplit.historical.map(p => (
+                          <tr key={p.id}>
+                            <td style={{ whiteSpace: 'nowrap', fontSize: '13px', color: '#6b7280' }}>
+                              {new Date(p.createdAt).toLocaleDateString()}
+                            </td>
+                            <td><strong>{p.medication}</strong></td>
+                            <td>{p.dosage}</td>
+                            <td>{p.frequency}</td>
+                            <td>
+                              <span className="status-badge" style={{
+                                background: p.status === 'Dispensed' ? '#10b981' : '#f59e0b',
+                                color: p.status === 'Dispensed' ? 'white' : '#1a1a2e',
+                                padding: '4px 12px', borderRadius: '12px',
+                                fontSize: '12px', fontWeight: '600', display: 'inline-block'
+                              }}>
+                                {p.status || 'Prescribed'}
+                              </span>
+                            </td>
+                            <td>{getStaffName(p.prescribedBy)}</td>
+                            <td>{p.status === 'Dispensed' ? getStaffName(p.dispensedBy) : '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         {/* ============ LAB ORDERS TAB ============ */}
-        {currentTab === 'lab-orders' && canViewLabOrders && (
-          <div className="table-container">
+                {currentTab === 'lab-orders' && canViewLabOrders && (
+          <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
               <h3 style={{ border: 'none', padding: 0, margin: 0 }}>Lab Orders</h3>
               {canCreateLabOrder && !isDischarged && (
                 <button className="btn btn-primary btn-sm" onClick={() => setShowLabOrderModal(true)}>➕ New Lab Order</button>
               )}
             </div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Test Name</th><th>Type</th><th>Priority</th><th>Status</th>
-                  <th>Ordered By</th><th>Performed By</th><th>Result</th>
-                </tr>
-              </thead>
-              <tbody>
-                {labOrders.length > 0 ? (
-                  labOrders.map(l => (
-                    <tr key={l.id}>
-                      <td><strong>{l.testName}</strong></td>
-                      <td>{l.testType}</td>
-                      <td>
-                        <span className="status-badge" style={{
-                          background: l.priority === 'Urgent' ? '#ef4444' : l.priority === 'Emergency' ? '#dc2626' : '#3b82f6',
-                          color: 'white', padding: '4px 12px', borderRadius: '12px',
-                          fontSize: '12px', fontWeight: '600', display: 'inline-block'
-                        }}>
-                          {l.priority || 'Routine'}
-                        </span>
+
+            {/* ═══ CURRENT VISIT ═══ */}
+            <div className="table-container" style={{ marginBottom: '16px' }}>
+              <div style={{
+                padding: '10px 16px',
+                background: '#eff6ff',
+                borderBottom: '1px solid #dbeafe',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '8px'
+              }}>
+                <strong style={{ color: '#1e3a5f', fontSize: '14px' }}>
+                  🩺 This Visit — {labSplit.current.length} order(s)
+                </strong>
+                <span style={{ fontSize: '12px', color: '#64748b' }}>
+                  since {currentVisitStart.toLocaleDateString()}
+                </span>
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Test Name</th><th>Type</th><th>Priority</th><th>Status</th>
+                    <th>Ordered By</th><th>Performed By</th><th>Result</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {labSplit.current.length > 0 ? (
+                    labSplit.current.map(l => (
+                      <tr key={l.id}>
+                        <td><strong>{l.testName}</strong></td>
+                        <td>{l.testType}</td>
+                        <td>
+                          <span className="status-badge" style={{
+                            background: l.priority === 'Urgent' ? '#ef4444' : l.priority === 'Emergency' ? '#dc2626' : '#3b82f6',
+                            color: 'white', padding: '4px 12px', borderRadius: '12px',
+                            fontSize: '12px', fontWeight: '600', display: 'inline-block'
+                          }}>
+                            {l.priority || 'Routine'}
+                          </span>
+                        </td>
+                        <td>
+                          <span className="status-badge" style={{
+                            background: l.status === 'Completed' ? '#10b981' : l.status === 'Ordered' ? '#f59e0b' : '#6b7280',
+                            color: l.status === 'Completed' ? 'white' : '#1a1a2e',
+                            padding: '4px 12px', borderRadius: '12px',
+                            fontSize: '12px', fontWeight: '600', display: 'inline-block'
+                          }}>
+                            {l.status || 'Ordered'}
+                          </span>
+                        </td>
+                        <td>{getStaffName(l.orderedBy)}</td>
+                        <td>{l.performedBy ? getStaffName(l.performedBy) : '-'}</td>
+                        <td>{l.result || '-'}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="7" className="text-center" style={{ padding: '24px', color: '#94a3b8' }}>
+                        No lab orders placed during this visit yet.
                       </td>
-                      <td>
-                        <span className="status-badge" style={{
-                          background: l.status === 'Completed' ? '#10b981' : l.status === 'Ordered' ? '#f59e0b' : '#6b7280',
-                          color: l.status === 'Completed' ? 'white' : '#1a1a2e',
-                          padding: '4px 12px', borderRadius: '12px',
-                          fontSize: '12px', fontWeight: '600', display: 'inline-block'
-                        }}>
-                          {l.status || 'Ordered'}
-                        </span>
-                      </td>
-                      <td>{getStaffName(l.orderedBy)}</td>
-                      <td>{l.performedBy ? getStaffName(l.performedBy) : '-'}</td>
-                      <td>{l.result || '-'}</td>
                     </tr>
-                  ))
-                ) : (
-                  <tr><td colSpan="7" className="text-center">No lab orders found.</td></tr>
-                )}
-              </tbody>
-            </table>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* ═══ HISTORICAL ═══ */}
+            {labSplit.historical.length > 0 && (
+              <div className={`profile-info-group ${openHistory.lab ? 'open' : ''}`}>
+                <button
+                  type="button"
+                  className="profile-info-group-title"
+                  onClick={() => toggleHistory('lab')}
+                >
+                  <span className="group-icon">📚</span>
+                  <span className="group-label">
+                    Past Lab Orders ({labSplit.historical.length})
+                  </span>
+                  <span className="group-chevron">▾</span>
+                </button>
+                <div className="profile-info-group-body">
+                  <div className="table-container">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Date</th><th>Test Name</th><th>Type</th><th>Status</th>
+                          <th>Ordered By</th><th>Result</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {labSplit.historical.map(l => (
+                          <tr key={l.id}>
+                            <td style={{ whiteSpace: 'nowrap', fontSize: '13px', color: '#6b7280' }}>
+                              {new Date(l.createdAt).toLocaleDateString()}
+                            </td>
+                            <td><strong>{l.testName}</strong></td>
+                            <td>{l.testType}</td>
+                            <td>
+                              <span className="status-badge" style={{
+                                background: l.status === 'Completed' ? '#10b981' : '#f59e0b',
+                                color: l.status === 'Completed' ? 'white' : '#1a1a2e',
+                                padding: '4px 12px', borderRadius: '12px',
+                                fontSize: '12px', fontWeight: '600', display: 'inline-block'
+                              }}>
+                                {l.status || 'Ordered'}
+                              </span>
+                            </td>
+                            <td>{getStaffName(l.orderedBy)}</td>
+                            <td style={{ maxWidth: '220px', fontSize: '13px' }}>{l.result || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         {/* ============ IMAGING TAB ============ */}
-        {currentTab === 'imaging' && canViewImaging && (
-          <div className="table-container">
+                {currentTab === 'imaging' && canViewImaging && (
+          <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
               <h3 style={{ border: 'none', padding: 0, margin: 0 }}>📷 Imaging & X-Ray Orders</h3>
               {canCreateImagingOrder && !isDischarged && (
@@ -1882,9 +2208,10 @@ const handleClosePrescriptionModal = () => {
               )}
             </div>
 
-            {/* IMAGE GALLERY */}
+            {/* ═══ YOUR EXISTING IMAGE GALLERY GOES HERE, UNCHANGED ═══ */}
             {imagingOrders.some(order => order.images && order.images.length > 0) && (
               <div style={{ marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                {/* ... your existing image grid block stays exactly as it is ... */}
                 <h5 style={{ margin: '0 0 8px 0', fontSize: '14px', color: '#374151' }}>
                   📷 Images ({imagingOrders.reduce((count, order) => count + (order.images ? order.images.split(',').length : 0), 0)})
                 </h5>
@@ -1927,6 +2254,154 @@ const handleClosePrescriptionModal = () => {
                 </div>
               </div>
             )}
+
+            {/* ═══ CURRENT VISIT ═══ */}
+            <div className="table-container" style={{ marginBottom: '16px' }}>
+              <div style={{
+                padding: '10px 16px',
+                background: '#eff6ff',
+                borderBottom: '1px solid #dbeafe',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '8px'
+              }}>
+                <strong style={{ color: '#1e3a5f', fontSize: '14px' }}>
+                  🩺 This Visit — {imagingSplit.current.length} order(s)
+                </strong>
+                <span style={{ fontSize: '12px', color: '#64748b' }}>
+                  since {currentVisitStart.toLocaleDateString()}
+                </span>
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Order #</th><th>Type</th><th>Body Part</th><th>Priority</th>
+                    <th>Status</th><th>Ordered By</th><th>Radiologist</th><th>Date</th><th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {imagingSplit.current.length > 0 ? (
+                    imagingSplit.current.map(order => (
+                      <tr key={order.id}>
+                        <td><strong>{order.orderNumber || order.id.slice(0, 8)}</strong></td>
+                        <td>{order.imagingType}</td>
+                        <td>{order.bodyPart}</td>
+                        <td>
+                          <span className="status-badge" style={{
+                            background: order.priority === 'Emergency' ? '#dc2626' : order.priority === 'Urgent' ? '#ef4444' : '#3b82f6',
+                            color: 'white', padding: '4px 12px', borderRadius: '12px',
+                            fontSize: '12px', fontWeight: '600', display: 'inline-block'
+                          }}>
+                            {order.priority || 'Routine'}
+                          </span>
+                        </td>
+                        <td>
+                          <span className="status-badge" style={{
+                            background: order.status === 'Completed' ? '#10b981' :
+                              order.status === 'In Progress' ? '#3b82f6' :
+                                order.status === 'Scheduled' ? '#8b5cf6' :
+                                  order.status === 'Cancelled' ? '#ef4444' : '#f59e0b',
+                            color: ['Completed', 'Cancelled'].includes(order.status) ? 'white' : '#1a1a2e',
+                            padding: '4px 12px', borderRadius: '12px',
+                            fontSize: '12px', fontWeight: '600', display: 'inline-block'
+                          }}>
+                            {order.status || 'Ordered'}
+                          </span>
+                        </td>
+                        <td>{getStaffName(order.orderingStaff)}</td>
+                        <td>{order.status === 'Completed' ? getStaffName(order.radiologist) : '-'}</td>
+                        <td>{new Date(order.createdAt).toLocaleDateString()}</td>
+                        <td>
+                          <button className="btn btn-sm btn-primary"
+                            onClick={() => { setSelectedOrder(order); setShowOrderModal(true); }}
+                            style={{
+                              background: '#0f3460', color: 'white', border: 'none',
+                              padding: '6px 14px', borderRadius: '6px', cursor: 'pointer',
+                              fontSize: '12px', fontWeight: '600'
+                            }}>
+                            📄 View Details
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="9" className="text-center" style={{ padding: '24px', color: '#94a3b8' }}>
+                        No imaging ordered during this visit yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* ═══ HISTORICAL ═══ */}
+            {imagingSplit.historical.length > 0 && (
+              <div className={`profile-info-group ${openHistory.imaging ? 'open' : ''}`}>
+                <button
+                  type="button"
+                  className="profile-info-group-title"
+                  onClick={() => toggleHistory('imaging')}
+                >
+                  <span className="group-icon">📚</span>
+                  <span className="group-label">
+                    Past Imaging ({imagingSplit.historical.length})
+                  </span>
+                  <span className="group-chevron">▾</span>
+                </button>
+                <div className="profile-info-group-body">
+                  <div className="table-container">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Date</th><th>Order #</th><th>Type</th><th>Body Part</th>
+                          <th>Status</th><th>Radiologist</th><th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {imagingSplit.historical.map(order => (
+                          <tr key={order.id}>
+                            <td style={{ whiteSpace: 'nowrap', fontSize: '13px', color: '#6b7280' }}>
+                              {new Date(order.createdAt).toLocaleDateString()}
+                            </td>
+                            <td>{order.orderNumber || order.id.slice(0, 8)}</td>
+                            <td>{order.imagingType}</td>
+                            <td>{order.bodyPart}</td>
+                            <td>
+                              <span className="status-badge" style={{
+                                background: order.status === 'Completed' ? '#10b981' : '#f59e0b',
+                                color: order.status === 'Completed' ? 'white' : '#1a1a2e',
+                                padding: '4px 12px', borderRadius: '12px',
+                                fontSize: '12px', fontWeight: '600', display: 'inline-block'
+                              }}>
+                                {order.status || 'Ordered'}
+                              </span>
+                            </td>
+                            <td>{order.status === 'Completed' ? getStaffName(order.radiologist) : '-'}</td>
+                            <td>
+                              <button className="btn btn-sm"
+                                onClick={() => { setSelectedOrder(order); setShowOrderModal(true); }}
+                                style={{
+                                  background: '#f3f4f6', color: '#1f2937',
+                                  border: '1px solid #d1d5db',
+                                  padding: '4px 10px', borderRadius: '4px',
+                                  cursor: 'pointer', fontSize: '11px', fontWeight: '600'
+                                }}>
+                                📄 View
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
             {/* IMAGING TABLE */}
             {imagingOrders.length > 0 ? (

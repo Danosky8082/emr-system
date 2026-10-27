@@ -12152,14 +12152,13 @@ app.get(
       ]);
 
       // ── Aggregate per staff ────────────────────────────────
-      // { staffId → { ...counters } }
       const map = new Map();
 
-      const ensure = (staffId) => {
-        if (!staffId) return null;
-        if (!map.has(staffId)) {
-          map.set(staffId, {
-            staffId,
+      const ensure = (sid) => {
+        if (!sid) return null;
+        if (!map.has(sid)) {
+          map.set(sid, {
+            staffId: sid,
             prescriptionsWritten: 0,
             prescriptionsDispensed: 0,
             billsProcessed: 0,
@@ -12174,7 +12173,7 @@ app.get(
             lastActivityAt: null,
           });
         }
-        return map.get(staffId);
+        return map.get(sid);
       };
 
       const bumpLastActivity = (row, date) => {
@@ -12208,7 +12207,6 @@ app.get(
           if (dispenser) {
             dispenser.prescriptionsDispensed += 1;
             dispenser.totalTransactions += 1;
-            // Prefer dispensedAt when present, else createdAt
             bumpLastActivity(dispenser, p.dispensedAt || p.createdAt);
           }
         }
@@ -12281,7 +12279,7 @@ app.get(
         };
       });
 
-      // Optional single-staff filter (drilldown)
+      // Optional single-staff filter
       if (staffId) {
         rows = rows.filter(r => r.staffId === staffId);
       }
@@ -12290,11 +12288,6 @@ app.get(
       rows.sort((a, b) => b.totalTransactions - a.totalTransactions);
 
       // ── Z-score outlier detection ─────────────────────────
-      //
-      // For each of the key metrics we compute (mean, stddev) over the
-      // whole team, then flag any staff whose value is >2σ above the mean.
-      // Metrics with fewer than 3 participating staff are skipped — σ is
-      // not meaningful at that size.
       const METRICS_TO_CHECK = [
         { key: 'totalTransactions', label: 'transactions' },
         { key: 'refundAmount', label: 'refund amount' },
@@ -12367,6 +12360,329 @@ app.get(
       console.error('Staff activity error:', error);
       res.status(500).json({
         error: 'Failed to compute staff activity',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined,
+      });
+    }
+  }
+);
+
+// ============================================================
+// ANALYTICS — DRUG USAGE
+//
+// Visible to: Admin, ITAdmin, Pharmacist, Accountant.
+// Doctor column is only shown to Admin/ITAdmin (HR-sensitivity).
+//
+// TENANT SAFETY:
+//   • groupBy → must pass tenantId explicitly
+//   • $queryRaw → avoided entirely; findMany is auto-scoped
+// ============================================================
+app.get(
+  '/api/analytics/drugs',
+  authenticate,
+  authorize('Admin', 'ITAdmin', 'Pharmacist', 'Accountant'),
+  async (req, res) => {
+    try {
+      const { period = 'month', from, to } = req.query;
+
+      // ── Window ──────────────────────────────────────────────
+      const now = new Date();
+      let startDate;
+
+      if (period === 'week') {
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      } else if (period === 'month') {
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      } else if (period === 'quarter') {
+        startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+      } else if (period === 'year') {
+        startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+      } else {
+        startDate = from ? new Date(from) : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      }
+
+      const endDate = to ? new Date(to + 'T23:59:59') : now;
+
+      if (startDate > endDate) {
+        return res.status(400).json({ error: 'from must be before to' });
+      }
+
+      const canSeeDoctors = ['Admin', 'ITAdmin'].includes(req.user.role);
+
+      // ═══════════════════════════════════════════════════════
+      // 1. TOP PRESCRIBED DRUGS
+      // ═══════════════════════════════════════════════════════
+      const prescriptionsInWindow = await req.db.prescription.findMany({
+        where: {
+          createdAt: { gte: startDate, lte: endDate },
+        },
+        select: {
+          id: true,
+          medication: true,
+          dosage: true,
+          prescribingStaffId: true,
+          createdAt: true,
+        },
+      });
+
+      const prescByMed = new Map();
+      for (const p of prescriptionsInWindow) {
+        const key = (p.medication || 'Unknown').trim();
+        if (!prescByMed.has(key)) {
+          prescByMed.set(key, {
+            medication: key,
+            count: 0,
+            prescribers: new Map(),
+          });
+        }
+        const entry = prescByMed.get(key);
+        entry.count += 1;
+
+        if (p.prescribingStaffId) {
+          entry.prescribers.set(
+            p.prescribingStaffId,
+            (entry.prescribers.get(p.prescribingStaffId) || 0) + 1
+          );
+        }
+      }
+
+      const topPrescribedRaw = Array.from(prescByMed.values())
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 20);
+
+      const allPrescriberIds = new Set();
+      for (const entry of topPrescribedRaw) {
+        for (const sid of entry.prescribers.keys()) {
+          allPrescriberIds.add(sid);
+        }
+      }
+
+      const prescriberStaff = allPrescriberIds.size
+        ? await req.db.staff.findMany({
+            where: { id: { in: [...allPrescriberIds] } },
+            select: { id: true, firstName: true, lastName: true, role: true },
+          })
+        : [];
+      const prescriberMap = Object.fromEntries(prescriberStaff.map(s => [s.id, s]));
+
+      const topPrescribed = topPrescribedRaw.map(entry => {
+        let topStaffId = null;
+        let topCount = 0;
+        for (const [sid, count] of entry.prescribers.entries()) {
+          if (count > topCount) {
+            topCount = count;
+            topStaffId = sid;
+          }
+        }
+
+        const staffRow = topStaffId ? prescriberMap[topStaffId] : null;
+
+        return {
+          medication: entry.medication,
+          count: entry.count,
+          topPrescriber: canSeeDoctors && staffRow
+            ? {
+                id: staffRow.id,
+                name: `${staffRow.firstName} ${staffRow.lastName}`,
+                role: staffRow.role,
+                count: topCount,
+              }
+            : null,
+        };
+      });
+
+      // ═══════════════════════════════════════════════════════
+      // 2. TOP DISPENSED DRUGS (quantity + revenue)
+      // ═══════════════════════════════════════════════════════
+      const dispenseTx = await req.db.medicationTransaction.findMany({
+        where: {
+          createdAt: { gte: startDate, lte: endDate },
+          transactionType: 'Dispensed',
+        },
+        select: {
+          id: true,
+          medicationId: true,
+          quantity: true,
+          totalPrice: true,
+          unitPrice: true,
+        },
+      });
+
+      const dispensedByMedId = new Map();
+      for (const tx of dispenseTx) {
+        if (!dispensedByMedId.has(tx.medicationId)) {
+          dispensedByMedId.set(tx.medicationId, {
+            medicationId: tx.medicationId,
+            quantity: 0,
+            revenue: 0,
+            txCount: 0,
+          });
+        }
+        const entry = dispensedByMedId.get(tx.medicationId);
+        entry.quantity += tx.quantity || 0;
+        entry.revenue += tx.totalPrice || 0;
+        entry.txCount += 1;
+      }
+
+      const dispensedMedIds = [...dispensedByMedId.keys()];
+      const dispensedMeds = dispensedMedIds.length
+        ? await req.db.medication.findMany({
+            where: { id: { in: dispensedMedIds } },
+            select: { id: true, name: true, category: true, unitPrice: true },
+          })
+        : [];
+      const medMap = Object.fromEntries(dispensedMeds.map(m => [m.id, m]));
+
+      const topDispensed = Array.from(dispensedByMedId.values())
+        .sort((a, b) => b.quantity - a.quantity)
+        .slice(0, 20)
+        .map(d => ({
+          ...d,
+          medication: medMap[d.medicationId] || { name: 'Unknown', category: null },
+        }));
+
+      // ═══════════════════════════════════════════════════════
+      // 3. PROCEDURE USAGE (lab tests + imaging)
+      // ═══════════════════════════════════════════════════════
+      const [labOrdersInWindow, imagingOrdersInWindow] = await Promise.all([
+        req.db.labOrder.findMany({
+          where: { createdAt: { gte: startDate, lte: endDate } },
+          select: { id: true, testName: true, testType: true },
+        }),
+        req.db.imagingOrder.findMany({
+          where: { createdAt: { gte: startDate, lte: endDate } },
+          select: { id: true, imagingType: true, bodyPart: true },
+        }),
+      ]);
+
+      const labByTest = new Map();
+      for (const l of labOrdersInWindow) {
+        const key = l.testName || 'Unknown';
+        if (!labByTest.has(key)) {
+          labByTest.set(key, { testName: key, testType: l.testType || null, count: 0 });
+        }
+        labByTest.get(key).count += 1;
+      }
+
+      const imagingByType = new Map();
+      for (const i of imagingOrdersInWindow) {
+        const key = i.imagingType || 'Unknown';
+        if (!imagingByType.has(key)) {
+          imagingByType.set(key, { imagingType: key, count: 0 });
+        }
+        imagingByType.get(key).count += 1;
+      }
+
+      const topLabTests = Array.from(labByTest.values())
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 15);
+
+      const topImaging = Array.from(imagingByType.values())
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 15);
+
+      // ═══════════════════════════════════════════════════════
+      // 4. PRICE TRENDS — avg dispensed unit price per month
+      // ═══════════════════════════════════════════════════════
+      const top5MedIds = topDispensed.slice(0, 5).map(d => d.medicationId);
+
+      const priceTx = top5MedIds.length
+        ? await req.db.medicationTransaction.findMany({
+            where: {
+              createdAt: { gte: startDate, lte: endDate },
+              transactionType: 'Dispensed',
+              medicationId: { in: top5MedIds },
+            },
+            select: {
+              medicationId: true,
+              unitPrice: true,
+              createdAt: true,
+            },
+          })
+        : [];
+
+      const priceBuckets = new Map();
+      for (const tx of priceTx) {
+        const d = new Date(tx.createdAt);
+        const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const key = `${ym}|${tx.medicationId}`;
+        if (!priceBuckets.has(key)) {
+          priceBuckets.set(key, {
+            month: ym,
+            medicationId: tx.medicationId,
+            sum: 0,
+            count: 0,
+          });
+        }
+        const b = priceBuckets.get(key);
+        b.sum += Number(tx.unitPrice) || 0;
+        b.count += 1;
+      }
+
+      const priceTrendRows = Array.from(priceBuckets.values()).map(b => ({
+        month: b.month,
+        medicationId: b.medicationId,
+        medicationName: medMap[b.medicationId]?.name || 'Unknown',
+        avgPrice: b.count > 0 ? Math.round((b.sum / b.count) * 100) / 100 : 0,
+        sampleSize: b.count,
+      }));
+
+      priceTrendRows.sort((a, b) => a.month.localeCompare(b.month));
+
+      const months = [...new Set(priceTrendRows.map(r => r.month))].sort();
+      const medNames = [...new Set(priceTrendRows.map(r => r.medicationName))];
+
+      const priceTrendChart = months.map(m => {
+        const row = { month: m };
+        for (const name of medNames) {
+          const found = priceTrendRows.find(
+            r => r.month === m && r.medicationName === name
+          );
+          row[name] = found ? found.avgPrice : null;
+        }
+        return row;
+      });
+
+      // ═══════════════════════════════════════════════════════
+      // 5. SUMMARY STATS
+      // ═══════════════════════════════════════════════════════
+      const totalPrescriptions = prescriptionsInWindow.length;
+      const totalDispensed = dispenseTx.length;
+      const totalDispensedRevenue = dispenseTx.reduce(
+        (s, t) => s + (t.totalPrice || 0),
+        0
+      );
+      const totalLabOrders = labOrdersInWindow.length;
+      const totalImagingOrders = imagingOrdersInWindow.length;
+
+      res.json({
+        period: {
+          from: startDate.toISOString(),
+          to: endDate.toISOString(),
+          label: period,
+        },
+        summary: {
+          totalPrescriptions,
+          totalDispensed,
+          totalDispensedRevenue,
+          totalLabOrders,
+          totalImagingOrders,
+        },
+        topPrescribed,
+        topDispensed,
+        topLabTests,
+        topImaging,
+        priceTrends: {
+          months,
+          medications: medNames,
+          chartData: priceTrendChart,
+          raw: priceTrendRows,
+        },
+        canSeeDoctors,
+      });
+    } catch (error) {
+      console.error('Analytics drugs error:', error);
+      res.status(500).json({
+        error: 'Failed to compute drug analytics',
         details: process.env.NODE_ENV === 'development' ? error.message : undefined,
       });
     }
