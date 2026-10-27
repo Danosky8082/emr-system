@@ -1688,7 +1688,7 @@ const handleClosePrescriptionModal = () => {
 )}
 
         {/* ============ VITALS TAB ============ */}
-                {currentTab === 'vitals' && canViewVitals && (
+        {currentTab === 'vitals' && canViewVitals && (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
               <h3 style={{ border: 'none', padding: 0, margin: 0 }}>Vital Signs History</h3>
@@ -1801,7 +1801,7 @@ const handleClosePrescriptionModal = () => {
         )}
 
         {/* ============ NOTES TAB ============ */}
-                {currentTab === 'notes' && canViewNotes && (
+        {currentTab === 'notes' && canViewNotes && (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <h3 style={{ border: 'none', padding: 0, margin: 0 }}>Clinical Notes (SOAP)</h3>
@@ -1902,7 +1902,6 @@ const handleClosePrescriptionModal = () => {
 
         {/* ============ PRESCRIPTIONS TAB ============ */}
         {currentTab === 'prescriptions' && canViewPrescriptions && (
-                {currentTab === 'prescriptions' && canViewPrescriptions && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', flexWrap: 'wrap', gap: '8px' }}>
               <h3 style={{ border: 'none', padding: 0, margin: 0 }}>💊 Prescriptions</h3>
@@ -2068,7 +2067,7 @@ const handleClosePrescriptionModal = () => {
         )}
 
         {/* ============ LAB ORDERS TAB ============ */}
-                {currentTab === 'lab-orders' && canViewLabOrders && (
+        {currentTab === 'lab-orders' && canViewLabOrders && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
               <h3 style={{ border: 'none', padding: 0, margin: 0 }}>Lab Orders</h3>
@@ -2199,7 +2198,7 @@ const handleClosePrescriptionModal = () => {
         )}
 
         {/* ============ IMAGING TAB ============ */}
-                {currentTab === 'imaging' && canViewImaging && (
+        {currentTab === 'imaging' && canViewImaging && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
               <h3 style={{ border: 'none', padding: 0, margin: 0 }}>📷 Imaging & X-Ray Orders</h3>
@@ -2398,69 +2397,6 @@ const handleClosePrescriptionModal = () => {
                     </table>
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
-        )}
-
-            {/* IMAGING TABLE */}
-            {imagingOrders.length > 0 ? (
-              <table>
-                <thead>
-                  <tr>
-                    <th>Order #</th><th>Type</th><th>Body Part</th><th>Priority</th>
-                    <th>Status</th><th>Ordered By</th><th>Radiologist</th><th>Date</th><th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {imagingOrders.map(order => (
-                    <tr key={order.id}>
-                      <td><strong>{order.orderNumber || order.id.slice(0, 8)}</strong></td>
-                      <td>{order.imagingType}</td>
-                      <td>{order.bodyPart}</td>
-                      <td>
-                        <span className="status-badge" style={{
-                          background: order.priority === 'Emergency' ? '#dc2626' : order.priority === 'Urgent' ? '#ef4444' : '#3b82f6',
-                          color: 'white', padding: '4px 12px', borderRadius: '12px',
-                          fontSize: '12px', fontWeight: '600', display: 'inline-block'
-                        }}>
-                          {order.priority || 'Routine'}
-                        </span>
-                      </td>
-                      <td>
-                        <span className="status-badge" style={{
-                          background: order.status === 'Completed' ? '#10b981' :
-                            order.status === 'In Progress' ? '#3b82f6' :
-                              order.status === 'Scheduled' ? '#8b5cf6' :
-                                order.status === 'Cancelled' ? '#ef4444' : '#f59e0b',
-                          color: ['Completed', 'Cancelled'].includes(order.status) ? 'white' : '#1a1a2e',
-                          padding: '4px 12px', borderRadius: '12px',
-                          fontSize: '12px', fontWeight: '600', display: 'inline-block'
-                        }}>
-                          {order.status || 'Ordered'}
-                        </span>
-                      </td>
-                      <td>{getStaffName(order.orderingStaff)}</td>
-                      <td>{order.status === 'Completed' ? getStaffName(order.radiologist) : '-'}</td>
-                      <td>{new Date(order.createdAt).toLocaleDateString()}</td>
-                      <td>
-                        <button className="btn btn-sm btn-primary"
-                          onClick={() => { setSelectedOrder(order); setShowOrderModal(true); }}
-                          style={{
-                            background: '#0f3460', color: 'white', border: 'none',
-                            padding: '6px 14px', borderRadius: '6px', cursor: 'pointer',
-                            fontSize: '12px', fontWeight: '600'
-                          }}>
-                          📄 View Details
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <div style={{ textAlign: 'center', padding: '40px 20px', color: '#6b7280' }}>
-                <p style={{ fontSize: '16px' }}>📷 No imaging orders found.</p>
               </div>
             )}
           </div>
