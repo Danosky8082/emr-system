@@ -425,3 +425,7 @@
     transform: translateY(-1px);
     box-shadow: 0 4px 6px rgba(0, 212, 255, 0.2);
 }
+
+.profile-content {
+    scroll-margin-top: 90px;
+}

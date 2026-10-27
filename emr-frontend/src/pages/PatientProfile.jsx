@@ -15,6 +15,7 @@ const PatientProfile = () => {
   const { id } = useParams();
   const { token, user } = useAuth();
   const navigate = useNavigate();
+  const profileContentRef = useRef(null);
 
   // ============================================================
   // ROLE-BASED ACCESS CONTROL
@@ -196,6 +197,21 @@ const PatientProfile = () => {
   const toggleGroup = (key) => {
     setExpandedGroups((prev) => ({ ...prev, [key]: !prev[key] }));
   };
+
+  // ============================================================
+// SCROLL TO TOP OF CONTENT WHEN TAB CHANGES
+// ============================================================
+useEffect(() => {
+  if (profileContentRef.current) {
+    // Small delay so the new tab's JSX has mounted
+    requestAnimationFrame(() => {
+      profileContentRef.current.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    });
+  }
+}, [currentTab]);
 
   // ============================================================
   // STATIC DATA
@@ -1281,7 +1297,7 @@ const handleClosePrescriptionModal = () => {
       </div>
 
       {/* ============ MAIN CONTENT ============ */}
-      <div className="profile-content">
+      <div className="profile-content" ref={profileContentRef}>
 
         {/* DISCHARGE BANNER */}
         {isDischarged && (
@@ -1464,9 +1480,9 @@ const handleClosePrescriptionModal = () => {
         </div>
 
         {/* RECENT ACTIVITIES TIMELINE — clinical/admin only */}
-        {canViewVitals && recentActivities.length > 0 && (
+        {currentTab === 'profile' && canViewVitals && recentActivities.length > 0 && (
           <div style={{
-            background: 'white', borderRadius: '12px', padding: '20px', marginBottom: '20px',
+            background: 'white', borderRadius: '12px', padding: '20px', marginBottom: '20px', marginBottom: '20px',
             boxShadow: '0 1px 3px rgba(0,0,0,0.06)', maxHeight: '400px', overflowY: 'auto'
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', position: 'sticky', top: 0, background: 'white', zIndex: 1, paddingBottom: '8px' }}>
