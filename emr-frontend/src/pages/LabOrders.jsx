@@ -65,11 +65,13 @@ const LabOrders = () => {
     }
   };
 
-  // Fetch patients
+    // Fetch patients
   const fetchPatients = async () => {
     try {
       const res = await api.get('/patients');
-      setPatients(res.data);
+      // ✅ Fix: Handle both direct arrays and wrapped objects
+      const patientData = Array.isArray(res.data) ? res.data : (res.data.data || []);
+      setPatients(patientData);
     } catch (error) {
       console.error('Error fetching patients:', error);
       toast.error('Failed to load patients');
