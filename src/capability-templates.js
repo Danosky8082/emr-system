@@ -92,6 +92,7 @@ const DEFAULT_ROLE_CAPABILITIES = {
     'records.edit_contact_info': 'STAFF',
     'records.edit_identity': 'HOD',
     'records.delete_patient': 'HOD',
+    'billing.reverse_transaction': 'STAFF',
   },
   Accountant: {
     'billing.reverse_transaction': 'SENIOR',
