@@ -26,6 +26,8 @@ const Patients = () => {
     insuranceProvider: '',
     insuranceId: '',
     retainerCompany: '', // Changed from corporateCompany to retainerCompany
+    enablePortal: true,      // ← NEW: default ON
+    portalPin: '',
   });
 
   // ✅ FIXED: Define permission checks at the top
@@ -176,82 +178,55 @@ const Patients = () => {
   //   #2 — credential is no longer echoed back to the screen in a toast
   //   #3 — password length is checked against non-space characters only
   const handleEnablePortal = async (patient) => {
-    // Ask user which method to use
-    const method = window.confirm(
-      `🔑 Set up portal access for ${patient.firstName} ${patient.lastName}?\n\n` +
-      `Click OK to set a PIN (4-6 digits - recommended for quick access)\n` +
-      `Click Cancel to set a Password (min 6 characters)`
+  // Generate a random 4-digit PIN by default
+  const suggestedPin = String(Math.floor(1000 + Math.random() * 9000));
+  const pin = prompt(
+    `🔑 Set up portal access for ${patient.firstName} ${patient.lastName}\n\n` +
+    `Enter a 4-6 digit PIN:\n` +
+    `(Suggested: ${suggestedPin})`,
+    suggestedPin
+  );
+
+  if (pin === null) return;
+  if (!/^\d{4,6}$/.test(pin)) {
+    toast.error('PIN must be 4-6 digits');
+    return;
+  }
+
+  const forceChange = window.confirm(
+    `Require PIN change on first login?\n\n` +
+    `OK = yes (recommended)\nCancel = no`
+  );
+
+  try {
+    const res = await api.post('/patient/setup-portal', {
+      patientId: patient.id,
+      pinCode: pin,
+      forceChange: forceChange === true,
+    });
+
+    // Show the PIN in a modal so the staff member can copy it
+    const pinForDisplay = res.data._oneTimePin || pin;
+    const copySuccess = await navigator.clipboard.writeText(pinForDisplay).then(
+      () => true,
+      () => false
     );
 
-    let credential;
-    let isPin = true;
-    
-    if (method) {
-      credential = prompt(`Enter a 4-6 digit PIN for ${patient.firstName}:`, '1234');
-      isPin = true;
-    } else {
-      credential = prompt(`Enter a password for ${patient.firstName} (min 6 characters):`, '');
-      isPin = false;
-    }
-
-    if (credential === null) {
-      toast.error('Portal setup cancelled');
-      return;
-    }
-
-    if (!credential || credential.trim() === '') {
-      toast.error('Credential is required');
-      return;
-    }
-
-    if (isPin && !/^\d{4,6}$/.test(credential)) {
-      toast.error('PIN must be 4-6 digits (numbers only)');
-      return;
-    }
-
-    // ✅ Fix #3 — count non-space characters for password length
-    if (!isPin && credential.trim().length < 6) {
-      toast.error('Password must be at least 6 non-space characters');
-      return;
-    }
-
-    const forceChange = window.confirm(
-      `🔐 Require password change on first login?\n\n` +
-      `Click OK to require patient to change credentials on first login (Recommended)\n` +
-      `Click Cancel to allow patient to keep the ${isPin ? 'PIN' : 'password'} as is`
+    // Non-blocking modal-style alert
+    window.alert(
+      `✅ Portal access enabled for ${patient.firstName} ${patient.lastName}\n\n` +
+      `Hospital ID: ${patient.hospitalId}\n` +
+      `PIN: ${pinForDisplay}${copySuccess ? ' (copied to clipboard)' : ''}\n` +
+      `${forceChange === true ? 'They must change the PIN on first login.\n' : ''}\n` +
+      `⚠️ This PIN will NOT be shown again. Give it to the patient now.`
     );
 
-    try {
-      const payload = { 
-        patientId: patient.id,
-        forceChange: forceChange !== false,
-      };
-      
-      if (isPin) {
-        payload.pinCode = credential;
-      } else {
-        payload.password = credential;
-      }
-
-      await api.post('/patient/setup-portal', payload);
-      
-      // ✅ Fix #2 — DO NOT echo the plaintext credential back to the screen.
-      // The staff member just typed it; they know it. Reproducing it on screen
-      // leaks it to anyone glancing at the monitor, to screen recordings, and
-      // to the toast history panel.
-      toast.success(
-        `✅ Portal access enabled for ${patient.firstName} ${patient.lastName}` +
-        (forceChange !== false
-          ? ' — they must change the credential on first login'
-          : '')
-      );
-      
-      setRefreshKey(prev => prev + 1);
-    } catch (error) {
-      console.error('Enable portal error:', error);
-      toast.error(error.response?.data?.error || 'Failed to enable portal access');
-    }
-  };
+    setRefreshKey(prev => prev + 1);
+  } catch (error) {
+    console.error('Enable portal error:', error);
+    toast.error(error.response?.data?.error || 'Failed to enable portal access');
+  }
+};
 
   // ✅ NEW — Change an existing portal PIN without disabling access first.
   // Reuses /patient/setup-portal (which accepts an existing patient that
@@ -521,75 +496,82 @@ const Patients = () => {
                           
                           {/* Enable / Manage Portal Access */}
                           {p.portalAccess ? (
-                            <>
-                              {/* ✅ NEW — Change PIN without disabling portal */}
-                              <button 
-                                className="btn btn-sm"
-                                style={{ 
-                                  background: '#3b82f6', 
-                                  color: 'white',
-                                  border: 'none',
-                                  borderRadius: '4px',
-                                  padding: '4px 10px',
-                                  cursor: 'pointer',
-                                  fontSize: '11px',
-                                  fontWeight: '600',
-                                  whiteSpace: 'nowrap',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px'
-                                }}
-                                onClick={() => handleChangePortalPin(p)}
-                                title="Change the portal PIN without disabling access"
-                              >
-                                🔑 Change PIN
-                              </button>
-
-                              <button 
-                                className="btn btn-sm"
-                                style={{ 
-                                  background: '#10b981', 
-                                  color: 'white',
-                                  border: 'none',
-                                  borderRadius: '4px',
-                                  padding: '4px 10px',
-                                  cursor: 'pointer',
-                                  fontSize: '11px',
-                                  fontWeight: '600',
-                                  whiteSpace: 'nowrap',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px'
-                                }}
-                                onClick={() => handleResetPortal(p)}
-                                title="Click to reset/disable portal access"
-                              >
-                                ✅ Portal Active
-                              </button>
-                            </>
-                          ) : (
-                            <button 
-                              className="btn btn-sm"
-                              style={{ 
-                                background: '#f59e0b', 
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '4px',
-                                padding: '4px 10px',
-                                cursor: 'pointer',
-                                fontSize: '11px',
-                                fontWeight: '600',
-                                whiteSpace: 'nowrap',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '4px'
-                              }}
-                              onClick={() => handleEnablePortal(p)}
-                              title="Enable patient portal access with PIN or Password"
-                            >
-                              🔑 Enable Portal
-                            </button>
-                          )}
+  <>
+    {/* Non-clickable status badge — cannot accidentally revoke */}
+    <span
+      style={{
+        background: '#d1fae5',
+        color: '#065f46',
+        padding: '4px 10px',
+        borderRadius: '12px',
+        fontSize: '11px',
+        fontWeight: '600',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '4px',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      ✅ Portal Active
+    </span>
+    <button
+      onClick={() => handleChangePortalPin(p)}
+      style={{
+        background: '#3b82f6',
+        color: 'white',
+        border: 'none',
+        padding: '4px 10px',
+        borderRadius: '4px',
+        cursor: 'pointer',
+        fontSize: '11px',
+        fontWeight: '600',
+      }}
+      title="Change the portal PIN — does not revoke access"
+    >
+      🔑 Change PIN
+    </button>
+    <button
+      onClick={() => {
+        if (window.confirm(
+          `⚠️ REVOKE PORTAL ACCESS for ${p.firstName} ${p.lastName}?\n\n` +
+          `This will DISABLE their portal login. They will need a new PIN to access it again.\n\n` +
+          `Click OK to revoke.`
+        )) {
+          handleResetPortal(p);
+        }
+      }}
+      style={{
+        background: '#ef4444',
+        color: 'white',
+        border: 'none',
+        padding: '4px 10px',
+        borderRadius: '4px',
+        cursor: 'pointer',
+        fontSize: '11px',
+        fontWeight: '600',
+      }}
+      title="Disable portal access — this is destructive"
+    >
+      🚫 Revoke
+    </button>
+  </>
+) : (
+  <button
+    onClick={() => handleEnablePortal(p)}
+    style={{
+      background: '#10b981',
+      color: 'white',
+      border: 'none',
+      padding: '4px 10px',
+      borderRadius: '4px',
+      cursor: 'pointer',
+      fontSize: '11px',
+      fontWeight: '600',
+    }}
+  >
+    🔑 Enable Portal
+  </button>
+)}
                           
                           <button 
                             className="btn btn-sm btn-delete"
@@ -759,6 +741,61 @@ const Patients = () => {
                     </div>
                   )}
                 </div>
+
+                {/* Portal Access Setup */}
+{!editingPatient && (
+  <div style={{
+    marginTop: '16px',
+    padding: '16px',
+    background: '#f0fdf4',
+    borderRadius: '8px',
+    border: '1px solid #10b981',
+  }}>
+    <h4 style={{ margin: '0 0 12px 0', fontSize: '15px', fontWeight: '600', color: '#065f46' }}>
+      🔑 Patient Portal Access
+    </h4>
+    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+      <input
+        type="checkbox"
+        checked={formData.enablePortal}
+        onChange={(e) => setFormData({ ...formData, enablePortal: e.target.checked })}
+        style={{ width: '18px', height: '18px', accentColor: '#10b981' }}
+      />
+      <span style={{ fontSize: '14px', color: '#065f46', fontWeight: '500' }}>
+        Enable portal access for this patient (recommended)
+      </span>
+    </label>
+    <p style={{ margin: '8px 0 0 26px', fontSize: '12px', color: '#6b7280' }}>
+      Patient will be able to log in at <code>/patient-login</code> using their Hospital ID and a PIN.
+    </p>
+
+    {formData.enablePortal && (
+      <div className="form-group" style={{ marginTop: '12px' }}>
+        <label>Portal PIN (4-6 digits) — leave blank for auto-generated</label>
+        <input
+          type="text"
+          name="portalPin"
+          value={formData.portalPin}
+          onChange={(e) => setFormData({
+            ...formData,
+            portalPin: e.target.value.replace(/\D/g, '').slice(0, 6),
+          })}
+          placeholder="Leave blank to auto-generate"
+          maxLength={6}
+          inputMode="numeric"
+          style={{
+            width: '100%',
+            padding: '10px 14px',
+            border: '1px solid #10b981',
+            borderRadius: '8px',
+            fontSize: '14px',
+            background: 'white',
+          }}
+        />
+      </div>
+    )}
+  </div>
+)}
                 
                 {/* Next of Kin Section */}
                 <h4 style={{marginTop:'16px', borderTop:'1px solid #eee', paddingTop:'10px'}}>Next of Kin Details <span style={{color:'red'}}>*</span></h4>

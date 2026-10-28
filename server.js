@@ -1297,7 +1297,7 @@ app.post('/api/patient/login', async (req, res) => {
   }
 });
 
-app.post('/api/patient/setup-portal', authenticate, authorize('Admin', 'Records'), async (req, res) => {
+app.post('/api/patient/setup-portal', authenticate, authorize('Admin', 'Records', 'ITAdmin'), async (req, res) => {
   try {
     const { patientId, pinCode, password, forceChange } = req.body;
     if (!patientId) return res.status(400).json({ error: 'Patient ID is required' });
@@ -1311,7 +1311,7 @@ app.post('/api/patient/setup-portal', authenticate, authorize('Admin', 'Records'
       portalAccess: true,
       mustChangePassword: shouldForceChange,
       pinAttempts: 0,
-      lockedUntil: null
+      lockedUntil: null,
     };
     if (pinCode) {
       if (!/^\d{4,6}$/.test(pinCode)) return res.status(400).json({ error: 'PIN must be 4-6 digits' });
@@ -1321,26 +1321,36 @@ app.post('/api/patient/setup-portal', authenticate, authorize('Admin', 'Records'
       if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
       updateData.password = await bcrypt.hash(password, SALT_ROUNDS);
     }
-    const updatedPatient = await req.db.patient.update({
+
+    const updated = await req.db.patient.update({
       where: { id: patientId },
       data: updateData
     });
+
     await req.db.auditLog.create({
       data: {
         staffId: req.user.id,
         action: 'ENABLE_PATIENT_PORTAL',
         module: 'Patient Portal',
-        details: `Enabled portal access for patient ${patient.hospitalId}${shouldForceChange ? ' (force change required)' : ''}`
+        details: `Enabled portal for ${patient.hospitalId} ${patient.firstName} ${patient.lastName}` +
+          ` (PIN set: ${pinCode ? 'yes' : 'no'}, Password set: ${password ? 'yes' : 'no'},` +
+          ` forceChange: ${shouldForceChange})`
       }
     });
+
     res.json({
-      message: `Patient portal access enabled successfully${shouldForceChange ? ' (password change required on first login)' : ''}`,
+      message: `Patient portal access enabled${shouldForceChange ? ' (must change on first login)' : ''}`,
       patient: {
-        id: updatedPatient.id, hospitalId: updatedPatient.hospitalId,
-        firstName: updatedPatient.firstName, lastName: updatedPatient.lastName,
-        portalAccess: updatedPatient.portalAccess,
-        mustChangePassword: updatedPatient.mustChangePassword
-      }
+        id: updated.id,
+        hospitalId: updated.hospitalId,
+        firstName: updated.firstName,
+        lastName: updated.lastName,
+        portalAccess: updated.portalAccess,
+        mustChangePassword: updated.mustChangePassword
+      },
+      // ⚠️ Return the plaintext PIN ONLY on the response that created it,
+      // so the UI can show it to the staff member ONE time. Never stored.
+      _oneTimePin: pinCode || null
     });
   } catch (error) {
     console.error('Setup portal error:', error);
@@ -1363,13 +1373,13 @@ app.post('/api/patient/reset-portal', authenticate, authorize('Admin', 'Records'
       }
     });
     await req.db.auditLog.create({
-      data: {
-        staffId: req.user.id,
-        action: 'RESET_PATIENT_PORTAL',
-        module: 'Patient Portal',
-        details: `Reset portal access for patient ${patient.hospitalId}`
-      }
-    });
+  data: {
+    staffId: req.user.id,
+    action: 'RESET_PATIENT_PORTAL',
+    module: 'Patient Portal',
+    details: `REVOKED portal for ${patient.hospitalId} ${patient.firstName} ${patient.lastName} — PIN and password cleared`
+  }
+});
     res.json({
       message: 'Patient portal access reset successfully',
       patient: {
@@ -2595,19 +2605,37 @@ app.post('/api/patients/:id/mark-accessed', authenticate, async (req, res) => {
 app.get('/api/patients/search/:query', authenticate, async (req, res) => {
   try {
     const { query } = req.params;
-    const patients = await req.db.patient.findMany({
-      where: {
-        OR: [
-          { firstName: { contains: query, mode: 'insensitive' } },
-          { lastName: { contains: query, mode: 'insensitive' } },
-          { hospitalId: { contains: query, mode: 'insensitive' } },
-          { email: { contains: query, mode: 'insensitive' } },
-          { phone: { contains: query, mode: 'insensitive' } }
-        ]
-      },
+    if (!query || query.trim().length < 2) {
+      return res.json([]);
+    }
+    const q = query.trim();
+
+    // 🎯 PRIORITY 1: exact match on hospitalId — this MUST return only one patient
+    const exactHospitalIdMatch = await req.db.patient.findMany({
+      where: { hospitalId: q },
       orderBy: { createdAt: 'desc' }
     });
-    res.json(patients);
+
+    if (exactHospitalIdMatch.length > 0) {
+      return res.json(exactHospitalIdMatch);
+    }
+
+    // 🎯 PRIORITY 2: substring match on names/email/phone (excludes archived)
+    const fuzzyMatches = await req.db.patient.findMany({
+      where: {
+        isArchived: false,
+        OR: [
+          { firstName: { contains: q, mode: 'insensitive' } },
+          { lastName:  { contains: q, mode: 'insensitive' } },
+          { email:     { contains: q, mode: 'insensitive' } },
+          { phone:     { contains: q, mode: 'insensitive' } },
+        ]
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20
+    });
+
+    res.json(fuzzyMatches);
   } catch (error) {
     console.error('Search patients error:', error);
     res.status(500).json({ error: error.message });
