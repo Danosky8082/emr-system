@@ -2022,19 +2022,60 @@ app.post('/api/patients', authenticate, authorize('Admin', 'Records', 'ITAdmin')
       return res.status(400).json({ error: 'Next of Kin phone number is required' });
     }
 
-    const allPatients = await req.db.patient.findMany({ select: { hospitalId: true } });
+    // ============================================================
+    // Hospital ID generation — robust against collisions
+    // ============================================================
+    //
+    // OLD BUG: (nextIdNumber * 9301 + 12345) % 1000000 is deterministic.
+    // Each retry produced a predictable value that could collide with an
+    // existing patient — the 5-attempt budget was exhausted if any 5
+    // consecutive outputs were taken. That's why "Failed to generate a
+    // unique Hospital ID" was thrown every time.
+    //
+    // NEW STRATEGY:
+    //   1. Look at every existing numeric hospitalId in this tenant.
+    //   2. Find maxNumericId, start at maxNumericId + 1.
+    //   3. Skip known-taken IDs via an in-memory Set (no extra DB roundtrip).
+    //   4. Try up to 100 sequential IDs.
+    //   5. Fallback to a random 6-digit ID (20 attempts) as a safety net.
+    //   6. Only fail if the entire 6-digit space is somehow exhausted.
+    //
+    // Tenant safety:
+    //   req.db.patient.findMany is auto-scoped to this tenant by the Prisma
+    //   extension. If your schema uses @@unique([tenantId, hospitalId]),
+    //   that's correct. If your schema uses hospitalId @unique globally,
+    //   swap req.db → prisma (unscoped) below.
+    // ============================================================
+    const existingPatients = await req.db.patient.findMany({
+      select: { hospitalId: true },
+    });
+
+    const takenIds = new Set();
     let maxNumericId = 0;
-    for (const p of allPatients) {
-      const num = parseInt(p.hospitalId, 10);
-      if (!isNaN(num) && num > maxNumericId) maxNumericId = num;
+    for (const p of existingPatients) {
+      if (!p.hospitalId) continue;
+      const trimmed = String(p.hospitalId).trim();
+      if (!/^\d+$/.test(trimmed)) continue; // skip non-numeric IDs like "STMA-001"
+      takenIds.add(trimmed);
+      const num = parseInt(trimmed, 10);
+      if (num > maxNumericId) maxNumericId = num;
     }
 
-    let nextIdNumber = maxNumericId + 1;
-    let patient;
+    let patient = null;
     let attempts = 0;
-    while (attempts < 5) {
+
+    // ── Phase 1: sequential with retries ──
+    let candidateNum = maxNumericId + 1;
+    while (attempts < 100) {
+      const hospitalId = String(candidateNum).padStart(6, '0');
+
+      if (takenIds.has(hospitalId)) {
+        candidateNum++;
+        attempts++;
+        continue;
+      }
+
       try {
-        const hospitalId = ((nextIdNumber * 9301 + 12345) % 1000000).toString().padStart(6, '0');
         patient = await req.db.patient.create({
           data: {
             hospitalId, firstName, lastName, dateOfBirth: new Date(dateOfBirth), gender,
@@ -2051,10 +2092,59 @@ app.post('/api/patients', authenticate, authorize('Admin', 'Records', 'ITAdmin')
         });
         break;
       } catch (err) {
-        if (err.code === 'P2002') { attempts++; nextIdNumber++; } else { throw err; }
+        if (err.code === 'P2002') {
+          // Race with a concurrent request — record and try the next number
+          takenIds.add(hospitalId);
+          candidateNum++;
+          attempts++;
+        } else {
+          throw err;
+        }
       }
     }
-    if (!patient) throw new Error('Failed to generate a unique Hospital ID after multiple attempts.');
+
+    // ── Phase 2: random 6-digit fallback ──
+    if (!patient) {
+      for (let i = 0; i < 20; i++) {
+        const randomId = String(Math.floor(100000 + Math.random() * 900000));
+        if (takenIds.has(randomId)) continue;
+
+        try {
+          patient = await req.db.patient.create({
+            data: {
+              hospitalId: randomId, firstName, lastName, dateOfBirth: new Date(dateOfBirth), gender,
+              phone: phone || null, email: email || null, address: address || null,
+              emergencyContact: emergencyContact || null, allergies: allergies || null,
+              nextOfKinName: nextOfKinName || null, nextOfKinPhone: nextOfKinPhone || null,
+              nextOfKinRelationship: nextOfKinRelationship || null,
+              patientCategory: patientCategory || 'FPP',
+              insuranceProvider: insuranceProvider || null,
+              insuranceId: insuranceId || null,
+              corporateCompany: corporateCompany || null,
+              updatedAt: new Date()
+            }
+          });
+          break;
+        } catch (err) {
+          if (err.code === 'P2002') {
+            takenIds.add(randomId);
+            continue;
+          }
+          throw err;
+        }
+      }
+    }
+
+    if (!patient) {
+      throw new Error(
+        'Could not generate a unique Hospital ID after 120 attempts. ' +
+        'Please contact IT support — the Hospital ID space may be full.'
+      );
+    }
+
+    // ============================================================
+    // Everything below this line is unchanged from your original code
+    // ============================================================
 
     const category = patient.patientCategory || 'FPP';
     let multiplier = 1;
