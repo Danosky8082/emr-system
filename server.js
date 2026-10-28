@@ -2092,16 +2092,18 @@ app.post('/api/patients', authenticate, authorize('Admin', 'Records', 'ITAdmin')
         });
         break;
       } catch (err) {
-        if (err.code === 'P2002') {
-          // Race with a concurrent request — record and try the next number
-          takenIds.add(hospitalId);
-          candidateNum++;
-          attempts++;
-        } else {
-          throw err;
-        }
-      }
-    }
+  if (err.code === 'P2002') {
+    // ⚠️ DIAGNOSTIC: log which field is actually colliding
+    console.warn(
+      `P2002 on attempt ${attempts + 1} | hospitalId=${hospitalId} | target=${JSON.stringify(err.meta?.target)} | email=${email || 'none'}`
+    );
+    takenIds.add(hospitalId);
+    candidateNum++;
+    attempts++;
+  } else {
+    throw err;
+  }
+}
 
     // ── Phase 2: random 6-digit fallback ──
     if (!patient) {
