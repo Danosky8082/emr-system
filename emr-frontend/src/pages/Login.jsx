@@ -12,6 +12,7 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [transitioning, setTransitioning] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const { login } = useAuth();
   const { setTenant } = useTenant();
@@ -97,102 +98,97 @@ await new Promise((resolve) => setTimeout(resolve, 900));
   };
 
     return (
-    <>
-      {/* ═══ DOOR-OPENING TRANSITION OVERLAY ═══ */}
-      {transitioning && (
-        <div className="door-transition">
-          <div className="door-left" />
-          <div className="door-right" />
+  <>
+    {/* ═══ DOOR-OPENING TRANSITION OVERLAY ═══ */}
+    {transitioning && (
+      <div className="door-transition">
+        <div className="door-left" />
+        <div className="door-right" />
+      </div>
+    )}
+
+    <div className={`login-screen ${transitioning ? 'is-transitioning' : ''}`}>
+      <div className="login-container">
+        {/* Header */}
+        <div className="login-header">
+          <img src="/logo.png" alt="NexGen EMR" />
+          <h1>NexGen EMR</h1>
+          <p>Medical Centre, Lagos</p>
+          <p className="subtitle">Electronic Medical Records</p>
         </div>
-      )}
 
-      <div className={`login-screen app-container ${transitioning ? 'is-transitioning' : ''}`}>
-        <div className="login-container">
-        <div className="login-header" style={{ textAlign: 'center' }}>
-  <img
-    src="/logo.png"
-    alt="NexGen EMR"
-    style={{
-      width: '88px',
-      height: '88px',
-      objectFit: 'contain',
-      marginBottom: '12px',
-      filter: 'drop-shadow(0 4px 12px rgba(0, 0, 0, 0.15))',
-    }}
-  />
-  <h1 style={{ marginBottom: '4px' }}>NexGen EMR</h1>
-  <p>Medical Centre, Lagos</p>
-  <p className="subtitle">Electronic Medical Records System</p>
-</div>
-
+        {/* Form */}
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label>Username or Email</label>
+            <label htmlFor="identifier">Username or Email</label>
             <input
-  type="text"
-  value={identifier}
-  onChange={(e) => setIdentifier(e.target.value)}
-  placeholder="Username, Employee ID, or Email"
+              id="identifier"
+              type="text"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+              placeholder="Enter your username or email"
               required
               autoComplete="username"
+              autoFocus
             />
-            <small style={{ color: '#9ca3af', display: 'block', marginTop: '4px', fontSize: '12px' }}>
-  You can log in with:
-  <br />
-  • Your <strong>username</strong> (e.g. caretech-admin)
-  <br />
-  • Your <strong>Employee ID</strong> (e.g. ADMIN001)
-  <br />
-  • Your <strong>email</strong> (e.g. admin@hospital.com)
-</small>
           </div>
 
           <div className="form-group">
-            <label>Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              autoComplete="current-password"
-            />
+            <label htmlFor="password">Password</label>
+            <div className="password-wrapper">
+              <input
+                id="password"
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter your password"
+                required
+                autoComplete="current-password"
+              />
+              <button
+                type="button"
+                className="password-toggle"
+                onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                tabIndex={-1}
+              >
+                {showPassword ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                    <line x1="1" y1="1" x2="23" y2="23" />
+                  </svg>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                )}
+              </button>
+            </div>
           </div>
 
-          <button type="submit" className="btn btn-primary" disabled={loading}>
-            {loading ? 'Authenticating...' : 'Secure Login'}
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={loading}
+          >
+            {loading ? 'Authenticating…' : 'Sign In'}
           </button>
         </form>
 
-        <p
-          style={{
-            textAlign: 'center',
-            marginTop: '16px',
-            fontSize: '13px',
-            color: '#6b7280',
-          }}
-        >
-          Prefer a hospital-specific login? Ask your admin for your hospital URL
-          (e.g. /h/your-hospital/login).
-        </p>
-
-        <p
-          style={{
-            textAlign: 'center',
-            marginTop: '20px',
-            fontSize: '12px',
-            color: '#9ca3af',
-          }}
-        >
-          Platform operator?{' '}
-          <Link to="/platform/login" style={{ color: '#dc2626' }}>
-            Sign in here
-          </Link>
-        </p>
-              </div>
+        {/* Footer */}
+        <div className="login-footer">
+          <p className="login-footer-help">
+            Having trouble? Contact your hospital administrator.
+          </p>
+          <p className="login-footer-platform">
+            Platform operator? <Link to="/platform/login">Sign in here</Link>
+          </p>
+        </div>
       </div>
-    </>
-  );
-};
+    </div>
+  </>
+    );
+  }; 
 
 export default Login;

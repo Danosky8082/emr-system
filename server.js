@@ -2092,47 +2092,49 @@ app.post('/api/patients', authenticate, authorize('Admin', 'Records', 'ITAdmin')
         });
         break;
       } catch (err) {
-  if (err.code === 'P2002') {
-    // ⚠️ DIAGNOSTIC: log which field is actually colliding
-    console.warn(
-      `P2002 on attempt ${attempts + 1} | hospitalId=${hospitalId} | target=${JSON.stringify(err.meta?.target)} | email=${email || 'none'}`
-    );
-    takenIds.add(hospitalId);
-    candidateNum++;
-    attempts++;
-  } else {
-    throw err;
-  }
-}
-
-    // ── Phase 2: random 6-digit fallback ──
-    if (!patient) {
-      for (let i = 0; i < 20; i++) {
-        const randomId = String(Math.floor(100000 + Math.random() * 900000));
-        if (takenIds.has(randomId)) continue;
-
-        try {
-          patient = await req.db.patient.create({
-            data: {
-              hospitalId: randomId, firstName, lastName, dateOfBirth: new Date(dateOfBirth), gender,
-              phone: phone || null, email: email || null, address: address || null,
-              emergencyContact: emergencyContact || null, allergies: allergies || null,
-              nextOfKinName: nextOfKinName || null, nextOfKinPhone: nextOfKinPhone || null,
-              nextOfKinRelationship: nextOfKinRelationship || null,
-              patientCategory: patientCategory || 'FPP',
-              insuranceProvider: insuranceProvider || null,
-              insuranceId: insuranceId || null,
-              corporateCompany: corporateCompany || null,
-              updatedAt: new Date()
-            }
-          });
-          break;
-        } catch (err) {
-          if (err.code === 'P2002') {
-            takenIds.add(randomId);
-            continue;
-          }
+        if (err.code === 'P2002') {
+          // ⚠️ DIAGNOSTIC: log which field is actually colliding
+          console.warn(
+            `P2002 on attempt ${attempts + 1} | hospitalId=${hospitalId} | target=${JSON.stringify(err.meta?.target)} | email=${email || 'none'}`
+          );
+          takenIds.add(hospitalId);
+          candidateNum++;
+          attempts++;
+        } else {
           throw err;
+        }
+      }
+      
+
+      // ── Phase 2: random 6-digit fallback ──
+      if (!patient) {
+        for (let i = 0; i < 20; i++) {
+          const randomId = String(Math.floor(100000 + Math.random() * 900000));
+          if (takenIds.has(randomId)) continue;
+
+          try {
+            patient = await req.db.patient.create({
+              data: {
+                hospitalId: randomId, firstName, lastName, dateOfBirth: new Date(dateOfBirth), gender,
+                phone: phone || null, email: email || null, address: address || null,
+                emergencyContact: emergencyContact || null, allergies: allergies || null,
+                nextOfKinName: nextOfKinName || null, nextOfKinPhone: nextOfKinPhone || null,
+                nextOfKinRelationship: nextOfKinRelationship || null,
+                patientCategory: patientCategory || 'FPP',
+                insuranceProvider: insuranceProvider || null,
+                insuranceId: insuranceId || null,
+                corporateCompany: corporateCompany || null,
+                updatedAt: new Date()
+              }
+            });
+            break;
+          } catch (err) {
+            if (err.code === 'P2002') {
+              takenIds.add(randomId);
+              continue;
+            }
+            throw err;
+          }
         }
       }
     }

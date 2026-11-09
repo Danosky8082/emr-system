@@ -98,44 +98,108 @@ const Patients = () => {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      setLoading(true);
-      let response;
-      
-      if (editingPatient) {
-        console.log('📤 Updating patient:', formData);
-        response = await api.put(`/patients/${editingPatient.id}`, 
-          formData);
-        toast.success('Patient updated successfully!');
+  e.preventDefault();
+  try {
+    setLoading(true);
+
+    if (editingPatient) {
+      // ── EDIT PATH (unchanged) ──
+      await api.put(`/patients/${editingPatient.id}`, formData);
+      toast.success('Patient updated successfully!');
+    } else {
+      // ── CREATE PATH ──
+      const createRes = await api.post('/patients', formData);
+      const newPatient = createRes.data;
+
+      console.log('📥 Patient created:', newPatient);
+
+      // 🔑 AUTO-ENABLE PORTAL if the checkbox was checked
+      if (formData.enablePortal) {
+        const pin = formData.portalPin?.trim() || String(Math.floor(1000 + Math.random() * 9000));
+
+        try {
+          const portalRes = await api.post('/patient/setup-portal', {
+            patientId: newPatient.id,
+            pinCode: pin,
+            forceChange: false,  // so they can log in immediately with the PIN shown
+          });
+
+          const pinForDisplay = portalRes.data._oneTimePin || pin;
+          const copied = await navigator.clipboard.writeText(pinForDisplay).then(
+            () => true,
+            () => false
+          );
+
+          // 🔊 Loud success alert (this is what was missing all along)
+          window.alert(
+            `✅ Patient Registered Successfully!\n\n` +
+            `Name: ${newPatient.firstName} ${newPatient.lastName}\n` +
+            `Hospital ID: ${newPatient.hospitalId}\n` +
+            `Phone: ${newPatient.phone || '—'}\n` +
+            `Email: ${newPatient.email || '—'}\n\n` +
+            `🔑 PORTAL PIN: ${pinForDisplay}${copied ? ' (copied to clipboard)' : ''}\n\n` +
+            `Patient can log in at /patient-login with:\n` +
+            `  Hospital ID: ${newPatient.hospitalId}\n` +
+            `  PIN: ${pinForDisplay}\n\n` +
+            `⚠️ Save this PIN now — it will NOT be shown again.`
+          );
+
+          toast.success(
+            `✅ ${newPatient.firstName} ${newPatient.lastName} registered (${newPatient.hospitalId})`,
+            { duration: 8000 }
+          );
+        } catch (portalErr) {
+          console.error('Portal setup failed:', portalErr);
+          window.alert(
+            `⚠️ Patient created (ID: ${newPatient.hospitalId}), but PORTAL SETUP FAILED.\n\n` +
+            `Error: ${portalErr.response?.data?.error || portalErr.message}\n\n` +
+            `You can enable the portal manually from the Patients list.`
+          );
+        }
       } else {
-        response = await api.post('/patients', 
-          formData);
-        toast.success('Patient registered successfully!');
+        window.alert(
+          `✅ Patient Registered Successfully!\n\n` +
+          `Name: ${newPatient.firstName} ${newPatient.lastName}\n` +
+          `Hospital ID: ${newPatient.hospitalId}\n` +
+          `Phone: ${newPatient.phone || '—'}\n\n` +
+          `Portal access was NOT enabled (checkbox unchecked).`
+        );
       }
-      
-      console.log('📥 Server response:', response.data);
-      
-      setShowModal(false);
-      setEditingPatient(null);
-      setFormData({ 
-        firstName: '', lastName: '', gender: 'Male', dateOfBirth: '', phone: '', email: '', address: '', 
-        emergencyContact: '', allergies: '', nextOfKinName: '', nextOfKinPhone: '', nextOfKinRelationship: '',
-        patientCategory: 'FPP',
-        insuranceProvider: '',
-        insuranceId: '',
-        retainerCompany: '',
-      });
-      
-      setRefreshKey(prev => prev + 1);
-      
-    } catch (error) { 
-      console.error('Submit error:', error);
-      toast.error(error.response?.data?.error || 'Operation failed'); 
-    } finally {
-      setLoading(false);
     }
-  };
+
+    // ── Reset form and close modal ──
+    setShowModal(false);
+    setEditingPatient(null);
+    setFormData({
+      firstName: '', lastName: '', gender: 'Male', dateOfBirth: '', phone: '', email: '', address: '',
+      emergencyContact: '', allergies: '', nextOfKinName: '', nextOfKinPhone: '', nextOfKinRelationship: '',
+      patientCategory: 'FPP',
+      insuranceProvider: '',
+      insuranceId: '',
+      retainerCompany: '',
+      enablePortal: true,
+      portalPin: '',
+    });
+
+    setRefreshKey(prev => prev + 1);
+  } catch (error) {
+    console.error('Submit error:', error);
+    const data = error.response?.data;
+
+    if (data?.code === 'DUPLICATE_FIELD') {
+      window.alert(
+        `⚠️ Duplicate Patient Detected\n\n` +
+        `A patient with this ${data.field || 'value'} already exists in this hospital.\n\n` +
+        `Search the Patient list before trying again.`
+      );
+      return;
+    }
+
+    toast.error(data?.error || 'Operation failed');
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleEdit = (patient) => {
     console.log('📝 Editing patient:', patient);
@@ -327,6 +391,8 @@ const Patients = () => {
                 insuranceProvider: '',
                 insuranceId: '',
                 retainerCompany: '',
+                enablePortal: true,
+                portalPin: '', 
               }); 
               setShowModal(true); 
             }}
