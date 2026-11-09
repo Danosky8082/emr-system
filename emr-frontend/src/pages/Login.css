@@ -1,308 +1,295 @@
 /* src/pages/Login.css */
 
 /* ── Container: dark, focused, centered ───────────────────── */
+/* The !important flags below override leftover .app-container rules
+   from index.css and Layout.css that target the same class name. */
+
 .login-screen {
-  width: 100vw;
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: radial-gradient(ellipse at top, #1a2b4a 0%, #0a1628 60%, #050b14 100%);
-  position: relative;
-  overflow: hidden;
-  padding: 24px;
+    position: fixed !important;
+    /* take over the whole viewport */
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    min-height: 100vh !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    /* ← center, not flex-start */
+    padding: 24px !important;
+    margin: 0 !important;
+    background: radial-gradient(ellipse at top, #1a2b4a 0%, #0a1628 60%, #050b14 100%) !important;
+    overflow: hidden !important;
+    z-index: 10 !important;
 }
 
-/* Subtle animated gradient mesh in the background */
+/* Kill any ::before overlay inherited from .app-container */
 .login-screen::before {
-  content: '';
-  position: absolute;
-  top: -20%;
-  left: -20%;
-  right: -20%;
-  bottom: -20%;
-  background:
-    radial-gradient(circle at 20% 30%, rgba(0, 212, 255, 0.15), transparent 40%),
-    radial-gradient(circle at 80% 70%, rgba(15, 52, 96, 0.3), transparent 40%);
-  animation: meshDrift 20s ease-in-out infinite alternate;
-  pointer-events: none;
+    content: none !important;
+    display: none !important;
+}
+
+/* Subtle animated gradient mesh */
+.login-screen::after {
+    content: '';
+    position: absolute;
+    top: -20%;
+    left: -20%;
+    right: -20%;
+    bottom: -20%;
+    background:
+        radial-gradient(circle at 20% 30%, rgba(0, 212, 255, 0.12), transparent 40%),
+        radial-gradient(circle at 80% 70%, rgba(15, 52, 96, 0.25), transparent 40%);
+    animation: meshDrift 20s ease-in-out infinite alternate;
+    pointer-events: none;
+    z-index: 0;
 }
 
 @keyframes meshDrift {
-  0%   { transform: translate(0, 0); }
-  100% { transform: translate(-5%, 5%); }
+    0% {
+        transform: translate(0, 0);
+    }
+
+    100% {
+        transform: translate(-5%, 5%);
+    }
 }
 
 /* ── The Card ─────────────────────────────────────────────── */
 .login-container {
-  position: relative;
-  z-index: 1;
-  background: white;
-  border-radius: 20px;
-  padding: 48px 44px 40px;
-  width: 100%;
-  max-width: 420px;
-  box-shadow:
-    0 20px 60px rgba(0, 0, 0, 0.5),
-    0 4px 12px rgba(0, 0, 0, 0.3);
-  animation: cardFloatIn 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+    position: relative !important;
+    z-index: 2 !important;
+    background: #ffffff !important;
+    border-radius: 20px !important;
+    padding: 48px 44px 40px !important;
+    width: 100% !important;
+    max-width: 420px !important;
+    margin: 0 !important;
+    box-shadow:
+        0 20px 60px rgba(0, 0, 0, 0.5),
+        0 4px 12px rgba(0, 0, 0, 0.3) !important;
+    animation: cardFloatIn 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Explicitly kill any inherited overlay on the card */
+.login-container::before {
+    content: none !important;
+    display: none !important;
 }
 
 @keyframes cardFloatIn {
-  from {
-    opacity: 0;
-    transform: translateY(24px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+    from {
+        opacity: 0;
+        transform: translateY(24px) scale(0.98);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
 }
 
 /* ── Header: Logo + Title ─────────────────────────────────── */
 .login-header {
-  text-align: center;
-  margin-bottom: 36px;
+    text-align: center !important;
+    margin-bottom: 36px !important;
 }
 
 .login-header img {
-  display: block;
-  margin: 0 auto 16px;
-  width: 76px;
-  height: 76px;
-  object-fit: contain;
-  filter: drop-shadow(0 6px 16px rgba(0, 100, 150, 0.25));
+    display: block !important;
+    margin: 0 auto 16px !important;
+    width: 76px !important;
+    height: 76px !important;
+    object-fit: contain !important;
+    filter: drop-shadow(0 6px 16px rgba(0, 100, 150, 0.25)) !important;
 }
 
 .login-header h1 {
-  font-size: 26px;
-  font-weight: 800;
-  color: #0a1628;
-  margin: 0 0 6px;
-  letter-spacing: -0.5px;
+    font-size: 26px !important;
+    font-weight: 800 !important;
+    color: #0a1628 !important;
+    margin: 0 0 6px !important;
+    letter-spacing: -0.5px !important;
 }
 
 .login-header p {
-  color: #6b7280;
-  font-size: 14px;
-  margin: 0;
-  font-weight: 500;
+    color: #6b7280 !important;
+    font-size: 14px !important;
+    margin: 0 !important;
+    font-weight: 500 !important;
 }
 
 .login-header .subtitle {
-  font-size: 12px;
-  color: #9ca3af;
-  margin-top: 6px;
-  letter-spacing: 0.3px;
-  text-transform: uppercase;
-  font-weight: 600;
+    font-size: 12px !important;
+    color: #9ca3af !important;
+    margin-top: 6px !important;
+    letter-spacing: 0.3px !important;
+    text-transform: uppercase !important;
+    font-weight: 600 !important;
 }
 
 /* ── Form Fields ──────────────────────────────────────────── */
 .login-container .form-group {
-  margin-bottom: 18px;
+    margin-bottom: 18px !important;
 }
 
 .login-container .form-group label {
-  display: block;
-  font-weight: 600;
-  font-size: 13px;
-  color: #374151;
-  margin-bottom: 8px;
-  letter-spacing: 0.2px;
+    display: block !important;
+    font-weight: 600 !important;
+    font-size: 13px !important;
+    color: #374151 !important;
+    margin-bottom: 8px !important;
+    letter-spacing: 0.2px !important;
 }
 
 .login-container .form-group input {
-  width: 100%;
-  padding: 13px 16px;
-  border: 1.5px solid #e5e7eb;
-  border-radius: 10px;
-  font-size: 15px;
-  font-family: inherit;
-  color: #0a1628;
-  background: #f9fafb;
-  transition: all 0.2s ease;
-  box-sizing: border-box;
+    width: 100% !important;
+    padding: 13px 16px !important;
+    border: 1.5px solid #e5e7eb !important;
+    border-radius: 10px !important;
+    font-size: 15px !important;
+    font-family: inherit !important;
+    color: #0a1628 !important;
+    background: #f9fafb !important;
+    transition: all 0.2s ease;
+    box-sizing: border-box !important;
 }
 
 .login-container .form-group input::placeholder {
-  color: #9ca3af;
+    color: #9ca3af !important;
 }
 
 .login-container .form-group input:focus {
-  outline: none;
-  border-color: #0f3460;
-  background: white;
-  box-shadow: 0 0 0 4px rgba(15, 52, 96, 0.1);
+    outline: none !important;
+    border-color: #0f3460 !important;
+    background: #ffffff !important;
+    box-shadow: 0 0 0 4px rgba(15, 52, 96, 0.1) !important;
 }
 
 /* Password wrapper with toggle */
 .password-wrapper {
-  position: relative;
+    position: relative !important;
 }
 
 .password-wrapper input {
-  padding-right: 48px !important;
+    padding-right: 48px !important;
 }
 
 .password-toggle {
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  background: none;
-  border: none;
-  color: #9ca3af;
-  cursor: pointer;
-  padding: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  transition: color 0.2s, background 0.2s;
+    position: absolute !important;
+    right: 8px !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    background: none !important;
+    border: none !important;
+    color: #9ca3af !important;
+    cursor: pointer !important;
+    padding: 8px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 6px !important;
+    transition: color 0.2s, background 0.2s !important;
 }
 
 .password-toggle:hover {
-  color: #0f3460;
-  background: #f3f4f6;
+    color: #0f3460 !important;
+    background: #f3f4f6 !important;
 }
 
 /* ── Submit Button ────────────────────────────────────────── */
-.login-container .btn-primary,
 .login-container button[type="submit"] {
-  width: 100%;
-  padding: 14px;
-  margin-top: 8px;
-  border: none;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #0f3460, #1a4a7a);
-  color: white;
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.3px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  font-family: inherit;
+    width: 100% !important;
+    padding: 14px !important;
+    margin-top: 8px !important;
+    border: none !important;
+    border-radius: 10px !important;
+    background: linear-gradient(135deg, #0f3460, #1a4a7a) !important;
+    color: #ffffff !important;
+    font-size: 15px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.3px !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    font-family: inherit !important;
 }
 
-.login-container .btn-primary:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 8px 20px rgba(15, 52, 96, 0.3);
+.login-container button[type="submit"]:hover:not(:disabled) {
+    transform: translateY(-1px) !important;
+    box-shadow: 0 8px 20px rgba(15, 52, 96, 0.3) !important;
 }
 
-.login-container .btn-primary:active:not(:disabled) {
-  transform: translateY(0);
+.login-container button[type="submit"]:active:not(:disabled) {
+    transform: translateY(0) !important;
 }
 
-.login-container .btn-primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+.login-container button[type="submit"]:disabled {
+    opacity: 0.6 !important;
+    cursor: not-allowed !important;
 }
 
 /* ── Footer ───────────────────────────────────────────────── */
 .login-footer {
-  margin-top: 28px;
-  padding-top: 24px;
-  border-top: 1px solid #f3f4f6;
-  text-align: center;
+    margin-top: 28px !important;
+    padding-top: 24px !important;
+    border-top: 1px solid #f3f4f6 !important;
+    text-align: center !important;
 }
 
 .login-footer-help {
-  font-size: 13px;
-  color: #9ca3af;
-  margin: 0 0 16px;
-  line-height: 1.5;
+    font-size: 13px !important;
+    color: #6b7280 !important;
+    /* darker than before */
+    margin: 0 0 16px !important;
+    line-height: 1.5 !important;
 }
 
 .login-footer-help a {
-  color: #0f3460;
-  text-decoration: none;
-  font-weight: 600;
+    color: #0f3460 !important;
+    text-decoration: none !important;
+    font-weight: 600 !important;
 }
 
 .login-footer-help a:hover {
-  text-decoration: underline;
+    text-decoration: underline !important;
 }
 
 .login-footer-platform {
-  font-size: 12px;
-  color: #d1d5db;
-  margin: 0;
+    font-size: 12px !important;
+    color: #9ca3af !important;
+    /* readable gray, not invisible */
+    margin: 0 !important;
 }
 
 .login-footer-platform a {
-  color: #dc2626;
-  text-decoration: none;
-  font-weight: 600;
+    color: #dc2626 !important;
+    text-decoration: none !important;
+    font-weight: 600 !important;
 }
 
 .login-footer-platform a:hover {
-  text-decoration: underline;
+    text-decoration: underline !important;
 }
 
 /* ── Responsive ───────────────────────────────────────────── */
 @media (max-width: 480px) {
-  .login-screen {
-    padding: 16px;
-  }
-
-  .login-container {
-    padding: 36px 24px 32px;
-    border-radius: 16px;
-  }
-
-  .login-header img {
-    width: 64px;
-    height: 64px;
-  }
-
-  .login-header h1 {
-    font-size: 22px;
-  }
-}
-
-/* ── Dark mode friendly (optional) ───────────────────────── */
-@media (prefers-color-scheme: dark) {
-  .login-container {
-    background: #111827;
-  }
-  .login-header h1 { color: #f9fafb; }
-  .login-header p { color: #9ca3af; }
-  .login-container .form-group label { color: #d1d5db; }
-  .login-container .form-group input {
-    background: #1f2937;
-    border-color: #374151;
-    color: #f9fafb;
-  }
-  .login-container .form-group input:focus {
-    background: #111827;
-    border-color: #60a5fa;
-  }
-  .login-footer { border-top-color: #1f2937; }
-  .login-footer-platform { color: #4b5563; }
-}
-
-
-.login-container::before {
-    content: '';
-    position: absolute;
-    inset: -2px;
-    border-radius: 22px;
-    background: linear-gradient(135deg, #00d4ff, #0f3460, #00d4ff);
-    background-size: 200% 200%;
-    animation: borderGlow 8s ease infinite;
-    z-index: -1;
-    opacity: 0.6;
-}
-
-@keyframes borderGlow {
-
-    0%,
-    100% {
-        background-position: 0% 50%;
+    .login-screen {
+        padding: 16px !important;
     }
 
-    50% {
-        background-position: 100% 50%;
+    .login-container {
+        padding: 36px 24px 32px !important;
+        border-radius: 16px !important;
+    }
+
+    .login-header img {
+        width: 64px !important;
+        height: 64px !important;
+    }
+
+    .login-header h1 {
+        font-size: 22px !important;
     }
 }
