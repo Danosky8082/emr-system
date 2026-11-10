@@ -42,6 +42,10 @@ const SuperAdminDashboard = () => {
     address: '', city: '', state: '', plan: 'trial',
   });
 
+  // Tracks which hospital's resend button is currently in-flight
+  // (so we can disable it + show a spinner without freezing the whole table)
+  const [resendingEmailFor, setResendingEmailFor] = useState(null);
+
   // ============================================================
   // PLATFORM USERS STATE
   // ============================================================
@@ -161,6 +165,22 @@ const SuperAdminDashboard = () => {
       fetchData();
     } catch (error) {
       toast.error('Failed to reactivate');
+    }
+  };
+
+  // ✅ Resend the welcome/onboarding email to the hospital's Admin user
+  const handleResendWelcomeEmail = async (hospital) => {
+    const targetEmail = hospital.email || 'the Admin';
+    if (!window.confirm(`Resend welcome email to the Admin of ${hospital.name}?`)) return;
+
+    setResendingEmailFor(hospital.id);
+    try {
+      await apiClient.post(`/platform/hospitals/${hospital.id}/resend-welcome-email`);
+      toast.success(`Welcome email resent${hospital.email ? ` to ${targetEmail}` : ''}!`);
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to resend email');
+    } finally {
+      setResendingEmailFor(null);
     }
   };
 
@@ -603,6 +623,7 @@ const SuperAdminDashboard = () => {
                 {hospitals.map((h) => {
                   const trial = getTrialStatus(h);
                   const autoAdvanceValue = h.Settings?.autoAdvanceBillingAfterMinutes ?? '';
+                  const isResending = resendingEmailFor === h.id;
                   return (
                     <tr key={h.id}>
                       <td>
@@ -699,6 +720,39 @@ const SuperAdminDashboard = () => {
                           >
                             🔗 Login
                           </a>
+
+                          {/* ✉️ Resend welcome email — always visible (active OR suspended).
+                              Shows a spinner + disables while in flight so it can't be double-clicked. */}
+                          <button
+                            onClick={() => handleResendWelcomeEmail(h)}
+                            disabled={isResending}
+                            title={`Resend welcome email to the Admin of ${h.name}${h.email ? ` (${h.email})` : ''}`}
+                            style={{
+                              background: isResending ? '#e5e7eb' : '#f3f4f6',
+                              color: '#1f2937',
+                              border: '1px solid #d1d5db',
+                              padding: '4px 10px',
+                              borderRadius: '6px',
+                              textDecoration: 'none',
+                              fontSize: '12px',
+                              fontWeight: 600,
+                              cursor: isResending ? 'wait' : 'pointer',
+                              opacity: isResending ? 0.6 : 1,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                          >
+                            {isResending ? (
+                              <>
+                                <span className="spinner-small" />
+                                Sending…
+                              </>
+                            ) : (
+                              <>✉️ Resend Link</>
+                            )}
+                          </button>
+
                           {h.isActive ? (
                             <button
                               className="btn btn-sm btn-danger"

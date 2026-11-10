@@ -132,17 +132,14 @@ const Patients = () => {
 
           // 🔊 Loud success alert (this is what was missing all along)
           window.alert(
-            `✅ Patient Registered Successfully!\n\n` +
-            `Name: ${newPatient.firstName} ${newPatient.lastName}\n` +
-            `Hospital ID: ${newPatient.hospitalId}\n` +
-            `Phone: ${newPatient.phone || '—'}\n` +
-            `Email: ${newPatient.email || '—'}\n\n` +
-            `🔑 PORTAL PIN: ${pinForDisplay}${copied ? ' (copied to clipboard)' : ''}\n\n` +
-            `Patient can log in at /patient-login with:\n` +
-            `  Hospital ID: ${newPatient.hospitalId}\n` +
-            `  PIN: ${pinForDisplay}\n\n` +
-            `⚠️ Save this PIN now — it will NOT be shown again.`
-          );
+  `✅ Patient Registered Successfully!\n\n` +
+  `Name: ${newPatient.firstName} ${newPatient.lastName}\n` +
+  `Patient ID: ${newPatient.hospitalId}\n\n` +
+  `🔑 PORTAL PIN: ${pinForDisplay}\n\n` +
+  `Patient can log in at:\n` +
+  `https://emr-system-liart.vercel.app/patient-login?h=${hospitalSlug}\n\n` +
+  `They will use their Patient ID and PIN to log in.`
+);
 
           toast.success(
             `✅ ${newPatient.firstName} ${newPatient.lastName} registered (${newPatient.hospitalId})`,

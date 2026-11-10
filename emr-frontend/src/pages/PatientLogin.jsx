@@ -1,7 +1,8 @@
 // src/pages/PatientLogin.jsx - COMPLETE WORKING VERSION
+// Updated with hospital slug support via URL parameter (?h=slug)
 
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import './PatientLogin.css';
@@ -9,20 +10,52 @@ import api from '../api/client';
 
 const PatientLogin = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const urlHospitalSlug = searchParams.get('h');
+
   const [hospitalId, setHospitalId] = useState('');
   const [pinCode, setPinCode] = useState('');
   const [password, setPassword] = useState('');
   const [loginMethod, setLoginMethod] = useState('pin');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [hospitalInfo, setHospitalInfo] = useState(null);
+  const [hospitalLookupLoading, setHospitalLookupLoading] = useState(false);
+
+  // Fetch hospital info when slug is present in URL
+  useEffect(() => {
+    if (urlHospitalSlug) {
+      setHospitalLookupLoading(true);
+      api.get(`/hospitals/slug/${urlHospitalSlug}`)
+        .then(res => {
+          setHospitalInfo(res.data);
+          // Optionally pre-fill hospital ID if backend returns it
+          if (res.data?.hospitalId) {
+            setHospitalId(res.data.hospitalId);
+          }
+        })
+        .catch(() => {
+          toast.error('Invalid hospital link.');
+          setHospitalInfo(null);
+        })
+        .finally(() => {
+          setHospitalLookupLoading(false);
+        });
+    }
+  }, [urlHospitalSlug]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      const payload = { hospitalId: hospitalId.trim() };
+      const identifier = hospitalId.trim();
       
+      const payload = {
+        hospitalId: identifier,
+        hospitalSlug: urlHospitalSlug || undefined, // Send the slug so backend locks the search to this hospital
+      };
+
       if (loginMethod === 'pin') {
         payload.pinCode = pinCode.trim();
       } else {
@@ -109,19 +142,19 @@ const PatientLogin = () => {
         {/* Left Side - Branding */}
         <div className="patient-login-left">
           <div className="brand-content">
-  <img
-    src="/logo.png"
-    alt="NexGen EMR"
-    style={{
-      width: '120px',
-      height: '120px',
-      objectFit: 'contain',
-      marginBottom: '16px',
-      filter: 'drop-shadow(0 8px 24px rgba(0, 0, 0, 0.35))',
-    }}
-  />
-  <h1>NexGen EMR</h1>
-  <p className="brand-tagline">Patient Portal</p>
+            <img
+              src="/logo.png"
+              alt="NexGen EMR"
+              style={{
+                width: '120px',
+                height: '120px',
+                objectFit: 'contain',
+                marginBottom: '16px',
+                filter: 'drop-shadow(0 8px 24px rgba(0, 0, 0, 0.35))',
+              }}
+            />
+            <h1>NexGen EMR</h1>
+            <p className="brand-tagline">Patient Portal</p>
             <div className="brand-features">
               <div className="feature-item">
                 <span className="feature-icon">🔒</span>
@@ -146,6 +179,29 @@ const PatientLogin = () => {
         {/* Right Side - Login Form */}
         <div className="patient-login-right">
           <div className="login-form-wrapper">
+            {/* Hospital Context Banner (when slug is present) */}
+            {urlHospitalSlug && (
+              <div className="hospital-context-banner">
+                {hospitalLookupLoading ? (
+                  <span className="hospital-context-loading">
+                    <span className="spinner-small"></span>
+                    Loading hospital info...
+                  </span>
+                ) : hospitalInfo ? (
+                  <span className="hospital-context-info">
+                    <span className="hospital-context-icon">🏥</span>
+                    <span>
+                      Logging in to <strong>{hospitalInfo.name || hospitalInfo.hospitalName || 'Hospital'}</strong>
+                    </span>
+                  </span>
+                ) : (
+                  <span className="hospital-context-error">
+                    ⚠️ Invalid hospital link
+                  </span>
+                )}
+              </div>
+            )}
+
             <div className="login-header">
               <h2>Welcome Back</h2>
               <p>Access your health records securely</p>
@@ -178,11 +234,17 @@ const PatientLogin = () => {
                     type="text"
                     value={hospitalId}
                     onChange={(e) => setHospitalId(e.target.value)}
-                    placeholder="Enter your Hospital ID"
+                    placeholder={urlHospitalSlug ? 'Enter your Hospital ID' : 'Enter your Hospital ID'}
                     required
                     className="form-input"
+                    disabled={!!urlHospitalSlug && !!hospitalInfo?.hospitalId}
                   />
                 </div>
+                {urlHospitalSlug && (
+                  <span className="helper-text">
+                    🏥 Hospital locked by link — you can still enter your ID if needed
+                  </span>
+                )}
               </div>
 
               {loginMethod === 'pin' ? (

@@ -2,7 +2,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { useTenant } from '../context/TenantContext';
 import './Login.css';
@@ -25,8 +24,7 @@ const HospitalLogin = () => {
   useEffect(() => {
     const fetchHospital = async () => {
       try {
-        const res = await api.get(`/hospitals/slug/${hospitalSlug}`
-        );
+        const res = await api.get(`/hospitals/slug/${hospitalSlug}`);
         setHospital(res.data);
       } catch (error) {
         console.error('Hospital fetch failed:', error);
@@ -43,21 +41,23 @@ const HospitalLogin = () => {
     setLoading(true);
 
     const trimmedIdentifier = identifier.trim();
-    const isEmail = trimmedIdentifier.includes('@');
+    const trimmedPassword = password.trim();
 
     try {
-      const payload = isEmail
-        ? { email: trimmedIdentifier, password, hospitalSlug }
-        : { username: trimmedIdentifier.toLowerCase(), password, hospitalSlug };
+      // ⚡ UPDATED: Unified payload using 'identifier' and forcing the 'hospitalSlug'
+      const payload = {
+        identifier: trimmedIdentifier,
+        password: trimmedPassword,
+        hospitalSlug: hospitalSlug, // Force the backend to check this specific hospital
+      };
 
-      const response = await api.post('/auth/login',
-        payload,
-        { headers: { 'Content-Type': 'application/json' } }
-      );
+      const response = await api.post('/auth/login', payload, {
+        headers: { 'Content-Type': 'application/json' },
+      });
 
       const { token, staff } = response.data;
 
-      // ✅ Set tenant context (handles both lowercase `settings` and capital `Settings`)
+      // ✅ Set tenant context
       if (staff.tenantId) {
         setTenant(
           staff.tenantId,
@@ -70,7 +70,16 @@ const HospitalLogin = () => {
       navigate('/');
       toast.success(`Welcome to ${hospital?.name || 'the hospital'}!`);
     } catch (error) {
-      toast.error(error.response?.data?.error || 'Login failed');
+      const status = error.response?.status;
+      const data = error.response?.data;
+
+      if (status === 409 && data?.code === 'AMBIGUOUS_USERNAME') {
+        toast.error(
+          data.error || 'This username exists in multiple hospitals. Please include your hospital prefix.'
+        );
+      } else {
+        toast.error(data?.error || 'Login failed. Please check your credentials.');
+      }
     } finally {
       setLoading(false);
     }
@@ -132,13 +141,13 @@ const HospitalLogin = () => {
       >
         <div className="login-header">
           <img
-  src={hospital.logoUrl || '/logo.png'}
-  alt={hospital.name}
-  style={{ maxWidth: '96px', height: '96px', objectFit: 'contain', marginBottom: '12px' }}
-/>
-<h1 style={{ color: hospital.primaryColor || '#0f3460', marginTop: 0 }}>
-  {hospital.name}
-</h1>
+            src={hospital.logoUrl || '/logo.png'}
+            alt={hospital.name}
+            style={{ maxWidth: '96px', height: '96px', objectFit: 'contain', marginBottom: '12px' }}
+          />
+          <h1 style={{ color: hospital.primaryColor || '#0f3460', marginTop: 0 }}>
+            {hospital.name}
+          </h1>
           <p>
             {hospital.city && hospital.state
               ? `${hospital.city}, ${hospital.state}`
@@ -154,8 +163,9 @@ const HospitalLogin = () => {
               type="text"
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
-              placeholder="samuel-chris or email@domain.com"
+              placeholder="e.g. caretech-admin or email@domain.com"
               required
+              autoFocus
             />
           </div>
           <div className="form-group">

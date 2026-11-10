@@ -26,6 +26,7 @@ const { backupDatabase } = require('./scripts/backup-db');
 const { createDefaultHospitalData } = require('./src/hospital-templates');
 const { createDefaultRoleCapabilities } = require('./src/capability-templates');
 const { createDefaultRolePermissions } = require('./src/permission-templates');
+const { sendWelcomeEmail } = require('./src/services/mailer');
 
 // ============================================================
 // JWT SECRET — hard-fail in production if missing
@@ -968,6 +969,16 @@ app.post('/api/super-admin/hospitals', authenticate, requireSuperAdmin, async (r
       return { hospital, rolesCreated, capsCreated, starterData };
     }, { timeout: 120000 });
 
+    // Send welcome email in the background
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    sendWelcomeEmail({
+      to: result.admin.email,
+      adminName: result.admin.firstName,
+      hospitalName: result.hospital.name,
+      hospitalSlug: result.hospital.slug,
+      adminUsername: result.admin.username,
+    }).catch(err => console.error('Failed to send welcome email:', err));
+
     res.status(201).json({
       ...result.hospital,
       _meta: {
@@ -1121,6 +1132,17 @@ app.post('/api/public/register-hospital', async (req, res) => {
 
       return { hospital, admin, rolesCreated, starterData };
     });
+
+    // Send welcome email in the background
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    sendWelcomeEmail({
+      to: result.admin.email,
+      adminName: result.admin.firstName,
+      hospitalName: result.hospital.name,
+      hospitalSlug: result.hospital.slug,
+      adminUsername: result.admin.username,
+    }).catch(err => console.error('Failed to send welcome email:', err));
+
 
     res.status(201).json({
       success: true,
@@ -13263,6 +13285,35 @@ cron.schedule('* * * * *', async () => {
 }, { timezone: 'Africa/Lagos' });
 
 console.log('✅ Auto-advance billing cron scheduled: every minute (Africa/Lagos)');
+
+
+app.post('/api/super-admin/hospitals/:id/resend-welcome-email', authenticate, requireSuperAdmin, async (req, res) => {
+  try {
+    const hospital = await prisma.hospital.findUnique({
+      where: { id: req.params.id },
+      include: {
+        Staff: { where: { role: { in: ['Admin', 'ITAdmin'] } }, take: 1 }
+      }
+    });
+
+    if (!hospital || !hospital.Staff[0]) {
+      return res.status(404).json({ error: 'Hospital or Admin not found' });
+    }
+
+    const admin = hospital.Staff[0];
+    await sendWelcomeEmail({
+      to: admin.email,
+      adminName: admin.firstName,
+      hospitalName: hospital.name,
+      hospitalSlug: hospital.slug,
+      adminUsername: admin.username,
+    });
+
+    res.json({ message: 'Welcome email resent successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 
 
