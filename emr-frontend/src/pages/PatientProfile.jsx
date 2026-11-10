@@ -194,6 +194,11 @@ const PatientProfile = () => {
     file: false,
   });
 
+    // ✅ NEW: State to collapse the top patient info on mobile
+  const [showHeaderInfo, setShowHeaderInfo] = useState(
+    typeof window !== 'undefined' ? window.innerWidth > 768 : true
+  );
+
   const toggleGroup = (key) => {
     setExpandedGroups((prev) => ({ ...prev, [key]: !prev[key] }));
   };
@@ -1450,32 +1455,53 @@ const handleClosePrescriptionModal = () => {
         </div>
 
         {/* PATIENT INFO GRID */}
-        <div className="profile-grid" style={{ marginBottom: '20px' }}>
-          <div className="profile-grid-item"><span className="label">Hospital ID</span><span className="value">{patient.hospitalId}</span></div>
-          <div className="profile-grid-item"><span className="label">Age</span><span className="value">{calculateAge(patient.dateOfBirth)} years</span></div>
-          <div className="profile-grid-item"><span className="label">Gender</span><span className="value">{patient.gender}</span></div>
-          <div className="profile-grid-item"><span className="label">Date of Birth</span><span className="value">{new Date(patient.dateOfBirth).toLocaleDateString()}</span></div>
-          <div className="profile-grid-item"><span className="label">Phone</span><span className="value">{patient.phone || '-'}</span></div>
-          <div className="profile-grid-item"><span className="label">Email</span><span className="value">{patient.email || '-'}</span></div>
-          <div className="profile-grid-item"><span className="label">Address</span><span className="value">{patient.address || '-'}</span></div>
-          <div className="profile-grid-item"><span className="label">Emergency Contact</span><span className="value">{patient.emergencyContact || '-'}</span></div>
-          <div className="profile-grid-item"><span className="label">Allergies</span><span className="value" style={{ color: patient.allergies ? '#ef4444' : 'inherit' }}>{patient.allergies || 'None'}</span></div>
-          {/* ✅ WALLET BALANCE IN GRID */}
-          {canViewWallet && wallet && (
-            <div className="profile-grid-item">
-              <span className="label">💳 Wallet Balance</span>
-              <span className="value" style={{ color: wallet.balance > 0 ? '#10b981' : '#6b7280', fontWeight: '700' }}>
-                {formatCurrency(wallet.balance)}
-              </span>
+                {/* PATIENT INFO GRID — Collapsible on Mobile */}
+        <div className={`profile-info-group ${showHeaderInfo ? 'open' : ''}`} style={{ marginBottom: '20px', border: 'none', background: 'transparent' }}>
+          
+          <button
+            type="button"
+            className="profile-info-group-title"
+            onClick={() => setShowHeaderInfo(!showHeaderInfo)}
+            style={{ 
+              background: 'white', 
+              borderRadius: '12px', 
+              padding: '12px 16px',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
+            }}
+          >
+            <span className="group-icon">🪪</span>
+            <span className="group-label">Patient Details</span>
+            <span className="group-chevron">▾</span>
+          </button>
+
+          <div className="profile-info-group-body" style={{ padding: 0, background: 'transparent' }}>
+            <div className="profile-grid" style={{ marginTop: '12px' }}>
+              <div className="profile-grid-item"><span className="label">Hospital ID</span><span className="value">{patient.hospitalId}</span></div>
+              <div className="profile-grid-item"><span className="label">Age</span><span className="value">{calculateAge(patient.dateOfBirth)} years</span></div>
+              <div className="profile-grid-item"><span className="label">Gender</span><span className="value">{patient.gender}</span></div>
+              <div className="profile-grid-item"><span className="label">Date of Birth</span><span className="value">{new Date(patient.dateOfBirth).toLocaleDateString()}</span></div>
+              <div className="profile-grid-item"><span className="label">Phone</span><span className="value">{patient.phone || '-'}</span></div>
+              <div className="profile-grid-item"><span className="label">Email</span><span className="value">{patient.email || '-'}</span></div>
+              <div className="profile-grid-item"><span className="label">Address</span><span className="value">{patient.address || '-'}</span></div>
+              <div className="profile-grid-item"><span className="label">Emergency Contact</span><span className="value">{patient.emergencyContact || '-'}</span></div>
+              <div className="profile-grid-item"><span className="label">Allergies</span><span className="value" style={{ color: patient.allergies ? '#ef4444' : 'inherit' }}>{patient.allergies || 'None'}</span></div>
+              {canViewWallet && wallet && (
+                <div className="profile-grid-item">
+                  <span className="label">💳 Wallet Balance</span>
+                  <span className="value" style={{ color: wallet.balance > 0 ? '#10b981' : '#6b7280', fontWeight: '700' }}>
+                    {formatCurrency(wallet.balance)}
+                  </span>
+                </div>
+              )}
+              <div className="profile-grid-item" style={{ gridColumn: '1 / -1' }}>
+                <span className="label">Next of Kin</span>
+                <span className="value">
+                  {patient.nextOfKinName || '-'}
+                  {patient.nextOfKinPhone ? ` (${patient.nextOfKinPhone})` : ''}
+                  {patient.nextOfKinRelationship ? ` - ${patient.nextOfKinRelationship}` : ''}
+                </span>
+              </div>
             </div>
-          )}
-          <div className="profile-grid-item" style={{ gridColumn: '1 / -1' }}>
-            <span className="label">Next of Kin</span>
-            <span className="value">
-              {patient.nextOfKinName || '-'}
-              {patient.nextOfKinPhone ? ` (${patient.nextOfKinPhone})` : ''}
-              {patient.nextOfKinRelationship ? ` - ${patient.nextOfKinRelationship}` : ''}
-            </span>
           </div>
         </div>
 

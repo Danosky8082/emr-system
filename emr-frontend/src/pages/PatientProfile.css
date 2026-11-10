@@ -429,3 +429,18 @@
 .profile-content {
     scroll-margin-top: 90px;
 }
+
+@media (max-width: 768px) {
+    .profile-content {
+        padding: 16px !important;
+        /* Reduces outer padding on mobile */
+    }
+
+    /* Make the dropdown button span edge-to-edge inside the content area */
+    .profile-info-group-title {
+        width: 100% !important;
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+        box-sizing: border-box;
+    }
+}
