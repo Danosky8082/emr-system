@@ -113,7 +113,7 @@ await new Promise((resolve) => setTimeout(resolve, 900));
         <div className="login-header">
           <img src="/logo.png" alt="NexGen EMR" />
           <h1>NexGen EMR</h1>
-          <p>Medical Centre, Lagos</p>
+          
           <p className="subtitle">Electronic Medical Records</p>
         </div>
 
