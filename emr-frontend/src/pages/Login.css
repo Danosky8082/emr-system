@@ -6,7 +6,6 @@
 
 .login-screen {
     position: fixed !important;
-    /* take over the whole viewport */
     top: 0 !important;
     left: 0 !important;
     right: 0 !important;
@@ -17,12 +16,24 @@
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-    /* ← center, not flex-start */
     padding: 24px !important;
     margin: 0 !important;
-    background: radial-gradient(ellipse at top, #1a2b4a 0%, #0a1628 60%, #050b14 100%) !important;
     overflow: hidden !important;
     z-index: 10 !important;
+
+    /* 1. Keep your base dark gradient */
+    background: radial-gradient(ellipse at top, #1a2b4a 0%, #0a1628 60%, #050b14 100%) !important;
+
+    /* 2. Add the giant faded logo */
+    background-image:
+        radial-gradient(ellipse at top, rgba(26, 43, 74, 0.4) 0%, rgba(10, 22, 40, 0.6) 60%, rgba(5, 11, 20, 0.8) 100%),
+        url('/logo.png');
+    background-size: cover, 60vmin;
+    /* Logo scales with screen size */
+    background-position: center, 75% 50%;
+    /* Pushes logo to the right side */
+    background-repeat: no-repeat;
+    background-blend-mode: normal;
 }
 
 /* Kill any ::before overlay inherited from .app-container */
@@ -291,5 +302,13 @@
 
     .login-header h1 {
         font-size: 22px !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .login-screen {
+        /* On mobile, center the logo behind the card */
+        background-position: center, center;
+        background-size: cover, 90vmin;
     }
 }
