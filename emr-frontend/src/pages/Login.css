@@ -4,6 +4,9 @@
 /* The !important flags below override leftover .app-container rules
    from index.css and Layout.css that target the same class name. */
 
+/* src/pages/Login.css */
+
+/* ── Container: dark, focused, centered ───────────────────── */
 .login-screen {
     position: fixed !important;
     top: 0 !important;
@@ -12,7 +15,6 @@
     bottom: 0 !important;
     width: 100vw !important;
     height: 100vh !important;
-    min-height: 100vh !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
@@ -21,25 +23,8 @@
     overflow: hidden !important;
     z-index: 10 !important;
 
-    /* 1. Keep your base dark gradient */
+    /* Keep the dark background */
     background: radial-gradient(ellipse at top, #1a2b4a 0%, #0a1628 60%, #050b14 100%) !important;
-
-    /* 2. Add the giant faded logo */
-    background-image:
-        radial-gradient(ellipse at top, rgba(26, 43, 74, 0.4) 0%, rgba(10, 22, 40, 0.6) 60%, rgba(5, 11, 20, 0.8) 100%),
-        url('/logo.png');
-    background-size: cover, 60vmin;
-    /* Logo scales with screen size */
-    background-position: center, 75% 50%;
-    /* Pushes logo to the right side */
-    background-repeat: no-repeat;
-    background-blend-mode: normal;
-}
-
-/* Kill any ::before overlay inherited from .app-container */
-.login-screen::before {
-    content: none !important;
-    display: none !important;
 }
 
 /* Subtle animated gradient mesh */
@@ -82,12 +67,6 @@
         0 20px 60px rgba(0, 0, 0, 0.5),
         0 4px 12px rgba(0, 0, 0, 0.3) !important;
     animation: cardFloatIn 0.5s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-/* Explicitly kill any inherited overlay on the card */
-.login-container::before {
-    content: none !important;
-    display: none !important;
 }
 
 @keyframes cardFloatIn {
@@ -252,7 +231,6 @@
 .login-footer-help {
     font-size: 13px !important;
     color: #6b7280 !important;
-    /* darker than before */
     margin: 0 0 16px !important;
     line-height: 1.5 !important;
 }
@@ -270,7 +248,6 @@
 .login-footer-platform {
     font-size: 12px !important;
     color: #9ca3af !important;
-    /* readable gray, not invisible */
     margin: 0 !important;
 }
 
@@ -305,10 +282,23 @@
     }
 }
 
-@media (max-width: 768px) {
-    .login-screen {
-        /* On mobile, center the logo behind the card */
-        background-position: center, center;
-        background-size: cover, 90vmin;
+/* ── Big faded logo watermark on the right ── */
+@media (min-width: 769px) {
+    .login-screen::before {
+        content: '' !important;
+        display: block !important;
+        position: absolute !important;
+        top: 50% !important;
+        left: 75% !important;
+        transform: translate(-50%, -50%) !important;
+        width: 60vmin !important;
+        height: 60vmin !important;
+        background-image: url('/logo.png') !important;
+        background-size: contain !important;
+        background-repeat: no-repeat !important;
+        background-position: center !important;
+        opacity: 0.08 !important;
+        z-index: -1 !important;
+        pointer-events: none !important;
     }
 }
