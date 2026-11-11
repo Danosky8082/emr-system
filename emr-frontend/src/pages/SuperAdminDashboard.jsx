@@ -170,19 +170,41 @@ const SuperAdminDashboard = () => {
 
   // ✅ Resend the welcome/onboarding email to the hospital's Admin user
   const handleResendWelcomeEmail = async (hospital) => {
-    const targetEmail = hospital.email || 'the Admin';
-    if (!window.confirm(`Resend welcome email to the Admin of ${hospital.name}?`)) return;
+  const targetEmail = hospital.email || 'the hospital Admin';
+  if (!window.confirm(`Resend welcome email to ${hospital.name} (${targetEmail})?`)) return;
 
-    setResendingEmailFor(hospital.id);
-    try {
-      await apiClient.post(`/platform/hospitals/${hospital.id}/resend-welcome-email`);
-      toast.success(`Welcome email resent${hospital.email ? ` to ${targetEmail}` : ''}!`);
-    } catch (error) {
-      toast.error(error.response?.data?.error || 'Failed to resend email');
-    } finally {
-      setResendingEmailFor(null);
+  setResendingEmailFor(hospital.id);
+  try {
+    const res = await apiClient.post(
+      `/platform/hospitals/${hospital.id}/resend-welcome-email`
+    );
+
+    const sentTo = res.data?.sentTo || targetEmail;
+    toast.success(`📧 Welcome email sent to ${sentTo}`, { duration: 6000 });
+  } catch (error) {
+    // Express returns HTML for 404, so error.response.data isn't an object.
+    // Prefer the JSON `error` if present, fall back to the code, then the raw message.
+    const serverError =
+      (typeof error.response?.data === 'object' && error.response?.data?.error) ||
+      (typeof error.response?.data === 'object' && error.response?.data?.code) ||
+      error.message;
+
+    if (error.response?.status === 404) {
+      toast.error(
+        'Backend route not deployed. Redeploy the server and try again.',
+        { duration: 8000 }
+      );
+    } else if (error.response?.status === 502) {
+      toast.error(`SMTP error: ${serverError}`, { duration: 10000 });
+    } else if (error.response?.status === 400) {
+      toast.error(serverError, { duration: 8000 });
+    } else {
+      toast.error(serverError || 'Failed to resend email');
     }
-  };
+  } finally {
+    setResendingEmailFor(null);
+  }
+};
 
   // ✅ Update auto-advance setting
   const handleAutoAdvanceChange = async (hospitalId, value) => {

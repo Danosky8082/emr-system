@@ -9,6 +9,7 @@ const { prisma } = require('../prisma-client');
 const { createDefaultRolePermissions } = require('../permission-templates');
 const { createDefaultHospitalData } = require('../hospital-templates');
 const { createDefaultRoleCapabilities } = require('../capability-templates');
+const { sendWelcomeEmail } = require('../services/mailer');
 
 // ============================================================
 // JWT SECRET
@@ -606,5 +607,139 @@ router.delete('/users/:id', authenticatePlatform, requirePlatformAdmin, async (r
     res.status(500).json({ error: 'Failed to delete platform user' });
   }
 });
+
+// ============================================================
+// POST /api/platform/hospitals/:id/resend-welcome-email
+//
+// Re-sends the onboarding email to the hospital's Admin user.
+//
+// Response on success: { success, sentTo, accepted, messageId }
+// Response on failure: { error, code, details? }
+//
+// Error codes:
+//   HOSPITAL_NOT_FOUND    → 404
+//   NO_EMAIL_ON_FILE      → 400 (hospital and Admin both lack an email)
+//   SMTP_REJECTED         → 502 (SMTP accepted the connection but rejected the address)
+//   SMTP_AUTH_FAILED      → 502 (SMTP_USER / SMTP_PASS wrong)
+//   SMTP_SEND_FAILED      → 502 (anything else from Nodemailer)
+// ============================================================
+router.post(
+  '/hospitals/:id/resend-welcome-email',
+  authenticatePlatform,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      // Load hospital + its primary Admin (fallback: any active staff)
+      const hospital = await prisma.hospital.findUnique({
+        where: { id },
+        include: {
+          Staff: {
+            where: { isActive: true, role: { in: ['Admin', 'ITAdmin'] } },
+            take: 1,
+            select: {
+              id: true,
+              username: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              role: true,
+            },
+          },
+        },
+      });
+
+      if (!hospital) {
+        return res.status(404).json({
+          error: 'Hospital not found',
+          code: 'HOSPITAL_NOT_FOUND',
+        });
+      }
+
+      const admin = hospital.Staff?.[0];
+      const recipient = admin?.email || hospital.email;
+
+      if (!recipient) {
+        return res.status(400).json({
+          error:
+            'No email address on file. Set an email on the hospital or its Admin, then retry.',
+          code: 'NO_EMAIL_ON_FILE',
+          hospitalId: hospital.id,
+          adminId: admin?.id || null,
+        });
+      }
+
+      // Send. sendWelcomeEmail returns the Nodemailer info object.
+      let info;
+      try {
+        info = await sendWelcomeEmail({
+          to: recipient,
+          adminName: admin?.firstName || hospital.name,
+          hospitalName: hospital.name,
+          hospitalSlug: hospital.slug,
+          adminUsername: admin?.username || '(see hospital admin)',
+        });
+      } catch (smtpErr) {
+        const code = smtpErr.code || '';
+        console.error(
+          `❌ [resend-welcome] SMTP failure for ${hospital.name} (${recipient}):`,
+          smtpErr.message
+        );
+
+        if (code === 'EAUTH' || /auth/i.test(smtpErr.message || '')) {
+          return res.status(502).json({
+            error:
+              'SMTP authentication failed. Check SMTP_USER / SMTP_PASS on the server.',
+            code: 'SMTP_AUTH_FAILED',
+            details: smtpErr.message,
+          });
+        }
+
+        if (code === 'EENVELOPE' || /recipient/i.test(smtpErr.message || '')) {
+          return res.status(502).json({
+            error: `SMTP server rejected the recipient address: ${recipient}`,
+            code: 'SMTP_REJECTED',
+            details: smtpErr.message,
+          });
+        }
+
+        return res.status(502).json({
+          error: 'Failed to send email through SMTP.',
+          code: 'SMTP_SEND_FAILED',
+          details: smtpErr.message,
+        });
+      }
+
+      // Nodemailer returns `accepted` and `rejected` — verify delivery was queued
+      if (!info.accepted || info.accepted.length === 0) {
+        return res.status(502).json({
+          error: `SMTP server did not accept ${recipient}.`,
+          code: 'SMTP_REJECTED',
+          rejected: info.rejected || [],
+          response: info.response,
+        });
+      }
+
+      console.log(
+        `📧 [resend-welcome] ${hospital.name} → ${recipient} | accepted=${JSON.stringify(info.accepted)} | messageId=${info.messageId}`
+      );
+
+      return res.json({
+        success: true,
+        sentTo: recipient,
+        accepted: info.accepted,
+        messageId: info.messageId,
+      });
+    } catch (err) {
+      console.error('❌ [resend-welcome] Unexpected error:', err);
+      return res.status(500).json({
+        error: 'Unexpected error while resending welcome email.',
+        code: 'INTERNAL_ERROR',
+        details: err.message,
+      });
+    }
+  }
+);
 
 module.exports = router;
