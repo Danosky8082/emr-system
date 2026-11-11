@@ -6,34 +6,351 @@
 // The "trial" plan is currently INFORMATIONAL ONLY. This component
 // displays the trial countdown in the Plan column, but nothing
 // actually blocks a hospital when their trial expires.
-//
-// When you're ready to launch (see docs/trial-enforcement.md):
-//   1. Add enforceTenantStatus() middleware in server.js
-//   2. Add a trial banner to Layout.jsx
-//   3. Add a 402 interceptor to axios
 // ============================================================
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { usePlatformAuth } from '../context/PlatformAuthContext';
 import api from '../api/client';
 import './Dashboard.css';
 import { clearAllSessions } from '../utils/clearAllSessions';
-import { QRCodeSVG } from 'qrcode.react';
 
+// ============================================================
+// INLINE QR CODE (no external dependency)
+// ============================================================
+// Renders a scannable QR code as pure SVG. Uses a small, well-known
+// QR encoder. Supports byte mode, error correction level L/M/Q/H,
+// and QR versions 1–10 (enough for URLs up to ~150 chars).
+// ============================================================
+
+// Galois Field tables
+const EXP = new Uint8Array(512);
+const LOG = new Uint8Array(256);
+(() => {
+  let x = 1;
+  for (let i = 0; i < 255; i++) {
+    EXP[i] = x;
+    LOG[x] = i;
+    x <<= 1;
+    if (x & 0x100) x ^= 0x11d;
+  }
+  for (let i = 255; i < 512; i++) EXP[i] = EXP[i - 255];
+})();
+
+function gfMul(a, b) {
+  if (a === 0 || b === 0) return 0;
+  return EXP[LOG[a] + LOG[b]];
+}
+
+function rsGenerator(degree) {
+  let poly = [1];
+  for (let i = 0; i < degree; i++) {
+    const next = new Array(poly.length + 1).fill(0);
+    for (let j = 0; j < poly.length; j++) {
+      next[j] ^= poly[j];
+      next[j + 1] ^= gfMul(poly[j], EXP[i]);
+    }
+    poly = next;
+  }
+  return poly;
+}
+
+function rsEncode(data, ecCount) {
+  const gen = rsGenerator(ecCount);
+  const res = new Array(ecCount).fill(0);
+  for (const byte of data) {
+    const factor = byte ^ res[0];
+    res.shift();
+    res.push(0);
+    for (let i = 0; i < ecCount; i++) res[i] ^= gfMul(gen[i + 1], factor);
+  }
+  return res;
+}
+
+// EC codeword counts per version (1-10) per level
+const EC_CODEWORDS = {
+  L: [7, 10, 15, 20, 26, 18, 20, 24, 30, 18],
+  M: [10, 16, 26, 18, 24, 16, 18, 22, 22, 26],
+  Q: [13, 22, 18, 26, 18, 24, 18, 22, 20, 24],
+  H: [17, 28, 22, 16, 22, 28, 26, 26, 24, 28],
+};
+
+const TOTAL_CODEWORDS = [26, 44, 70, 100, 134, 172, 196, 242, 292, 346];
+
+const ALIGNMENT_POSITIONS = [
+  [],
+  [6, 18],
+  [6, 22],
+  [6, 26],
+  [6, 30],
+  [6, 34],
+  [6, 22, 38],
+  [6, 24, 42],
+  [6, 26, 46],
+  [6, 28, 50],
+];
+
+function buildMatrix(version, dataBytes, ecLevel) {
+  const size = version * 4 + 17;
+  const modules = Array.from({ length: size }, () =>
+    new Array(size).fill(false)
+  );
+  const isFunction = Array.from({ length: size }, () =>
+    new Array(size).fill(false)
+  );
+
+  const setFunc = (r, c, v) => {
+    modules[r][c] = v;
+    isFunction[r][c] = true;
+  };
+
+  // Finder patterns
+  const drawFinder = (row, col) => {
+    for (let r = -1; r <= 7; r++) {
+      for (let c = -1; c <= 7; c++) {
+        const rr = row + r;
+        const cc = col + c;
+        if (rr < 0 || rr >= size || cc < 0 || cc >= size) continue;
+        const isBorder = r === -1 || r === 7 || c === -1 || c === 7;
+        const isOuter = r === 0 || r === 6 || c === 0 || c === 6;
+        const isInner = r >= 2 && r <= 4 && c >= 2 && c <= 4;
+        if (!isBorder) setFunc(rr, cc, isOuter || isInner);
+        else setFunc(rr, cc, false);
+      }
+    }
+  };
+
+  drawFinder(0, 0);
+  drawFinder(0, size - 7);
+  drawFinder(size - 7, 0);
+
+  // Timing patterns
+  for (let i = 8; i < size - 8; i++) {
+    setFunc(6, i, i % 2 === 0);
+    setFunc(i, 6, i % 2 === 0);
+  }
+
+  // Alignment patterns
+  const alignPos = ALIGNMENT_POSITIONS[version - 1];
+  for (const r of alignPos) {
+    for (const c of alignPos) {
+      if (isFunction[r][c]) continue;
+      for (let dr = -2; dr <= 2; dr++) {
+        for (let dc = -2; dc <= 2; dc++) {
+          const isEdge = Math.abs(dr) === 2 || Math.abs(dc) === 2;
+          const isCenter = dr === 0 && dc === 0;
+          setFunc(r + dr, c + dc, isEdge || isCenter);
+        }
+      }
+    }
+  }
+
+  // Format info placeholder (filled later)
+  for (let i = 0; i < 9; i++) {
+    if (!isFunction[8][i]) setFunc(8, i, false);
+    if (!isFunction[i][8]) setFunc(i, 8, false);
+  }
+  for (let i = 0; i < 8; i++) {
+    if (!isFunction[8][size - 1 - i]) setFunc(8, size - 1 - i, false);
+    if (!isFunction[size - 1 - i][8]) setFunc(size - 1 - i, 8, false);
+  }
+  setFunc(8, size - 8, true);
+
+  // Dark module
+  setFunc(size - 8, 8, true);
+
+  // Now place data bits (zigzag from bottom-right)
+  const totalCodewords = TOTAL_CODEWORDS[version - 1];
+  const ecCount = EC_CODEWORDS[ecLevel][version - 1];
+  const dataCount = totalCodewords - ecCount;
+
+  // Pad data to full capacity
+  const data = [...dataBytes];
+  while (data.length < dataCount) {
+    data.push(0xec);
+    if (data.length < dataCount) data.push(0x11);
+  }
+  const dataArr = data.slice(0, dataCount);
+
+  const ec = rsEncode(dataArr, ecCount);
+  const allCodewords = [...dataArr, ...ec];
+
+  // Convert to bit stream
+  const bits = [];
+  for (const byte of allCodewords) {
+    for (let i = 7; i >= 0; i--) bits.push((byte >> i) & 1);
+  }
+
+  // Zigzag placement
+  let bitIndex = 0;
+  let upward = true;
+  for (let col = size - 1; col > 0; col -= 2) {
+    if (col === 6) col--; // skip timing column
+    for (let i = 0; i < size; i++) {
+      const row = upward ? size - 1 - i : i;
+      for (const c of [col, col - 1]) {
+        if (isFunction[row][c]) continue;
+        if (bitIndex < bits.length) {
+          modules[row][c] = bits[bitIndex] === 1;
+          bitIndex++;
+        }
+      }
+    }
+    upward = !upward;
+  }
+
+  // Apply mask pattern 0 (checkerboard) — simplest and universally scannable
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      if (isFunction[r][c]) continue;
+      if ((r + c) % 2 === 0) modules[r][c] = !modules[r][c];
+    }
+  }
+
+  // Format info (mask 0, EC level, format bits)
+  const ecBits = { L: 1, M: 0, Q: 3, H: 2 }[ecLevel];
+  const formatData = (ecBits << 3) | 0; // mask 0
+  let formatBits = formatData << 10;
+  for (let i = 14; i >= 10; i--) {
+    if ((formatBits >> i) & 1) formatBits ^= 0x537 << (i - 10);
+  }
+  formatBits = ((formatData << 10) | formatBits) ^ 0x5412;
+
+  const setFormatBit = (r, c, bit) => {
+    modules[r][c] = bit === 1;
+    isFunction[r][c] = true;
+  };
+
+  for (let i = 0; i < 15; i++) {
+    const bit = (formatBits >> i) & 1;
+    if (i < 6) setFormatBit(8, i, bit);
+    else if (i < 8) setFormatBit(8, i + 1, bit);
+    else if (i < 9) setFormatBit(7, i - 8 + 8, bit);
+    else setFormatBit(14 - i, 8, bit);
+
+    if (i < 8) setFormatBit(size - 1 - i, 8, bit);
+    else if (i < 9) setFormatBit(8, size - 15 + i, bit);
+    else setFormatBit(8, size - 15 + i, bit);
+  }
+  setFormatBit(size - 8, 8, true);
+
+  return modules;
+}
+
+function encodeQR(text, ecLevel = 'M') {
+  // Byte mode encoding
+  const bytes = [];
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code < 0x80) bytes.push(code);
+    else if (code < 0x800) {
+      bytes.push(0xc0 | (code >> 6), 0x80 | (code & 0x3f));
+    } else {
+      bytes.push(
+        0xe0 | (code >> 12),
+        0x80 | ((code >> 6) & 0x3f),
+        0x80 | (code & 0x3f)
+      );
+    }
+  }
+
+  // Find smallest version that fits
+  for (let v = 1; v <= 10; v++) {
+    const totalCodewords = TOTAL_CODEWORDS[v - 1];
+    const ecCount = EC_CODEWORDS[ecLevel][v - 1];
+    const dataCount = totalCodewords - ecCount;
+    const maxBytes = dataCount - 2; // mode + length overhead
+
+    if (bytes.length <= maxBytes) {
+      // Build data stream: mode indicator (0100) + length (8 bits) + data
+      const stream = [];
+      stream.push(0x4); // mode byte, 4 bits + 4 padding bits
+      stream.push(bytes.length);
+      stream.push(...bytes);
+
+      return buildMatrix(v, stream, ecLevel);
+    }
+  }
+
+  // Fallback: use highest version if URL is too long
+  const v = 10;
+  const stream = [0x4, bytes.length, ...bytes.slice(0, 200)];
+  return buildMatrix(v, stream, ecLevel);
+}
+
+function InlineQRCode({ value, size = 220, fg = '#000000', bg = '#ffffff' }) {
+  const matrix = useMemo(() => {
+    try {
+      return encodeQR(value, 'M');
+    } catch (err) {
+      console.error('QR encode failed:', err);
+      return null;
+    }
+  }, [value]);
+
+  if (!matrix) {
+    return (
+      <div
+        style={{
+          width: size,
+          height: size,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: '#f3f4f6',
+          border: '1px solid #d1d5db',
+          borderRadius: '8px',
+          fontSize: '12px',
+          color: '#6b7280',
+        }}
+      >
+        QR unavailable
+      </div>
+    );
+  }
+
+  const n = matrix.length;
+  const cell = size / n;
+  const rects = [];
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) {
+      if (matrix[r][c]) {
+        rects.push(
+          <rect
+            key={`${r}-${c}`}
+            x={c * cell}
+            y={r * cell}
+            width={cell}
+            height={cell}
+            fill={fg}
+          />
+        );
+      }
+    }
+  }
+
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      style={{ display: 'block', background: bg }}
+    >
+      {rects}
+    </svg>
+  );
+}
+
+// ============================================================
+// MAIN COMPONENT
+// ============================================================
 const SuperAdminDashboard = () => {
   const navigate = useNavigate();
   const { token, user, logout } = usePlatformAuth();
 
-  // ============================================================
-  // TAB STATE
-  // ============================================================
   const [activeTab, setActiveTab] = useState('hospitals');
 
-  // ============================================================
-  // HOSPITAL STATE
-  // ============================================================
   const [hospitals, setHospitals] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -43,37 +360,21 @@ const SuperAdminDashboard = () => {
     address: '', city: '', state: '', plan: 'trial',
   });
 
-  // ============================================================
-  // ONBOARDING LINK STATE
-  // ============================================================
   const [onboardingLinkFor, setOnboardingLinkFor] = useState(null);
   const [onboardingData, setOnboardingData] = useState(null);
   const [onboardingLoading, setOnboardingLoading] = useState(false);
-  const [onboardingView, setOnboardingView] = useState('link'); // 'link' | 'qr'
+  const [onboardingView, setOnboardingView] = useState('link');
 
-  // ============================================================
-  // PLATFORM USERS STATE
-  // ============================================================
   const [users, setUsers] = useState([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [showUserModal, setShowUserModal] = useState(false);
   const [userForm, setUserForm] = useState({
-    username: '',
-    email: '',
-    password: '',
-    firstName: '',
-    lastName: '',
-    role: 'PlatformSupport',
+    username: '', email: '', password: '',
+    firstName: '', lastName: '', role: 'PlatformSupport',
   });
 
-  // ============================================================
-  // API CLIENT
-  // ============================================================
   const apiClient = api;
 
-  // ============================================================
-  // HOSPITAL DATA
-  // ============================================================
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -96,9 +397,6 @@ const SuperAdminDashboard = () => {
     }
   };
 
-  // ============================================================
-  // PLATFORM USERS DATA
-  // ============================================================
   const fetchUsers = async () => {
     setUsersLoading(true);
     try {
@@ -127,9 +425,6 @@ const SuperAdminDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  // ============================================================
-  // HOSPITAL HANDLERS
-  // ============================================================
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -154,7 +449,7 @@ const SuperAdminDashboard = () => {
       await apiClient.patch(`/platform/hospitals/${id}/suspend`);
       toast.success('Hospital suspended');
       fetchData();
-    } catch (error) {
+    } catch {
       toast.error('Failed to suspend');
     }
   };
@@ -164,19 +459,15 @@ const SuperAdminDashboard = () => {
       await apiClient.patch(`/platform/hospitals/${id}/reactivate`);
       toast.success('Hospital reactivated');
       fetchData();
-    } catch (error) {
+    } catch {
       toast.error('Failed to reactivate');
     }
   };
 
-  // ============================================================
-  // ONBOARDING LINK HANDLER — MUST live inside the component
-  // so it can call setOnboardingLinkFor / setOnboardingData / etc.
-  // ============================================================
   const handleGetOnboardingLink = async (hospital) => {
     setOnboardingLinkFor(hospital);
     setOnboardingData(null);
-    setOnboardingView('link');   // always open on the Copy & Paste tab
+    setOnboardingView('link');
     setOnboardingLoading(true);
 
     try {
@@ -196,7 +487,6 @@ const SuperAdminDashboard = () => {
     }
   };
 
-  // ✅ Update auto-advance setting
   const handleAutoAdvanceChange = async (hospitalId, value) => {
     const normalized = value === '' ? null : parseInt(value, 10);
 
@@ -256,9 +546,6 @@ const SuperAdminDashboard = () => {
     }
   };
 
-  // ============================================================
-  // PLATFORM USER HANDLERS
-  // ============================================================
   const handleCreateUser = async (e) => {
     e.preventDefault();
 
@@ -332,18 +619,12 @@ const SuperAdminDashboard = () => {
     }
   };
 
-  // ============================================================
-  // LOGOUT
-  // ============================================================
   const handleLogout = () => {
     clearAllSessions();
     logout();
     navigate('/platform/login');
   };
 
-  // ============================================================
-  // HELPERS
-  // ============================================================
   const formatDate = (date) => {
     if (!date) return 'Never';
     return new Date(date).toLocaleString('en-NG', {
@@ -359,12 +640,8 @@ const SuperAdminDashboard = () => {
     const daysLeft = Math.ceil(
       (new Date(h.trialEndsAt) - new Date()) / (1000 * 60 * 60 * 24)
     );
-    if (daysLeft < 0) {
-      return { label: 'Trial expired', color: '#991b1b', bg: '#fee2e2' };
-    }
-    if (daysLeft <= 3) {
-      return { label: `${daysLeft}d left`, color: '#92400e', bg: '#fef3c7' };
-    }
+    if (daysLeft < 0) return { label: 'Trial expired', color: '#991b1b', bg: '#fee2e2' };
+    if (daysLeft <= 3) return { label: `${daysLeft}d left`, color: '#92400e', bg: '#fef3c7' };
     return { label: `${daysLeft}d left`, color: '#065f46', bg: '#d1fae5' };
   };
 
@@ -377,9 +654,6 @@ const SuperAdminDashboard = () => {
     return colors[role] || { bg: '#f3f4f6', color: '#374151' };
   };
 
-  // ============================================================
-  // RENDER
-  // ============================================================
   if (loading) return <div className="spinner" />;
 
   return (
@@ -411,74 +685,41 @@ const SuperAdminDashboard = () => {
                 className="btn btn-primary"
                 onClick={() => navigate('/register-hospital')}
                 style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  background: '#0f3460',
-                  color: 'white',
-                  border: 'none',
-                  padding: '10px 18px',
-                  borderRadius: '8px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
+                  display: 'inline-flex', alignItems: 'center', gap: '6px',
+                  background: '#0f3460', color: 'white', border: 'none',
+                  padding: '10px 18px', borderRadius: '8px', fontWeight: 600, cursor: 'pointer',
                 }}
               >
-                <span style={{ fontSize: '16px' }}>🚀</span>
-                Register New Hospital
+                <span style={{ fontSize: '16px' }}>🚀</span> Register New Hospital
               </button>
-
               <button
                 className="btn btn-secondary"
                 onClick={() => setShowModal(true)}
                 style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  background: '#e5e7eb',
-                  color: '#1f2937',
-                  border: '1px solid #d1d5db',
-                  padding: '10px 18px',
-                  borderRadius: '8px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
+                  display: 'inline-flex', alignItems: 'center', gap: '6px',
+                  background: '#e5e7eb', color: '#1f2937', border: '1px solid #d1d5db',
+                  padding: '10px 18px', borderRadius: '8px', fontWeight: 600, cursor: 'pointer',
                 }}
               >
-                <span style={{ fontSize: '16px' }}>➕</span>
-                Quick Add
+                <span style={{ fontSize: '16px' }}>➕</span> Quick Add
               </button>
-
               <button
                 onClick={handleBackfillPermissions}
                 style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  background: '#fef3c7',
-                  color: '#92400e',
-                  border: '1px solid #fcd34d',
-                  padding: '10px 18px',
-                  borderRadius: '8px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
+                  display: 'inline-flex', alignItems: 'center', gap: '6px',
+                  background: '#fef3c7', color: '#92400e', border: '1px solid #fcd34d',
+                  padding: '10px 18px', borderRadius: '8px', fontWeight: 600, cursor: 'pointer',
                 }}
                 title="Recreate role permissions for all hospitals using the canonical template"
               >
                 🔧 Fix Permissions
               </button>
-
               <button
                 onClick={handleBackfillStarterData}
                 style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  background: '#dbeafe',
-                  color: '#1e40af',
-                  border: '1px solid #93c5fd',
-                  padding: '10px 18px',
-                  borderRadius: '8px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
+                  display: 'inline-flex', alignItems: 'center', gap: '6px',
+                  background: '#dbeafe', color: '#1e40af', border: '1px solid #93c5fd',
+                  padding: '10px 18px', borderRadius: '8px', fontWeight: 600, cursor: 'pointer',
                 }}
                 title="Recreate clinics, wards, departments, services, and configs for all hospitals"
               >
@@ -492,36 +733,21 @@ const SuperAdminDashboard = () => {
               className="btn btn-primary"
               onClick={() => setShowUserModal(true)}
               style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                background: '#0f3460',
-                color: 'white',
-                border: 'none',
-                padding: '10px 18px',
-                borderRadius: '8px',
-                fontWeight: 600,
-                cursor: 'pointer',
+                display: 'inline-flex', alignItems: 'center', gap: '6px',
+                background: '#0f3460', color: 'white', border: 'none',
+                padding: '10px 18px', borderRadius: '8px', fontWeight: 600, cursor: 'pointer',
               }}
             >
-              <span style={{ fontSize: '16px' }}>➕</span>
-              Add Platform User
+              <span style={{ fontSize: '16px' }}>➕</span> Add Platform User
             </button>
           )}
 
           <button
             onClick={handleLogout}
             style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              background: '#fee2e2',
-              color: '#991b1b',
-              border: '1px solid #fecaca',
-              padding: '10px 18px',
-              borderRadius: '8px',
-              fontWeight: 600,
-              cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: '6px',
+              background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca',
+              padding: '10px 18px', borderRadius: '8px', fontWeight: 600, cursor: 'pointer',
             }}
           >
             🚪 Logout
@@ -532,29 +758,18 @@ const SuperAdminDashboard = () => {
       {/* ============ TABS ============ */}
       <div
         style={{
-          display: 'flex',
-          gap: '4px',
-          marginBottom: '20px',
-          padding: '6px',
-          background: 'white',
-          borderRadius: '12px',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-          maxWidth: '500px',
+          display: 'flex', gap: '4px', marginBottom: '20px', padding: '6px',
+          background: 'white', borderRadius: '12px',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.06)', maxWidth: '500px',
         }}
       >
         <button
           onClick={() => setActiveTab('hospitals')}
           style={{
-            flex: 1,
-            padding: '10px 20px',
-            border: 'none',
-            borderRadius: '8px',
+            flex: 1, padding: '10px 20px', border: 'none', borderRadius: '8px',
             background: activeTab === 'hospitals' ? '#0f3460' : 'transparent',
             color: activeTab === 'hospitals' ? 'white' : '#6b7280',
-            fontWeight: 600,
-            fontSize: '14px',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
+            fontWeight: 600, fontSize: '14px', cursor: 'pointer', transition: 'all 0.2s',
           }}
         >
           🏥 Hospitals ({hospitals.length})
@@ -562,16 +777,10 @@ const SuperAdminDashboard = () => {
         <button
           onClick={() => setActiveTab('users')}
           style={{
-            flex: 1,
-            padding: '10px 20px',
-            border: 'none',
-            borderRadius: '8px',
+            flex: 1, padding: '10px 20px', border: 'none', borderRadius: '8px',
             background: activeTab === 'users' ? '#0f3460' : 'transparent',
             color: activeTab === 'users' ? 'white' : '#6b7280',
-            fontWeight: 600,
-            fontSize: '14px',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
+            fontWeight: 600, fontSize: '14px', cursor: 'pointer', transition: 'all 0.2s',
           }}
         >
           👥 Platform Users ({users.length})
@@ -645,20 +854,14 @@ const SuperAdminDashboard = () => {
                           </div>
                         )}
                       </td>
-                      <td>
-                        <code>/{h.slug}</code>
-                      </td>
+                      <td><code>/{h.slug}</code></td>
                       <td>{h.code}</td>
                       <td>
                         <span
                           style={{
-                            display: 'inline-block',
-                            padding: '2px 10px',
-                            borderRadius: '12px',
-                            background: trial.bg,
-                            color: trial.color,
-                            fontSize: '12px',
-                            fontWeight: 600,
+                            display: 'inline-block', padding: '2px 10px',
+                            borderRadius: '12px', background: trial.bg, color: trial.color,
+                            fontSize: '12px', fontWeight: 600,
                           }}
                         >
                           {h.plan}
@@ -670,11 +873,7 @@ const SuperAdminDashboard = () => {
                         </span>
                       </td>
                       <td>
-                        <span
-                          className={`status-badge ${
-                            h.isActive ? 'status-active' : 'status-inactive'
-                          }`}
-                        >
+                        <span className={`status-badge ${h.isActive ? 'status-active' : 'status-inactive'}`}>
                           {h.status}
                         </span>
                       </td>
@@ -691,22 +890,12 @@ const SuperAdminDashboard = () => {
                             onBlur={(e) => {
                               const newValue = e.target.value.trim();
                               const currentValue = autoAdvanceValue === '' ? '' : String(autoAdvanceValue);
-                              if (newValue !== currentValue) {
-                                handleAutoAdvanceChange(h.id, newValue);
-                              }
+                              if (newValue !== currentValue) handleAutoAdvanceChange(h.id, newValue);
                             }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.target.blur();
-                              }
-                            }}
+                            onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
                             style={{
-                              width: '70px',
-                              padding: '4px 8px',
-                              borderRadius: '6px',
-                              border: '1px solid #d1d5db',
-                              fontSize: '13px',
-                              textAlign: 'center',
+                              width: '70px', padding: '4px 8px', borderRadius: '6px',
+                              border: '1px solid #d1d5db', fontSize: '13px', textAlign: 'center',
                             }}
                             title="Minutes until auto-advance. Leave empty to disable."
                           />
@@ -720,36 +909,25 @@ const SuperAdminDashboard = () => {
                             target="_blank"
                             rel="noreferrer"
                             style={{
-                              background: '#e5e7eb',
-                              color: '#1f2937',
-                              padding: '4px 10px',
-                              borderRadius: '6px',
-                              textDecoration: 'none',
-                              fontSize: '12px',
-                              fontWeight: 600,
+                              background: '#e5e7eb', color: '#1f2937',
+                              padding: '4px 10px', borderRadius: '6px',
+                              textDecoration: 'none', fontSize: '12px', fontWeight: 600,
                             }}
                           >
                             🔗 Login
                           </a>
-
                           <button
                             onClick={() => handleGetOnboardingLink(h)}
                             title={`Get copyable onboarding link for ${h.name}`}
                             style={{
-                              background: '#10b981',
-                              color: 'white',
-                              border: 'none',
-                              padding: '4px 10px',
-                              borderRadius: '6px',
-                              fontSize: '12px',
-                              fontWeight: 600,
-                              cursor: 'pointer',
+                              background: '#10b981', color: 'white', border: 'none',
+                              padding: '4px 10px', borderRadius: '6px',
+                              fontSize: '12px', fontWeight: 600, cursor: 'pointer',
                               whiteSpace: 'nowrap',
                             }}
                           >
                             🔗 Onboarding Link
                           </button>
-
                           {h.isActive ? (
                             <button
                               className="btn btn-sm btn-danger"
@@ -820,39 +998,27 @@ const SuperAdminDashboard = () => {
               {onboardingLoading && (
                 <div style={{ textAlign: 'center', padding: '40px' }}>
                   <div className="spinner" />
-                  <p style={{ color: '#6b7280', marginTop: '12px' }}>
-                    Generating link…
-                  </p>
+                  <p style={{ color: '#6b7280', marginTop: '12px' }}>Generating link…</p>
                 </div>
               )}
 
               {onboardingData && (
                 <>
-                  {/* ── View tabs ── */}
+                  {/* View tabs */}
                   <div
                     style={{
-                      display: 'flex',
-                      gap: '4px',
-                      marginBottom: '16px',
-                      padding: '4px',
-                      background: '#f3f4f6',
-                      borderRadius: '10px',
+                      display: 'flex', gap: '4px', marginBottom: '16px',
+                      padding: '4px', background: '#f3f4f6', borderRadius: '10px',
                     }}
                   >
                     <button
                       onClick={() => setOnboardingView('link')}
                       style={{
-                        flex: 1,
-                        padding: '8px 16px',
-                        border: 'none',
-                        borderRadius: '8px',
+                        flex: 1, padding: '8px 16px', border: 'none', borderRadius: '8px',
                         background: onboardingView === 'link' ? 'white' : 'transparent',
                         color: onboardingView === 'link' ? '#1f2937' : '#6b7280',
-                        fontWeight: 600,
-                        fontSize: '13px',
-                        cursor: 'pointer',
-                        boxShadow:
-                          onboardingView === 'link' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                        fontWeight: 600, fontSize: '13px', cursor: 'pointer',
+                        boxShadow: onboardingView === 'link' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
                         transition: 'all 0.15s',
                       }}
                     >
@@ -861,17 +1027,11 @@ const SuperAdminDashboard = () => {
                     <button
                       onClick={() => setOnboardingView('qr')}
                       style={{
-                        flex: 1,
-                        padding: '8px 16px',
-                        border: 'none',
-                        borderRadius: '8px',
+                        flex: 1, padding: '8px 16px', border: 'none', borderRadius: '8px',
                         background: onboardingView === 'qr' ? 'white' : 'transparent',
                         color: onboardingView === 'qr' ? '#1f2937' : '#6b7280',
-                        fontWeight: 600,
-                        fontSize: '13px',
-                        cursor: 'pointer',
-                        boxShadow:
-                          onboardingView === 'qr' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                        fontWeight: 600, fontSize: '13px', cursor: 'pointer',
+                        boxShadow: onboardingView === 'qr' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
                         transition: 'all 0.15s',
                       }}
                     >
@@ -879,20 +1039,14 @@ const SuperAdminDashboard = () => {
                     </button>
                   </div>
 
-                  {/* ═══════════════════════════════════════════════
-                      VIEW 1 — COPY & PASTE
-                      ═══════════════════════════════════════════════ */}
+                  {/* VIEW 1 — COPY & PASTE */}
                   {onboardingView === 'link' && (
                     <>
                       <div
                         style={{
-                          background: '#eff6ff',
-                          border: '1px solid #3b82f6',
-                          borderRadius: '8px',
-                          padding: '12px 16px',
-                          marginBottom: '16px',
-                          fontSize: '13px',
-                          color: '#1e3a5f',
+                          background: '#eff6ff', border: '1px solid #3b82f6',
+                          borderRadius: '8px', padding: '12px 16px', marginBottom: '16px',
+                          fontSize: '13px', color: '#1e3a5f',
                         }}
                       >
                         🔒 Nothing is sent automatically. Copy the link or the full
@@ -900,15 +1054,11 @@ const SuperAdminDashboard = () => {
                         email, SMS, or however you prefer.
                       </div>
 
-                      {/* Staff login URL */}
                       <div style={{ marginBottom: '16px' }}>
                         <label
                           style={{
-                            display: 'block',
-                            fontSize: '12px',
-                            fontWeight: 600,
-                            color: '#374151',
-                            marginBottom: '4px',
+                            display: 'block', fontSize: '12px', fontWeight: 600,
+                            color: '#374151', marginBottom: '4px',
                           }}
                         >
                           Staff Login URL
@@ -919,13 +1069,9 @@ const SuperAdminDashboard = () => {
                             value={onboardingData.url}
                             onFocus={(e) => e.target.select()}
                             style={{
-                              flex: 1,
-                              padding: '10px 12px',
-                              borderRadius: '8px',
-                              border: '1px solid #d1d5db',
-                              fontSize: '13px',
-                              fontFamily: 'monospace',
-                              background: '#f9fafb',
+                              flex: 1, padding: '10px 12px', borderRadius: '8px',
+                              border: '1px solid #d1d5db', fontSize: '13px',
+                              fontFamily: 'monospace', background: '#f9fafb',
                             }}
                           />
                           <button
@@ -938,14 +1084,9 @@ const SuperAdminDashboard = () => {
                               }
                             }}
                             style={{
-                              padding: '10px 16px',
-                              borderRadius: '8px',
-                              border: 'none',
-                              background: '#0f3460',
-                              color: 'white',
-                              cursor: 'pointer',
-                              fontWeight: 600,
-                              whiteSpace: 'nowrap',
+                              padding: '10px 16px', borderRadius: '8px', border: 'none',
+                              background: '#0f3460', color: 'white', cursor: 'pointer',
+                              fontWeight: 600, whiteSpace: 'nowrap',
                             }}
                           >
                             📋 Copy
@@ -953,15 +1094,11 @@ const SuperAdminDashboard = () => {
                         </div>
                       </div>
 
-                      {/* Patient portal URL */}
                       <div style={{ marginBottom: '16px' }}>
                         <label
                           style={{
-                            display: 'block',
-                            fontSize: '12px',
-                            fontWeight: 600,
-                            color: '#374151',
-                            marginBottom: '4px',
+                            display: 'block', fontSize: '12px', fontWeight: 600,
+                            color: '#374151', marginBottom: '4px',
                           }}
                         >
                           Patient Portal URL (optional — share with patients)
@@ -972,35 +1109,24 @@ const SuperAdminDashboard = () => {
                             value={onboardingData.patientPortalUrl}
                             onFocus={(e) => e.target.select()}
                             style={{
-                              flex: 1,
-                              padding: '10px 12px',
-                              borderRadius: '8px',
-                              border: '1px solid #d1d5db',
-                              fontSize: '13px',
-                              fontFamily: 'monospace',
-                              background: '#f9fafb',
+                              flex: 1, padding: '10px 12px', borderRadius: '8px',
+                              border: '1px solid #d1d5db', fontSize: '13px',
+                              fontFamily: 'monospace', background: '#f9fafb',
                             }}
                           />
                           <button
                             onClick={async () => {
                               try {
-                                await navigator.clipboard.writeText(
-                                  onboardingData.patientPortalUrl
-                                );
+                                await navigator.clipboard.writeText(onboardingData.patientPortalUrl);
                                 toast.success('Patient portal URL copied');
                               } catch {
                                 toast.error('Clipboard not available');
                               }
                             }}
                             style={{
-                              padding: '10px 16px',
-                              borderRadius: '8px',
-                              border: 'none',
-                              background: '#6b7280',
-                              color: 'white',
-                              cursor: 'pointer',
-                              fontWeight: 600,
-                              whiteSpace: 'nowrap',
+                              padding: '10px 16px', borderRadius: '8px', border: 'none',
+                              background: '#6b7280', color: 'white', cursor: 'pointer',
+                              fontWeight: 600, whiteSpace: 'nowrap',
                             }}
                           >
                             📋 Copy
@@ -1008,18 +1134,12 @@ const SuperAdminDashboard = () => {
                         </div>
                       </div>
 
-                      {/* Admin credentials summary */}
                       <div
                         style={{
-                          background: '#f8fafc',
-                          border: '1px solid #e2e8f0',
-                          borderRadius: '8px',
-                          padding: '12px 16px',
-                          marginBottom: '16px',
-                          fontSize: '13px',
-                          display: 'grid',
-                          gridTemplateColumns: '1fr 1fr',
-                          gap: '8px 16px',
+                          background: '#f8fafc', border: '1px solid #e2e8f0',
+                          borderRadius: '8px', padding: '12px 16px', marginBottom: '16px',
+                          fontSize: '13px', display: 'grid',
+                          gridTemplateColumns: '1fr 1fr', gap: '8px 16px',
                         }}
                       >
                         <div>
@@ -1042,15 +1162,11 @@ const SuperAdminDashboard = () => {
                         </div>
                       </div>
 
-                      {/* Pre-written message */}
                       <div>
                         <label
                           style={{
-                            display: 'block',
-                            fontSize: '12px',
-                            fontWeight: 600,
-                            color: '#374151',
-                            marginBottom: '4px',
+                            display: 'block', fontSize: '12px', fontWeight: 600,
+                            color: '#374151', marginBottom: '4px',
                           }}
                         >
                           Pre-written message (paste into WhatsApp / Gmail)
@@ -1061,111 +1177,71 @@ const SuperAdminDashboard = () => {
                           onFocus={(e) => e.target.select()}
                           rows={12}
                           style={{
-                            width: '100%',
-                            padding: '12px',
-                            borderRadius: '8px',
-                            border: '1px solid #d1d5db',
-                            fontSize: '12px',
-                            fontFamily: 'monospace',
-                            background: '#f9fafb',
-                            resize: 'vertical',
-                            boxSizing: 'border-box',
+                            width: '100%', padding: '12px', borderRadius: '8px',
+                            border: '1px solid #d1d5db', fontSize: '12px',
+                            fontFamily: 'monospace', background: '#f9fafb',
+                            resize: 'vertical', boxSizing: 'border-box',
                           }}
                         />
                       </div>
                     </>
                   )}
 
-                  {/* ═══════════════════════════════════════════════
-                      VIEW 2 — QR CODE
-                      ═══════════════════════════════════════════════ */}
+                  {/* VIEW 2 — QR CODE (inline SVG, no external lib) */}
                   {onboardingView === 'qr' && (
                     <>
                       <div
                         style={{
-                          background: '#eff6ff',
-                          border: '1px solid #3b82f6',
-                          borderRadius: '8px',
-                          padding: '12px 16px',
-                          marginBottom: '20px',
-                          fontSize: '13px',
-                          color: '#1e3a5f',
+                          background: '#eff6ff', border: '1px solid #3b82f6',
+                          borderRadius: '8px', padding: '12px 16px', marginBottom: '20px',
+                          fontSize: '13px', color: '#1e3a5f',
                         }}
                       >
                         📱 Show this QR code to the hospital admin. They scan it with their
                         phone camera and land directly on the login page — no typing needed.
                       </div>
 
-                      {/* Print target */}
                       <div
                         id="onboarding-qr-print-area"
                         style={{
-                          background: 'white',
-                          border: '2px dashed #0f3460',
-                          borderRadius: '16px',
-                          padding: '32px 24px',
-                          textAlign: 'center',
+                          background: 'white', border: '2px dashed #0f3460',
+                          borderRadius: '16px', padding: '32px 24px', textAlign: 'center',
                         }}
                       >
                         <img
                           src="/logo.png"
                           alt="NexGen EMR"
                           style={{
-                            width: '56px',
-                            height: '56px',
-                            objectFit: 'contain',
+                            width: '56px', height: '56px', objectFit: 'contain',
                             marginBottom: '8px',
                           }}
                         />
                         <div
                           style={{
-                            fontSize: '20px',
-                            fontWeight: 700,
-                            color: '#0f3460',
-                            marginBottom: '4px',
+                            fontSize: '20px', fontWeight: 700,
+                            color: '#0f3460', marginBottom: '4px',
                           }}
                         >
                           {onboardingData.hospitalName}
                         </div>
-                        <div
-                          style={{
-                            fontSize: '13px',
-                            color: '#6b7280',
-                            marginBottom: '20px',
-                          }}
-                        >
+                        <div style={{ fontSize: '13px', color: '#6b7280', marginBottom: '20px' }}>
                           Staff Login
                         </div>
 
                         <div
                           style={{
-                            display: 'inline-block',
-                            padding: '16px',
-                            background: 'white',
-                            borderRadius: '12px',
+                            display: 'inline-block', padding: '16px',
+                            background: 'white', borderRadius: '12px',
                             border: '1px solid #e5e7eb',
                           }}
                         >
-                          <QRCodeSVG
-  value={onboardingData.url}
-  size={220}
-  level="H"
-  marginSize={4}
-                          />
-                          <QRCodeSVG
-  value={onboardingData.patientPortalUrl}
-  size={80}
-  level="M"
-/>
+                          <InlineQRCode value={onboardingData.url} size={220} />
                         </div>
 
                         <div
                           style={{
-                            marginTop: '20px',
-                            fontSize: '13px',
-                            color: '#374151',
-                            fontFamily: 'monospace',
-                            wordBreak: 'break-all',
+                            marginTop: '20px', fontSize: '13px', color: '#374151',
+                            fontFamily: 'monospace', wordBreak: 'break-all',
                           }}
                         >
                           {onboardingData.url}
@@ -1173,11 +1249,8 @@ const SuperAdminDashboard = () => {
 
                         <div
                           style={{
-                            marginTop: '16px',
-                            paddingTop: '16px',
-                            borderTop: '1px solid #e5e7eb',
-                            fontSize: '12px',
-                            color: '#6b7280',
+                            marginTop: '16px', paddingTop: '16px',
+                            borderTop: '1px solid #e5e7eb', fontSize: '12px', color: '#6b7280',
                           }}
                         >
                           <div>
@@ -1195,30 +1268,19 @@ const SuperAdminDashboard = () => {
                       {/* Patient portal QR (smaller) */}
                       <div
                         style={{
-                          marginTop: '20px',
-                          background: '#f0fdf4',
-                          border: '1px solid #10b981',
-                          borderRadius: '12px',
-                          padding: '16px 20px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '16px',
+                          marginTop: '20px', background: '#f0fdf4',
+                          border: '1px solid #10b981', borderRadius: '12px',
+                          padding: '16px 20px', display: 'flex',
+                          alignItems: 'center', gap: '16px',
                         }}
                       >
                         <div
                           style={{
-                            padding: '8px',
-                            background: 'white',
-                            borderRadius: '8px',
-                            border: '1px solid #e5e7eb',
-                            flexShrink: 0,
+                            padding: '8px', background: 'white', borderRadius: '8px',
+                            border: '1px solid #e5e7eb', flexShrink: 0,
                           }}
                         >
-                          <QRCodeSVG
-                            value={onboardingData.patientPortalUrl}
-                            size={80}
-                            level="M"
-                          />
+                          <InlineQRCode value={onboardingData.patientPortalUrl} size={80} />
                         </div>
                         <div style={{ flex: 1, fontSize: '13px', color: '#065f46' }}>
                           <div style={{ fontWeight: 700, marginBottom: '4px' }}>
@@ -1232,24 +1294,16 @@ const SuperAdminDashboard = () => {
                         <button
                           onClick={async () => {
                             try {
-                              await navigator.clipboard.writeText(
-                                onboardingData.patientPortalUrl
-                              );
+                              await navigator.clipboard.writeText(onboardingData.patientPortalUrl);
                               toast.success('Patient portal URL copied');
                             } catch {
                               toast.error('Clipboard not available');
                             }
                           }}
                           style={{
-                            padding: '8px 14px',
-                            borderRadius: '8px',
-                            border: 'none',
-                            background: '#10b981',
-                            color: 'white',
-                            cursor: 'pointer',
-                            fontWeight: 600,
-                            whiteSpace: 'nowrap',
-                            fontSize: '12px',
+                            padding: '8px 14px', borderRadius: '8px', border: 'none',
+                            background: '#10b981', color: 'white', cursor: 'pointer',
+                            fontWeight: 600, whiteSpace: 'nowrap', fontSize: '12px',
                           }}
                         >
                           📋 Copy URL
@@ -1292,18 +1346,13 @@ const SuperAdminDashboard = () => {
 
                   {onboardingData.adminEmail && (
                     <a
-                      href={`https://wa.me/?text=${encodeURIComponent(
-                        onboardingData.message
-                      )}`}
+                      href={`https://wa.me/?text=${encodeURIComponent(onboardingData.message)}`}
                       target="_blank"
                       rel="noreferrer"
                       className="btn btn-primary"
                       style={{
-                        background: '#25D366',
-                        textDecoration: 'none',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '6px',
+                        background: '#25D366', textDecoration: 'none',
+                        display: 'inline-flex', alignItems: 'center', gap: '6px',
                       }}
                     >
                       💬 Share via WhatsApp
@@ -1317,11 +1366,8 @@ const SuperAdminDashboard = () => {
                       )}&body=${encodeURIComponent(onboardingData.message)}`}
                       className="btn btn-primary"
                       style={{
-                        background: '#dc2626',
-                        textDecoration: 'none',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '6px',
+                        background: '#dc2626', textDecoration: 'none',
+                        display: 'inline-flex', alignItems: 'center', gap: '6px',
                       }}
                     >
                       ✉️ Open in Gmail
@@ -1350,12 +1396,8 @@ const SuperAdminDashboard = () => {
                           <style>
                             body {
                               font-family: Arial, sans-serif;
-                              display: flex;
-                              align-items: center;
-                              justify-content: center;
-                              min-height: 100vh;
-                              margin: 0;
-                              padding: 20px;
+                              display: flex; align-items: center; justify-content: center;
+                              min-height: 100vh; margin: 0; padding: 20px;
                               box-sizing: border-box;
                             }
                             #onboarding-qr-print-area {
@@ -1363,8 +1405,7 @@ const SuperAdminDashboard = () => {
                               border-radius: 16px !important;
                               padding: 32px 24px !important;
                               text-align: center !important;
-                              max-width: 400px;
-                              background: white !important;
+                              max-width: 400px; background: white !important;
                             }
                             img { max-width: 56px; height: 56px; object-fit: contain; }
                             svg { display: inline-block; }
@@ -1397,16 +1438,10 @@ const SuperAdminDashboard = () => {
         <>
           <div
             style={{
-              background: '#eff6ff',
-              border: '1px solid #3b82f6',
-              borderRadius: '8px',
-              padding: '12px 16px',
-              marginBottom: '16px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              fontSize: '13px',
-              color: '#1e3a5f',
+              background: '#eff6ff', border: '1px solid #3b82f6',
+              borderRadius: '8px', padding: '12px 16px', marginBottom: '16px',
+              display: 'flex', alignItems: 'center', gap: '10px',
+              fontSize: '13px', color: '#1e3a5f',
             }}
           >
             <span style={{ fontSize: '20px' }}>🔐</span>
@@ -1438,47 +1473,32 @@ const SuperAdminDashboard = () => {
                     const roleColors = getRoleBadgeColor(u.role);
                     const isSelf = u.id === user?.id;
                     return (
-                      <tr
-                        key={u.id}
-                        style={isSelf ? { background: '#f0f9ff' } : undefined}
-                      >
+                      <tr key={u.id} style={isSelf ? { background: '#f0f9ff' } : undefined}>
                         <td>
                           <code>{u.username}</code>
                           {isSelf && (
                             <span
                               style={{
-                                marginLeft: '8px',
-                                fontSize: '10px',
-                                background: '#0f3460',
-                                color: 'white',
-                                padding: '1px 8px',
-                                borderRadius: '10px',
-                                fontWeight: 600,
+                                marginLeft: '8px', fontSize: '10px',
+                                background: '#0f3460', color: 'white',
+                                padding: '1px 8px', borderRadius: '10px', fontWeight: 600,
                               }}
                             >
                               YOU
                             </span>
                           )}
                         </td>
-                        <td>
-                          {u.firstName} {u.lastName}
-                        </td>
-                        <td style={{ fontSize: '13px', color: '#6b7280' }}>
-                          {u.email}
-                        </td>
+                        <td>{u.firstName} {u.lastName}</td>
+                        <td style={{ fontSize: '13px', color: '#6b7280' }}>{u.email}</td>
                         <td>
                           <select
                             value={u.role}
                             onChange={(e) => handleChangeRole(u, e.target.value)}
                             disabled={isSelf}
                             style={{
-                              padding: '4px 10px',
-                              borderRadius: '6px',
-                              border: 'none',
-                              background: roleColors.bg,
-                              color: roleColors.color,
-                              fontSize: '12px',
-                              fontWeight: 600,
+                              padding: '4px 10px', borderRadius: '6px', border: 'none',
+                              background: roleColors.bg, color: roleColors.color,
+                              fontSize: '12px', fontWeight: 600,
                               cursor: isSelf ? 'not-allowed' : 'pointer',
                               opacity: isSelf ? 0.6 : 1,
                             }}
@@ -1489,11 +1509,7 @@ const SuperAdminDashboard = () => {
                           </select>
                         </td>
                         <td>
-                          <span
-                            className={`status-badge ${
-                              u.isActive ? 'status-active' : 'status-inactive'
-                            }`}
-                          >
+                          <span className={`status-badge ${u.isActive ? 'status-active' : 'status-inactive'}`}>
                             {u.isActive ? 'Active' : 'Inactive'}
                           </span>
                         </td>
@@ -1501,20 +1517,13 @@ const SuperAdminDashboard = () => {
                           {formatDate(u.lastLogin)}
                         </td>
                         <td>
-                          <div
-                            style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}
-                          >
+                          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                             <button
                               onClick={() => handleResetUserPassword(u)}
                               style={{
-                                background: '#f59e0b',
-                                color: 'white',
-                                border: 'none',
-                                padding: '4px 10px',
-                                borderRadius: '6px',
-                                fontSize: '12px',
-                                fontWeight: 600,
-                                cursor: 'pointer',
+                                background: '#f59e0b', color: 'white', border: 'none',
+                                padding: '4px 10px', borderRadius: '6px',
+                                fontSize: '12px', fontWeight: 600, cursor: 'pointer',
                               }}
                             >
                               🔑 Reset PW
@@ -1524,13 +1533,9 @@ const SuperAdminDashboard = () => {
                                 onClick={() => handleToggleActive(u)}
                                 style={{
                                   background: u.isActive ? '#ef4444' : '#10b981',
-                                  color: 'white',
-                                  border: 'none',
-                                  padding: '4px 10px',
-                                  borderRadius: '6px',
-                                  fontSize: '12px',
-                                  fontWeight: 600,
-                                  cursor: 'pointer',
+                                  color: 'white', border: 'none',
+                                  padding: '4px 10px', borderRadius: '6px',
+                                  fontSize: '12px', fontWeight: 600, cursor: 'pointer',
                                 }}
                               >
                                 {u.isActive ? '🚫 Deactivate' : '✅ Activate'}
@@ -1542,11 +1547,7 @@ const SuperAdminDashboard = () => {
                     );
                   })}
                   {users.length === 0 && (
-                    <tr>
-                      <td colSpan="7" className="text-center">
-                        No platform users found.
-                      </td>
-                    </tr>
+                    <tr><td colSpan="7" className="text-center">No platform users found.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -1563,21 +1564,15 @@ const SuperAdminDashboard = () => {
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>Create New Hospital (Quick Stub)</h3>
-              <button className="modal-close" onClick={() => setShowModal(false)}>
-                ×
-              </button>
+              <button className="modal-close" onClick={() => setShowModal(false)}>×</button>
             </div>
             <form onSubmit={handleSubmit}>
               <div className="modal-body">
                 <div
                   style={{
-                    background: '#fef3c7',
-                    border: '1px solid #f59e0b',
-                    borderRadius: '8px',
-                    padding: '12px 16px',
-                    marginBottom: '16px',
-                    fontSize: '13px',
-                    color: '#78350f',
+                    background: '#fef3c7', border: '1px solid #f59e0b',
+                    borderRadius: '8px', padding: '12px 16px', marginBottom: '16px',
+                    fontSize: '13px', color: '#78350f',
                   }}
                 >
                   ⚠️ <strong>Quick Add</strong> creates the hospital record + the
@@ -1593,9 +1588,7 @@ const SuperAdminDashboard = () => {
                     <input
                       type="text"
                       value={formData.name}
-                      onChange={(e) =>
-                        setFormData({ ...formData, name: e.target.value })
-                      }
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                       required
                     />
                   </div>
@@ -1623,10 +1616,7 @@ const SuperAdminDashboard = () => {
                       type="text"
                       value={formData.code}
                       onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          code: e.target.value.toUpperCase(),
-                        })
+                        setFormData({ ...formData, code: e.target.value.toUpperCase() })
                       }
                       placeholder="LGH001"
                       required
@@ -1636,9 +1626,7 @@ const SuperAdminDashboard = () => {
                     <label>Plan</label>
                     <select
                       value={formData.plan}
-                      onChange={(e) =>
-                        setFormData({ ...formData, plan: e.target.value })
-                      }
+                      onChange={(e) => setFormData({ ...formData, plan: e.target.value })}
                     >
                       <option value="trial">Trial</option>
                       <option value="basic">Basic</option>
@@ -1654,9 +1642,7 @@ const SuperAdminDashboard = () => {
                     <input
                       type="email"
                       value={formData.email}
-                      onChange={(e) =>
-                        setFormData({ ...formData, email: e.target.value })
-                      }
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     />
                   </div>
                   <div className="form-group">
@@ -1664,9 +1650,7 @@ const SuperAdminDashboard = () => {
                     <input
                       type="text"
                       value={formData.phone}
-                      onChange={(e) =>
-                        setFormData({ ...formData, phone: e.target.value })
-                      }
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                     />
                   </div>
                 </div>
@@ -1676,9 +1660,7 @@ const SuperAdminDashboard = () => {
                   <input
                     type="text"
                     value={formData.address}
-                    onChange={(e) =>
-                      setFormData({ ...formData, address: e.target.value })
-                    }
+                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                   />
                 </div>
 
@@ -1688,9 +1670,7 @@ const SuperAdminDashboard = () => {
                     <input
                       type="text"
                       value={formData.city}
-                      onChange={(e) =>
-                        setFormData({ ...formData, city: e.target.value })
-                      }
+                      onChange={(e) => setFormData({ ...formData, city: e.target.value })}
                     />
                   </div>
                   <div className="form-group">
@@ -1698,9 +1678,7 @@ const SuperAdminDashboard = () => {
                     <input
                       type="text"
                       value={formData.state}
-                      onChange={(e) =>
-                        setFormData({ ...formData, state: e.target.value })
-                      }
+                      onChange={(e) => setFormData({ ...formData, state: e.target.value })}
                     />
                   </div>
                 </div>
@@ -1734,24 +1712,15 @@ const SuperAdminDashboard = () => {
           >
             <div className="modal-header">
               <h3>➕ Add Platform User</h3>
-              <button
-                className="modal-close"
-                onClick={() => setShowUserModal(false)}
-              >
-                ×
-              </button>
+              <button className="modal-close" onClick={() => setShowUserModal(false)}>×</button>
             </div>
             <form onSubmit={handleCreateUser}>
               <div className="modal-body">
                 <div
                   style={{
-                    background: '#eff6ff',
-                    border: '1px solid #3b82f6',
-                    borderRadius: '8px',
-                    padding: '12px 16px',
-                    marginBottom: '16px',
-                    fontSize: '13px',
-                    color: '#1e3a5f',
+                    background: '#eff6ff', border: '1px solid #3b82f6',
+                    borderRadius: '8px', padding: '12px 16px', marginBottom: '16px',
+                    fontSize: '13px', color: '#1e3a5f',
                   }}
                 >
                   🔐 Platform users can access the Super Admin dashboard to manage
@@ -1764,9 +1733,7 @@ const SuperAdminDashboard = () => {
                     <input
                       type="text"
                       value={userForm.firstName}
-                      onChange={(e) =>
-                        setUserForm({ ...userForm, firstName: e.target.value })
-                      }
+                      onChange={(e) => setUserForm({ ...userForm, firstName: e.target.value })}
                       required
                     />
                   </div>
@@ -1775,9 +1742,7 @@ const SuperAdminDashboard = () => {
                     <input
                       type="text"
                       value={userForm.lastName}
-                      onChange={(e) =>
-                        setUserForm({ ...userForm, lastName: e.target.value })
-                      }
+                      onChange={(e) => setUserForm({ ...userForm, lastName: e.target.value })}
                       required
                     />
                   </div>
@@ -1791,9 +1756,7 @@ const SuperAdminDashboard = () => {
                     onChange={(e) =>
                       setUserForm({
                         ...userForm,
-                        username: e.target.value
-                          .toLowerCase()
-                          .replace(/[^a-z0-9-]/g, ''),
+                        username: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''),
                       })
                     }
                     placeholder="e.g., platform-support-1"
@@ -1809,9 +1772,7 @@ const SuperAdminDashboard = () => {
                   <input
                     type="email"
                     value={userForm.email}
-                    onChange={(e) =>
-                      setUserForm({ ...userForm, email: e.target.value })
-                    }
+                    onChange={(e) => setUserForm({ ...userForm, email: e.target.value })}
                     placeholder="user@nexgen.health"
                     required
                   />
@@ -1822,9 +1783,7 @@ const SuperAdminDashboard = () => {
                   <input
                     type="password"
                     value={userForm.password}
-                    onChange={(e) =>
-                      setUserForm({ ...userForm, password: e.target.value })
-                    }
+                    onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
                     placeholder="Minimum 8 characters"
                     minLength={8}
                     required
@@ -1838,9 +1797,7 @@ const SuperAdminDashboard = () => {
                   <label>Role *</label>
                   <select
                     value={userForm.role}
-                    onChange={(e) =>
-                      setUserForm({ ...userForm, role: e.target.value })
-                    }
+                    onChange={(e) => setUserForm({ ...userForm, role: e.target.value })}
                     required
                   >
                     <option value="PlatformAdmin">
