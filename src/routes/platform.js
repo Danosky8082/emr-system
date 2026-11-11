@@ -742,4 +742,120 @@ router.post(
   }
 );
 
+// ============================================================
+// POST /api/platform/hospitals/:id/onboarding-link
+//
+// Builds a ready-to-share onboarding URL + a pre-filled message
+// for the hospital's Admin. Nothing is sent — the superadmin
+// copies the link and delivers it manually.
+//
+// Response:
+//   {
+//     url:              "https://app.example.com/h/lagos-general/login",
+//     patientPortalUrl: "https://app.example.com/patient-login?h=lagos-general",
+//     hospitalName:     "Lagos General Hospital",
+//     adminName:        "Mary Bello",
+//     adminUsername:    "lagos-general-4821",
+//     adminEmail:       "admin@lagosgeneral.com",
+//     message:          "Hi Mary, here is your NexGen EMR ... (full text)"
+//   }
+// ============================================================
+router.post(
+  '/hospitals/:id/onboarding-link',
+  authenticatePlatform,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const hospital = await prisma.hospital.findUnique({
+        where: { id },
+        include: {
+          Staff: {
+            where: { isActive: true, role: { in: ['Admin', 'ITAdmin'] } },
+            take: 1,
+            select: {
+              username: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+        },
+      });
+
+      if (!hospital) {
+        return res.status(404).json({
+          error: 'Hospital not found',
+          code: 'HOSPITAL_NOT_FOUND',
+        });
+      }
+
+      const admin = hospital.Staff?.[0];
+
+      const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173')
+        .split(',')[0]   // FRONTEND_URL may be a comma-separated list
+        .trim()
+        .replace(/\/+$/, '');
+
+      const staffLoginUrl = `${frontendUrl}/h/${hospital.slug}/login`;
+      const patientPortalUrl = `${frontendUrl}/patient-login?h=${hospital.slug}`;
+
+      const adminName = admin
+        ? `${admin.firstName} ${admin.lastName}`
+        : 'Admin';
+
+      const adminUsername = admin?.username || '(set by your hospital)';
+      const adminEmail = admin?.email || hospital.email || null;
+
+      // Pre-written message the superadmin can copy verbatim
+      const message = [
+        `Hello ${adminName},`,
+        ``,
+        `Your hospital ${hospital.name} is now active on NexGen EMR.`,
+        ``,
+        `STAFF LOGIN`,
+        `  URL:      ${staffLoginUrl}`,
+        `  Username: ${adminUsername}`,
+        `  Password: the one you chose during registration`,
+        ``,
+        `PATIENT PORTAL (share with your patients)`,
+        `  URL: ${patientPortalUrl}`,
+        ``,
+        `If you have any trouble logging in, reply to this message.`,
+        ``,
+        `— NexGen EMR`,
+      ].join('\n');
+
+      // Log the action to the audit trail
+      await prisma.auditLog.create({
+        data: {
+          tenantId: hospital.id,
+          staffId: null,
+          action: 'ONBOARDING_LINK_GENERATED',
+          module: 'Platform',
+          details: `Onboarding link generated for ${hospital.name} (${hospital.slug}) — target: ${adminEmail || 'no email on file'}`,
+        },
+      }).catch(() => {}); // audit failure must never block the response
+
+      return res.json({
+        url: staffLoginUrl,
+        patientPortalUrl,
+        hospitalName: hospital.name,
+        adminName,
+        adminUsername,
+        adminEmail,
+        message,
+      });
+    } catch (err) {
+      console.error('❌ [onboarding-link] Unexpected error:', err);
+      return res.status(500).json({
+        error: 'Failed to generate onboarding link.',
+        code: 'INTERNAL_ERROR',
+        details: err.message,
+      });
+    }
+  }
+);
+
 module.exports = router;

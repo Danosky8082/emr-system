@@ -20,6 +20,7 @@ import { usePlatformAuth } from '../context/PlatformAuthContext';
 import api from '../api/client';
 import './Dashboard.css';
 import { clearAllSessions } from '../utils/clearAllSessions';
+import QRCode from 'qrcode.react';
 
 const SuperAdminDashboard = () => {
   const navigate = useNavigate();
@@ -42,9 +43,13 @@ const SuperAdminDashboard = () => {
     address: '', city: '', state: '', plan: 'trial',
   });
 
-  // Tracks which hospital's resend button is currently in-flight
-  // (so we can disable it + show a spinner without freezing the whole table)
-  const [resendingEmailFor, setResendingEmailFor] = useState(null);
+  // ============================================================
+  // ONBOARDING LINK STATE
+  // ============================================================
+  const [onboardingLinkFor, setOnboardingLinkFor] = useState(null);
+  const [onboardingData, setOnboardingData] = useState(null);
+  const [onboardingLoading, setOnboardingLoading] = useState(false);
+  const [onboardingView, setOnboardingView] = useState('link'); // 'link' | 'qr'
 
   // ============================================================
   // PLATFORM USERS STATE
@@ -64,10 +69,6 @@ const SuperAdminDashboard = () => {
   // ============================================================
   // API CLIENT
   // ============================================================
-  //
-  // The shared `api` client in /src/api/client.js auto-attaches the
-  // platform token for any URL starting with `/platform/`, so we just
-  // alias it here. Call sites below use `/platform/<route>`.
   const apiClient = api;
 
   // ============================================================
@@ -168,43 +169,32 @@ const SuperAdminDashboard = () => {
     }
   };
 
-  // ✅ Resend the welcome/onboarding email to the hospital's Admin user
-  const handleResendWelcomeEmail = async (hospital) => {
-  const targetEmail = hospital.email || 'the hospital Admin';
-  if (!window.confirm(`Resend welcome email to ${hospital.name} (${targetEmail})?`)) return;
+  // ============================================================
+  // ONBOARDING LINK HANDLER — MUST live inside the component
+  // so it can call setOnboardingLinkFor / setOnboardingData / etc.
+  // ============================================================
+  const handleGetOnboardingLink = async (hospital) => {
+    setOnboardingLinkFor(hospital);
+    setOnboardingData(null);
+    setOnboardingView('link');   // always open on the Copy & Paste tab
+    setOnboardingLoading(true);
 
-  setResendingEmailFor(hospital.id);
-  try {
-    const res = await apiClient.post(
-      `/platform/hospitals/${hospital.id}/resend-welcome-email`
-    );
-
-    const sentTo = res.data?.sentTo || targetEmail;
-    toast.success(`📧 Welcome email sent to ${sentTo}`, { duration: 6000 });
-  } catch (error) {
-    // Express returns HTML for 404, so error.response.data isn't an object.
-    // Prefer the JSON `error` if present, fall back to the code, then the raw message.
-    const serverError =
-      (typeof error.response?.data === 'object' && error.response?.data?.error) ||
-      (typeof error.response?.data === 'object' && error.response?.data?.code) ||
-      error.message;
-
-    if (error.response?.status === 404) {
-      toast.error(
-        'Backend route not deployed. Redeploy the server and try again.',
-        { duration: 8000 }
+    try {
+      const res = await apiClient.post(
+        `/platform/hospitals/${hospital.id}/onboarding-link`
       );
-    } else if (error.response?.status === 502) {
-      toast.error(`SMTP error: ${serverError}`, { duration: 10000 });
-    } else if (error.response?.status === 400) {
-      toast.error(serverError, { duration: 8000 });
-    } else {
-      toast.error(serverError || 'Failed to resend email');
+      setOnboardingData(res.data);
+    } catch (error) {
+      const msg =
+        (typeof error.response?.data === 'object' && error.response?.data?.error) ||
+        error.message ||
+        'Failed to generate onboarding link';
+      toast.error(msg);
+      setOnboardingLinkFor(null);
+    } finally {
+      setOnboardingLoading(false);
     }
-  } finally {
-    setResendingEmailFor(null);
-  }
-};
+  };
 
   // ✅ Update auto-advance setting
   const handleAutoAdvanceChange = async (hospitalId, value) => {
@@ -645,7 +635,6 @@ const SuperAdminDashboard = () => {
                 {hospitals.map((h) => {
                   const trial = getTrialStatus(h);
                   const autoAdvanceValue = h.Settings?.autoAdvanceBillingAfterMinutes ?? '';
-                  const isResending = resendingEmailFor === h.id;
                   return (
                     <tr key={h.id}>
                       <td>
@@ -743,36 +732,22 @@ const SuperAdminDashboard = () => {
                             🔗 Login
                           </a>
 
-                          {/* ✉️ Resend welcome email — always visible (active OR suspended).
-                              Shows a spinner + disables while in flight so it can't be double-clicked. */}
                           <button
-                            onClick={() => handleResendWelcomeEmail(h)}
-                            disabled={isResending}
-                            title={`Resend welcome email to the Admin of ${h.name}${h.email ? ` (${h.email})` : ''}`}
+                            onClick={() => handleGetOnboardingLink(h)}
+                            title={`Get copyable onboarding link for ${h.name}`}
                             style={{
-                              background: isResending ? '#e5e7eb' : '#f3f4f6',
-                              color: '#1f2937',
-                              border: '1px solid #d1d5db',
+                              background: '#10b981',
+                              color: 'white',
+                              border: 'none',
                               padding: '4px 10px',
                               borderRadius: '6px',
-                              textDecoration: 'none',
                               fontSize: '12px',
                               fontWeight: 600,
-                              cursor: isResending ? 'wait' : 'pointer',
-                              opacity: isResending ? 0.6 : 1,
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
+                              cursor: 'pointer',
+                              whiteSpace: 'nowrap',
                             }}
                           >
-                            {isResending ? (
-                              <>
-                                <span className="spinner-small" />
-                                Sending…
-                              </>
-                            ) : (
-                              <>✉️ Resend Link</>
-                            )}
+                            🔗 Onboarding Link
                           </button>
 
                           {h.isActive ? (
@@ -808,6 +783,606 @@ const SuperAdminDashboard = () => {
             </table>
           </div>
         </>
+      )}
+
+      {/* ============================================================
+          ONBOARDING LINK MODAL
+          ============================================================ */}
+      {onboardingLinkFor && (
+        <div
+          className="modal-overlay"
+          onClick={() => {
+            setOnboardingLinkFor(null);
+            setOnboardingData(null);
+            setOnboardingView('link');
+          }}
+        >
+          <div
+            className="modal-content"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: '640px' }}
+          >
+            <div className="modal-header">
+              <h3>🔗 Onboarding Link — {onboardingLinkFor.name}</h3>
+              <button
+                className="modal-close"
+                onClick={() => {
+                  setOnboardingLinkFor(null);
+                  setOnboardingData(null);
+                  setOnboardingView('link');
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="modal-body">
+              {onboardingLoading && (
+                <div style={{ textAlign: 'center', padding: '40px' }}>
+                  <div className="spinner" />
+                  <p style={{ color: '#6b7280', marginTop: '12px' }}>
+                    Generating link…
+                  </p>
+                </div>
+              )}
+
+              {onboardingData && (
+                <>
+                  {/* ── View tabs ── */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: '4px',
+                      marginBottom: '16px',
+                      padding: '4px',
+                      background: '#f3f4f6',
+                      borderRadius: '10px',
+                    }}
+                  >
+                    <button
+                      onClick={() => setOnboardingView('link')}
+                      style={{
+                        flex: 1,
+                        padding: '8px 16px',
+                        border: 'none',
+                        borderRadius: '8px',
+                        background: onboardingView === 'link' ? 'white' : 'transparent',
+                        color: onboardingView === 'link' ? '#1f2937' : '#6b7280',
+                        fontWeight: 600,
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                        boxShadow:
+                          onboardingView === 'link' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                        transition: 'all 0.15s',
+                      }}
+                    >
+                      📋 Copy &amp; Paste
+                    </button>
+                    <button
+                      onClick={() => setOnboardingView('qr')}
+                      style={{
+                        flex: 1,
+                        padding: '8px 16px',
+                        border: 'none',
+                        borderRadius: '8px',
+                        background: onboardingView === 'qr' ? 'white' : 'transparent',
+                        color: onboardingView === 'qr' ? '#1f2937' : '#6b7280',
+                        fontWeight: 600,
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                        boxShadow:
+                          onboardingView === 'qr' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                        transition: 'all 0.15s',
+                      }}
+                    >
+                      📱 QR Code
+                    </button>
+                  </div>
+
+                  {/* ═══════════════════════════════════════════════
+                      VIEW 1 — COPY & PASTE
+                      ═══════════════════════════════════════════════ */}
+                  {onboardingView === 'link' && (
+                    <>
+                      <div
+                        style={{
+                          background: '#eff6ff',
+                          border: '1px solid #3b82f6',
+                          borderRadius: '8px',
+                          padding: '12px 16px',
+                          marginBottom: '16px',
+                          fontSize: '13px',
+                          color: '#1e3a5f',
+                        }}
+                      >
+                        🔒 Nothing is sent automatically. Copy the link or the full
+                        message below, then send it to the hospital admin via WhatsApp,
+                        email, SMS, or however you prefer.
+                      </div>
+
+                      {/* Staff login URL */}
+                      <div style={{ marginBottom: '16px' }}>
+                        <label
+                          style={{
+                            display: 'block',
+                            fontSize: '12px',
+                            fontWeight: 600,
+                            color: '#374151',
+                            marginBottom: '4px',
+                          }}
+                        >
+                          Staff Login URL
+                        </label>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <input
+                            readOnly
+                            value={onboardingData.url}
+                            onFocus={(e) => e.target.select()}
+                            style={{
+                              flex: 1,
+                              padding: '10px 12px',
+                              borderRadius: '8px',
+                              border: '1px solid #d1d5db',
+                              fontSize: '13px',
+                              fontFamily: 'monospace',
+                              background: '#f9fafb',
+                            }}
+                          />
+                          <button
+                            onClick={async () => {
+                              try {
+                                await navigator.clipboard.writeText(onboardingData.url);
+                                toast.success('URL copied');
+                              } catch {
+                                toast.error('Clipboard not available');
+                              }
+                            }}
+                            style={{
+                              padding: '10px 16px',
+                              borderRadius: '8px',
+                              border: 'none',
+                              background: '#0f3460',
+                              color: 'white',
+                              cursor: 'pointer',
+                              fontWeight: 600,
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            📋 Copy
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Patient portal URL */}
+                      <div style={{ marginBottom: '16px' }}>
+                        <label
+                          style={{
+                            display: 'block',
+                            fontSize: '12px',
+                            fontWeight: 600,
+                            color: '#374151',
+                            marginBottom: '4px',
+                          }}
+                        >
+                          Patient Portal URL (optional — share with patients)
+                        </label>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <input
+                            readOnly
+                            value={onboardingData.patientPortalUrl}
+                            onFocus={(e) => e.target.select()}
+                            style={{
+                              flex: 1,
+                              padding: '10px 12px',
+                              borderRadius: '8px',
+                              border: '1px solid #d1d5db',
+                              fontSize: '13px',
+                              fontFamily: 'monospace',
+                              background: '#f9fafb',
+                            }}
+                          />
+                          <button
+                            onClick={async () => {
+                              try {
+                                await navigator.clipboard.writeText(
+                                  onboardingData.patientPortalUrl
+                                );
+                                toast.success('Patient portal URL copied');
+                              } catch {
+                                toast.error('Clipboard not available');
+                              }
+                            }}
+                            style={{
+                              padding: '10px 16px',
+                              borderRadius: '8px',
+                              border: 'none',
+                              background: '#6b7280',
+                              color: 'white',
+                              cursor: 'pointer',
+                              fontWeight: 600,
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            📋 Copy
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Admin credentials summary */}
+                      <div
+                        style={{
+                          background: '#f8fafc',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: '8px',
+                          padding: '12px 16px',
+                          marginBottom: '16px',
+                          fontSize: '13px',
+                          display: 'grid',
+                          gridTemplateColumns: '1fr 1fr',
+                          gap: '8px 16px',
+                        }}
+                      >
+                        <div>
+                          <span style={{ color: '#6b7280' }}>Admin name</span>
+                          <div style={{ fontWeight: 600 }}>{onboardingData.adminName}</div>
+                        </div>
+                        <div>
+                          <span style={{ color: '#6b7280' }}>Login username</span>
+                          <div style={{ fontWeight: 600, fontFamily: 'monospace' }}>
+                            {onboardingData.adminUsername}
+                          </div>
+                        </div>
+                        <div style={{ gridColumn: '1 / -1' }}>
+                          <span style={{ color: '#6b7280' }}>Admin email</span>
+                          <div style={{ fontWeight: 600 }}>
+                            {onboardingData.adminEmail || (
+                              <span style={{ color: '#ef4444' }}>⚠️ none on file</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Pre-written message */}
+                      <div>
+                        <label
+                          style={{
+                            display: 'block',
+                            fontSize: '12px',
+                            fontWeight: 600,
+                            color: '#374151',
+                            marginBottom: '4px',
+                          }}
+                        >
+                          Pre-written message (paste into WhatsApp / Gmail)
+                        </label>
+                        <textarea
+                          readOnly
+                          value={onboardingData.message}
+                          onFocus={(e) => e.target.select()}
+                          rows={12}
+                          style={{
+                            width: '100%',
+                            padding: '12px',
+                            borderRadius: '8px',
+                            border: '1px solid #d1d5db',
+                            fontSize: '12px',
+                            fontFamily: 'monospace',
+                            background: '#f9fafb',
+                            resize: 'vertical',
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {/* ═══════════════════════════════════════════════
+                      VIEW 2 — QR CODE
+                      ═══════════════════════════════════════════════ */}
+                  {onboardingView === 'qr' && (
+                    <>
+                      <div
+                        style={{
+                          background: '#eff6ff',
+                          border: '1px solid #3b82f6',
+                          borderRadius: '8px',
+                          padding: '12px 16px',
+                          marginBottom: '20px',
+                          fontSize: '13px',
+                          color: '#1e3a5f',
+                        }}
+                      >
+                        📱 Show this QR code to the hospital admin. They scan it with their
+                        phone camera and land directly on the login page — no typing needed.
+                      </div>
+
+                      {/* Print target */}
+                      <div
+                        id="onboarding-qr-print-area"
+                        style={{
+                          background: 'white',
+                          border: '2px dashed #0f3460',
+                          borderRadius: '16px',
+                          padding: '32px 24px',
+                          textAlign: 'center',
+                        }}
+                      >
+                        <img
+                          src="/logo.png"
+                          alt="NexGen EMR"
+                          style={{
+                            width: '56px',
+                            height: '56px',
+                            objectFit: 'contain',
+                            marginBottom: '8px',
+                          }}
+                        />
+                        <div
+                          style={{
+                            fontSize: '20px',
+                            fontWeight: 700,
+                            color: '#0f3460',
+                            marginBottom: '4px',
+                          }}
+                        >
+                          {onboardingData.hospitalName}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: '13px',
+                            color: '#6b7280',
+                            marginBottom: '20px',
+                          }}
+                        >
+                          Staff Login
+                        </div>
+
+                        <div
+                          style={{
+                            display: 'inline-block',
+                            padding: '16px',
+                            background: 'white',
+                            borderRadius: '12px',
+                            border: '1px solid #e5e7eb',
+                          }}
+                        >
+                          <QRCode
+                            value={onboardingData.url}
+                            size={220}
+                            level="H"
+                            includeMargin
+                          />
+                        </div>
+
+                        <div
+                          style={{
+                            marginTop: '20px',
+                            fontSize: '13px',
+                            color: '#374151',
+                            fontFamily: 'monospace',
+                            wordBreak: 'break-all',
+                          }}
+                        >
+                          {onboardingData.url}
+                        </div>
+
+                        <div
+                          style={{
+                            marginTop: '16px',
+                            paddingTop: '16px',
+                            borderTop: '1px solid #e5e7eb',
+                            fontSize: '12px',
+                            color: '#6b7280',
+                          }}
+                        >
+                          <div>
+                            <strong>Username:</strong>{' '}
+                            <span style={{ fontFamily: 'monospace' }}>
+                              {onboardingData.adminUsername}
+                            </span>
+                          </div>
+                          <div>
+                            <strong>Password:</strong> the one set during registration
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Patient portal QR (smaller) */}
+                      <div
+                        style={{
+                          marginTop: '20px',
+                          background: '#f0fdf4',
+                          border: '1px solid #10b981',
+                          borderRadius: '12px',
+                          padding: '16px 20px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '16px',
+                        }}
+                      >
+                        <div
+                          style={{
+                            padding: '8px',
+                            background: 'white',
+                            borderRadius: '8px',
+                            border: '1px solid #e5e7eb',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <QRCode
+                            value={onboardingData.patientPortalUrl}
+                            size={80}
+                            level="M"
+                          />
+                        </div>
+                        <div style={{ flex: 1, fontSize: '13px', color: '#065f46' }}>
+                          <div style={{ fontWeight: 700, marginBottom: '4px' }}>
+                            🚑 Patient Portal (optional)
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#374151' }}>
+                            Patients scan this to reach the portal. Print on posters or ID
+                            cards if you like.
+                          </div>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(
+                                onboardingData.patientPortalUrl
+                              );
+                              toast.success('Patient portal URL copied');
+                            } catch {
+                              toast.error('Clipboard not available');
+                            }
+                          }}
+                          style={{
+                            padding: '8px 14px',
+                            borderRadius: '8px',
+                            border: 'none',
+                            background: '#10b981',
+                            color: 'white',
+                            cursor: 'pointer',
+                            fontWeight: 600,
+                            whiteSpace: 'nowrap',
+                            fontSize: '12px',
+                          }}
+                        >
+                          📋 Copy URL
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+
+            <div className="modal-footer" style={{ flexWrap: 'wrap', gap: '8px' }}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  setOnboardingLinkFor(null);
+                  setOnboardingData(null);
+                  setOnboardingView('link');
+                }}
+              >
+                Close
+              </button>
+
+              {onboardingData && onboardingView === 'link' && (
+                <>
+                  <button
+                    className="btn btn-primary"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(onboardingData.message);
+                        toast.success('Full message copied — paste anywhere');
+                      } catch {
+                        toast.error('Clipboard not available');
+                      }
+                    }}
+                    style={{ background: '#10b981' }}
+                  >
+                    📋 Copy Full Message
+                  </button>
+
+                  {onboardingData.adminEmail && (
+                    <a
+                      href={`https://wa.me/?text=${encodeURIComponent(
+                        onboardingData.message
+                      )}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn btn-primary"
+                      style={{
+                        background: '#25D366',
+                        textDecoration: 'none',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      💬 Share via WhatsApp
+                    </a>
+                  )}
+
+                  {onboardingData.adminEmail && (
+                    <a
+                      href={`mailto:${onboardingData.adminEmail}?subject=${encodeURIComponent(
+                        `Welcome to NexGen EMR — ${onboardingData.hospitalName}`
+                      )}&body=${encodeURIComponent(onboardingData.message)}`}
+                      className="btn btn-primary"
+                      style={{
+                        background: '#dc2626',
+                        textDecoration: 'none',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      ✉️ Open in Gmail
+                    </a>
+                  )}
+                </>
+              )}
+
+              {onboardingData && onboardingView === 'qr' && (
+                <button
+                  className="btn btn-primary"
+                  onClick={() => {
+                    const printContent =
+                      document.getElementById('onboarding-qr-print-area')?.outerHTML;
+                    if (!printContent) return;
+
+                    const w = window.open('', '_blank', 'width=520,height=760');
+                    if (!w) {
+                      toast.error('Please allow popups to print');
+                      return;
+                    }
+                    w.document.write(`
+                      <html>
+                        <head>
+                          <title>Onboarding QR — ${onboardingData.hospitalName}</title>
+                          <style>
+                            body {
+                              font-family: Arial, sans-serif;
+                              display: flex;
+                              align-items: center;
+                              justify-content: center;
+                              min-height: 100vh;
+                              margin: 0;
+                              padding: 20px;
+                              box-sizing: border-box;
+                            }
+                            #onboarding-qr-print-area {
+                              border: 2px dashed #0f3460 !important;
+                              border-radius: 16px !important;
+                              padding: 32px 24px !important;
+                              text-align: center !important;
+                              max-width: 400px;
+                              background: white !important;
+                            }
+                            img { max-width: 56px; height: 56px; object-fit: contain; }
+                            svg { display: inline-block; }
+                          </style>
+                        </head>
+                        <body>${printContent}</body>
+                      </html>
+                    `);
+                    w.document.close();
+                    w.focus();
+                    setTimeout(() => {
+                      w.print();
+                      w.close();
+                    }, 400);
+                  }}
+                  style={{ background: '#0f3460' }}
+                >
+                  🖨️ Print QR
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ============================================================
