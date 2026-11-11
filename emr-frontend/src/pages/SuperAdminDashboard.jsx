@@ -20,7 +20,7 @@ import { usePlatformAuth } from '../context/PlatformAuthContext';
 import api from '../api/client';
 import './Dashboard.css';
 import { clearAllSessions } from '../utils/clearAllSessions';
-import QRCode from 'qrcode.react';
+import { QRCodeSVG } from 'qrcode.react';
 
 const SuperAdminDashboard = () => {
   const navigate = useNavigate();
@@ -1146,12 +1146,17 @@ const SuperAdminDashboard = () => {
                             border: '1px solid #e5e7eb',
                           }}
                         >
-                          <QRCode
-                            value={onboardingData.url}
-                            size={220}
-                            level="H"
-                            includeMargin
+                          <QRCodeSVG
+  value={onboardingData.url}
+  size={220}
+  level="H"
+  marginSize={4}
                           />
+                          <QRCodeSVG
+  value={onboardingData.patientPortalUrl}
+  size={80}
+  level="M"
+/>
                         </div>
 
                         <div
