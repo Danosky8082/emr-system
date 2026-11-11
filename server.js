@@ -172,6 +172,111 @@ app.use(helmet({
 }));
 
 // ============================================================
+// STAFF ID GENERATION HELPER
+//
+// Generates a unique short number for a hospital per year.
+// Supports RANDOM (default) and SEQUENTIAL strategies.
+// ============================================================
+async function generateShortNumber(tx, tenantId, year) {
+  const template = await tx.staffIdTemplate.findUnique({
+    where: { tenantId },
+  });
+
+  const strategy = template?.sequenceStrategy || 'RANDOM';
+  const padding = template?.sequencePadding || 4;
+
+  if (strategy === 'SEQUENTIAL') {
+    let lastSeq = template?.lastSequence || 0;
+    let lastYear = template?.lastSequenceYear;
+
+    if (lastYear !== year) {
+      lastSeq = 0;
+    }
+
+    for (let i = 0; i < 10000; i++) {
+      lastSeq += 1;
+      const key = String(lastSeq).padStart(padding, '0');
+      const conflict = await tx.staff.findFirst({
+        where: { tenantId, employeeIdKey: key, employeeIdYear: year },
+        select: { id: true },
+      });
+      if (!conflict) {
+        if (template) {
+          await tx.staffIdTemplate.update({
+            where: { tenantId },
+            data: { lastSequence: lastSeq, lastSequenceYear: year },
+          });
+        }
+        return key;
+      }
+    }
+    throw new Error('Sequential number space exhausted');
+  }
+
+  // RANDOM (default)
+  const min = Math.pow(10, padding - 1);
+  const max = Math.pow(10, padding) - 1;
+
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const n = Math.floor(min + Math.random() * (max - min + 1));
+    const key = String(n);
+    const conflict = await tx.staff.findFirst({
+      where: { tenantId, employeeIdKey: key, employeeIdYear: year },
+      select: { id: true },
+    });
+    if (!conflict) return key;
+  }
+
+  // Fallback to 5-digit
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const n = Math.floor(10000 + Math.random() * 90000);
+    const key = String(n);
+    const conflict = await tx.staff.findFirst({
+      where: { tenantId, employeeIdKey: key, employeeIdYear: year },
+      select: { id: true },
+    });
+    if (!conflict) return key;
+  }
+
+  throw new Error('Random number space exhausted');
+}
+
+// Build the full display ID from the template.
+// {PREFIX} → hospital usernamePrefix (uppercase)
+// {DEPT}   → department code
+// {YEAR}   → current year
+// {SEQ}    → short number
+async function buildDisplayId(tx, tenantId, departmentName, shortNumber) {
+  const hospital = await tx.hospital.findUnique({
+    where: { id: tenantId },
+    select: { usernamePrefix: true, code: true, name: true },
+  });
+
+  const template = await tx.staffIdTemplate.findUnique({
+    where: { tenantId },
+  });
+
+  const prefix = (hospital?.usernamePrefix || hospital?.code || 'HOSP')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+
+  const deptCode = (departmentName || 'GEN')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, 6);
+
+  const year = new Date().getFullYear();
+
+  const format = template?.displayFormat || '{PREFIX}/{DEPT}/{SEQ}';
+
+  return format
+    .replace(/\{PREFIX\}/g, prefix)
+    .replace(/\{DEPT\}/g, deptCode)
+    .replace(/\{YEAR\}/g, String(year))
+    .replace(/\{SEQ\}/g, shortNumber);
+}
+
+// ============================================================
 // 4. HELPER FUNCTIONS
 // ============================================================
 async function findPatientIncludingDeleted(db, id, tenantId) {
@@ -721,105 +826,172 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
+// ============================================================
+// POST /api/auth/login
+//
+// Accepts:
+//   identifier  — Staff ID (full or short), username, employeeId, or email
+//   password    — plain text
+//   hospitalSlug — optional; scopes the lookup when logging in from
+//                  /h/<slug>/login. Essential when the same short number
+//                  exists at multiple hospitals.
+//
+// Resolution order (highest → lowest priority):
+//   1. Full employeeId match (e.g. "FMCEB/HR/0889")
+//   2. Short number match (employeeIdKey, e.g. "0889") when hospitalSlug given
+//   3. Username match (e.g. "caretech-doctor")
+//   4. Email match
+//
+// On success returns { token, staff }.
+// ============================================================
 app.post('/api/auth/login', async (req, res) => {
   try {
-    const { identifier, email, username, password } = req.body;
+    const { identifier, email, username, password, hospitalSlug } = req.body;
 
-    const id = (identifier || email || username || '').trim();
-    if (!id || !password) {
-      return res.status(400).json({ error: 'Username and password are required' });
+    const rawId = (identifier || email || username || '').trim();
+    if (!rawId || !password) {
+      return res.status(400).json({ error: 'Staff ID and password are required' });
     }
 
-    const idLower = id.toLowerCase();
-let staff = null;
+    const idLower = rawId.toLowerCase();
+    const currentYear = new Date().getFullYear();
 
-// ── Case 1: Email ────────────────────────────────
-if (idLower.includes('@')) {
-  staff = await prisma.staff.findFirst({
-    where: { email: idLower },
-  });
-}
+    // ── Step 1: Resolve tenant from slug, if provided ──
+    let scopedTenantId = null;
+    if (hospitalSlug) {
+      const hospital = await prisma.hospital.findUnique({
+        where: { slug: hospitalSlug },
+        select: { id: true, isActive: true, name: true },
+      });
+      if (!hospital) {
+        return res.status(401).json({
+          error: 'Invalid hospital link. Check the URL or contact your admin.',
+          code: 'HOSPITAL_NOT_FOUND',
+        });
+      }
+      if (!hospital.isActive) {
+        return res.status(403).json({
+          error: `Hospital "${hospital.name}" is not active. Contact platform support.`,
+          code: 'HOSPITAL_SUSPENDED',
+        });
+      }
+      scopedTenantId = hospital.id;
+    }
 
-// ── Case 1b: Employee ID (e.g. ADMIN001, stmarys-doctor, LABSCI001) ──
-else {
-  // Try employee ID first — this handles both hyphenated
-  // (stmarys-doctor) and non-hyphenated (ADMIN001) formats.
-  const empMatches = await prisma.staff.findMany({
-    where: { employeeId: id },
-    select: { id: true },
-  });
+    // ── Step 2: Try to find the staff ──
+    let staff = null;
 
-  if (empMatches.length === 1) {
-    staff = await prisma.staff.findUnique({ where: { id: empMatches[0].id } });
-  } else if (empMatches.length > 1) {
-    return res.status(409).json({
-      error: 'This Employee ID exists in multiple hospitals. Please use your username or email instead.',
-      code: 'AMBIGUOUS_EMPLOYEE_ID',
-    });
-  } else if (idLower.includes('-')) {
-    // ── Case 2: Prefixed username ("caretech-admin") ──
-    const firstHyphen = idLower.indexOf('-');
-    const prefix = idLower.substring(0, firstHyphen);
-    const localUsername = idLower.substring(firstHyphen + 1);
-
-    const hospital = await prisma.hospital.findUnique({
-      where: { usernamePrefix: prefix },
-      select: { id: true, isActive: true, name: true },
-    });
-
-    if (!hospital) {
-      return res.status(401).json({
-        error: 'Invalid credentials. Check your hospital prefix.',
+    // 2a. Full employeeId match
+    if (scopedTenantId) {
+      staff = await prisma.staff.findFirst({
+        where: { tenantId: scopedTenantId, employeeId: rawId },
       });
     }
-    if (!hospital.isActive) {
-      return res.status(403).json({
-        error: `Hospital "${hospital.name}" is not active. Contact support.`,
+    if (!staff) {
+      const empMatches = await prisma.staff.findMany({
+        where: { employeeId: rawId },
+        take: 2,
       });
+      if (empMatches.length > 1) {
+        return res.status(409).json({
+          error: 'This Staff ID is used at multiple hospitals. Please log in from your hospital\'s URL.',
+          code: 'AMBIGUOUS_EMPLOYEE_ID',
+        });
+      }
+      staff = empMatches[0] || null;
     }
 
-    staff = await prisma.staff.findFirst({
-      where: {
-        tenantId: hospital.id,
-        OR: [
-          { username: `${prefix}-${localUsername}` },
-          { username: localUsername },
-        ],
-      },
-    });
-  } else {
-    // ── Case 3: Bare username ("admin") — legacy fallback ──
-    const matches = await prisma.staff.findMany({
-      where: { username: idLower },
-    });
-    if (matches.length === 0) {
-      staff = null;
-    } else if (matches.length === 1) {
-      staff = matches[0];
-    } else {
-      return res.status(409).json({
-        error: 'This username exists in multiple hospitals. Please include your hospital prefix (e.g., caretech-admin).',
-        code: 'AMBIGUOUS_USERNAME',
-      });
+    // 2b. Short number match (employeeIdKey)
+    if (!staff) {
+      if (scopedTenantId) {
+        staff = await prisma.staff.findFirst({
+          where: {
+            tenantId: scopedTenantId,
+            employeeIdKey: rawId,
+            employeeIdYear: currentYear,
+          },
+        });
+        // If no match for current year, try any year (handles year rollover)
+        if (!staff) {
+          staff = await prisma.staff.findFirst({
+            where: { tenantId: scopedTenantId, employeeIdKey: rawId },
+          });
+        }
+      } else {
+        const keyMatches = await prisma.staff.findMany({
+          where: { employeeIdKey: rawId, employeeIdYear: currentYear },
+          take: 2,
+        });
+        if (keyMatches.length > 1) {
+          return res.status(409).json({
+            error: 'This number exists at multiple hospitals. Please use your hospital\'s login link.',
+            code: 'AMBIGUOUS_KEY',
+          });
+        }
+        staff = keyMatches[0] || null;
+      }
     }
-  }
-}
+
+    // 2c. Username match
+    if (!staff) {
+      if (scopedTenantId) {
+        staff = await prisma.staff.findFirst({
+          where: { tenantId: scopedTenantId, username: idLower },
+        });
+      } else {
+        const userMatches = await prisma.staff.findMany({
+          where: { username: idLower },
+          take: 2,
+        });
+        if (userMatches.length > 1) {
+          return res.status(409).json({
+            error: 'This username exists at multiple hospitals. Please use your hospital\'s login link.',
+            code: 'AMBIGUOUS_USERNAME',
+          });
+        }
+        staff = userMatches[0] || null;
+      }
+    }
+
+    // 2d. Email match
+    if (!staff && idLower.includes('@')) {
+      if (scopedTenantId) {
+        staff = await prisma.staff.findFirst({
+          where: { tenantId: scopedTenantId, email: idLower },
+        });
+      } else {
+        const emailMatches = await prisma.staff.findMany({
+          where: { email: idLower },
+          take: 2,
+        });
+        if (emailMatches.length > 1) {
+          return res.status(409).json({
+            error: 'This email is registered at multiple hospitals. Please use your hospital\'s login link.',
+            code: 'AMBIGUOUS_EMAIL',
+          });
+        }
+        staff = emailMatches[0] || null;
+      }
+    }
 
     if (!staff || !staff.isActive) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    // ── Step 3: Verify password ──
     const valid = await bcrypt.compare(password, staff.password);
     if (!valid) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    // ── Step 4: Issue token ──
     const token = jwt.sign(
       {
         id: staff.id,
         email: staff.email,
         role: staff.role,
         username: staff.username,
+        employeeId: staff.employeeId,
         firstName: staff.firstName,
         lastName: staff.lastName,
         tenantId: staff.tenantId,
@@ -834,7 +1006,7 @@ else {
         staffId: staff.id,
         action: 'LOGIN',
         module: 'Auth',
-        details: `Staff ${staff.username || staff.email} logged in`,
+        details: `Staff ${staff.employeeId || staff.username || staff.email} logged in`,
         ipAddress: req.ip,
       },
     });
@@ -3202,12 +3374,28 @@ app.get('/api/staff/:id', authenticate, authorize('Admin', 'ITAdmin', 'HR'), asy
   }
 });
 
+// ============================================================
+// POST /api/staff
+//
+// Creates a new staff member. If employeeId is not supplied,
+// auto-generates it from the hospital's StaffIdTemplate.
+// Always generates employeeIdKey + employeeIdYear for short-number login.
+// ============================================================
 app.post('/api/staff', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async (req, res) => {
   try {
-    const { employeeId, firstName, lastName, email, role, department, password, seniorityLevel } = req.body;
+    const {
+      employeeId,
+      firstName,
+      lastName,
+      email,
+      role,
+      department,
+      password,
+      seniorityLevel,
+    } = req.body;
 
-    if (!employeeId || !firstName || !lastName || !email || !role || !password) {
-      return res.status(400).json({ error: 'Missing required fields' });
+    if (!firstName || !lastName || !email || !role || !password) {
+      return res.status(400).json({ error: 'Missing required fields: firstName, lastName, email, role, password' });
     }
 
     const hospital = await prisma.hospital.findUnique({
@@ -3218,22 +3406,21 @@ app.post('/api/staff', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async 
       return res.status(500).json({ error: 'Hospital username prefix not configured' });
     }
 
-    const existingEmployeeId = await req.db.staff.findFirst({ where: { employeeId } });
-    if (existingEmployeeId) return res.status(400).json({ error: 'Employee ID already exists' });
-
     const existingEmail = await req.db.staff.findFirst({ where: { email } });
-    if (existingEmail) return res.status(400).json({ error: 'Staff with this email already exists' });
+    if (existingEmail) {
+      return res.status(400).json({ error: 'Staff with this email already exists' });
+    }
 
     const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+    const year = new Date().getFullYear();
 
     const staff = await prisma.$transaction(async (tx) => {
-      // 1) Generate slug-based username: stmarys-4821
-      const username = await generateUsername(hospital.usernamePrefix, req.tenantId, tx);
-
-      // 2) Resolve department name → Department row id (auto-create if missing)
+      // 1) Resolve department (auto-create if missing)
       let departmentId = null;
+      let departmentName = null;
       if (department && department.trim()) {
         const name = department.trim();
+        departmentName = name;
         let dept = await tx.department.findFirst({
           where: { tenantId: req.tenantId, name },
           select: { id: true },
@@ -3247,11 +3434,32 @@ app.post('/api/staff', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async 
         departmentId = dept.id;
       }
 
-      // 3) Create staff
+      // 2) Generate short number
+      const shortNumber = await generateShortNumber(tx, req.tenantId, year);
+
+      // 3) Resolve employeeId — use provided OR generate from template
+      const finalEmployeeId = employeeId?.trim()
+        || (await buildDisplayId(tx, req.tenantId, departmentName, shortNumber));
+
+      // Check collision on employeeId
+      const empConflict = await tx.staff.findFirst({
+        where: { tenantId: req.tenantId, employeeId: finalEmployeeId },
+        select: { id: true },
+      });
+      if (empConflict) {
+        throw new Error(`Employee ID "${finalEmployeeId}" is already in use at this hospital`);
+      }
+
+      // 4) Generate username
+      const username = await generateUsername(hospital.usernamePrefix, req.tenantId, tx);
+
+      // 5) Create staff
       return tx.staff.create({
         data: {
           tenantId: req.tenantId,
-          employeeId,
+          employeeId: finalEmployeeId,
+          employeeIdKey: shortNumber,
+          employeeIdYear: year,
           username,
           firstName,
           lastName,
@@ -3260,7 +3468,8 @@ app.post('/api/staff', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async 
           departmentId,
           password: hashedPassword,
           isActive: true,
-          seniorityLevel: seniorityLevel || 'STAFF', 
+          seniorityLevel: seniorityLevel || 'STAFF',
+          mustChangePassword: true,
           updatedAt: new Date(),
         },
         include: {
@@ -3274,7 +3483,7 @@ app.post('/api/staff', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async 
         staffId: req.user.id,
         action: 'CREATE_STAFF',
         module: 'Staff',
-        details: `Created staff ${staff.username} as ${role}`,
+        details: `Created staff ${staff.username} (${staff.employeeId}, login: ${staff.employeeIdKey}) as ${role}`,
       },
     });
 
@@ -3283,6 +3492,11 @@ app.post('/api/staff', authenticate, authorize('Admin', 'ITAdmin', 'HR'), async 
       ...rest,
       department: deptRel?.name || null,
       departmentId: deptRel?.id || null,
+      _loginHint: {
+        employeeId: staff.employeeId,
+        shortNumber: staff.employeeIdKey,
+        username: staff.username,
+      },
     });
   } catch (error) {
     console.error('Create staff error:', error);
@@ -13394,6 +13608,435 @@ cron.schedule('0 3 * * *', async () => {
 }, { timezone: 'Africa/Lagos' });
 
 console.log('✅ Imaging cleanup cron scheduled: 3:00 AM daily (Africa/Lagos)');
+
+// ============================================================
+// STAFF ID TEMPLATE ROUTES
+// ============================================================
+
+// GET /api/hospitals/:id/staff-id-template
+app.get(
+  '/api/hospitals/:id/staff-id-template',
+  authenticate,
+  authorize('Admin', 'ITAdmin', 'HR'),
+  async (req, res) => {
+    try {
+      if (req.params.id !== req.tenantId) {
+        return res.status(403).json({ error: 'Access denied to this hospital' });
+      }
+
+      let template = await prisma.staffIdTemplate.findUnique({
+        where: { tenantId: req.tenantId },
+      });
+
+      if (!template) {
+        // Auto-create default for hospitals that don't have one yet
+        const hospital = await prisma.hospital.findUnique({
+          where: { id: req.tenantId },
+          select: { usernamePrefix: true, code: true },
+        });
+        const prefix = (hospital?.usernamePrefix || hospital?.code || 'HOSP')
+          .toUpperCase()
+          .replace(/[^A-Z0-9]/g, '');
+
+        template = await prisma.staffIdTemplate.create({
+          data: {
+            tenantId: req.tenantId,
+            displayFormat: `${prefix}/{DEPT}/{SEQ}`,
+            loginKeyFormat: '{SEQ}',
+            sequencePadding: 4,
+            sequenceStrategy: 'RANDOM',
+            departments: [],
+          },
+        });
+      }
+
+      res.json(template);
+    } catch (error) {
+      console.error('Get template error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
+
+// PUT /api/hospitals/:id/staff-id-template
+app.put(
+  '/api/hospitals/:id/staff-id-template',
+  authenticate,
+  authorize('Admin', 'ITAdmin', 'HR'),
+  async (req, res) => {
+    try {
+      if (req.params.id !== req.tenantId) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const {
+        displayFormat,
+        loginKeyFormat,
+        sequencePadding,
+        sequenceStrategy,
+        departments,
+        exampleId,
+      } = req.body;
+
+      // Validate strategy
+      if (sequenceStrategy && !['RANDOM', 'SEQUENTIAL'].includes(sequenceStrategy)) {
+        return res.status(400).json({ error: 'sequenceStrategy must be RANDOM or SEQUENTIAL' });
+      }
+
+      // Validate padding
+      if (sequencePadding !== undefined) {
+        const p = parseInt(sequencePadding, 10);
+        if (isNaN(p) || p < 3 || p > 8) {
+          return res.status(400).json({ error: 'sequencePadding must be between 3 and 8' });
+        }
+      }
+
+      // If exampleId provided, auto-detect template
+      let autoDetected = null;
+      if (exampleId && exampleId.trim()) {
+        const sample = exampleId.trim();
+        const match = sample.match(/(\d+)\s*$/);
+        if (match) {
+          const trailingDigits = match[1];
+          const prefixPart = sample.slice(0, sample.length - trailingDigits.length);
+          autoDetected = {
+            suggestedPrefix: prefixPart,
+            suggestedPadding: trailingDigits.length,
+            sample,
+          };
+        }
+      }
+
+      const template = await prisma.staffIdTemplate.upsert({
+        where: { tenantId: req.tenantId },
+        update: {
+          displayFormat: displayFormat || undefined,
+          loginKeyFormat: loginKeyFormat || undefined,
+          sequencePadding: sequencePadding !== undefined ? parseInt(sequencePadding, 10) : undefined,
+          sequenceStrategy: sequenceStrategy || undefined,
+          departments: departments || undefined,
+          exampleId: exampleId || undefined,
+          updatedAt: new Date(),
+        },
+        create: {
+          tenantId: req.tenantId,
+          displayFormat: displayFormat || '{PREFIX}/{DEPT}/{SEQ}',
+          loginKeyFormat: loginKeyFormat || '{SEQ}',
+          sequencePadding: sequencePadding ? parseInt(sequencePadding, 10) : 4,
+          sequenceStrategy: sequenceStrategy || 'RANDOM',
+          departments: departments || [],
+          exampleId: exampleId || null,
+        },
+      });
+
+      await req.db.auditLog.create({
+        data: {
+          staffId: req.user.id,
+          action: 'UPDATE_STAFF_ID_TEMPLATE',
+          module: 'Staff',
+          details: `Updated template: ${template.displayFormat} / ${template.loginKeyFormat} / ${template.sequenceStrategy}`,
+        },
+      });
+
+      res.json({ ...template, _autoDetected: autoDetected });
+    } catch (error) {
+      console.error('Update template error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
+
+// POST /api/hospitals/:id/preview-staff-id
+app.post(
+  '/api/hospitals/:id/preview-staff-id',
+  authenticate,
+  authorize('Admin', 'ITAdmin', 'HR'),
+  async (req, res) => {
+    try {
+      if (req.params.id !== req.tenantId) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const { department } = req.body;
+      const year = new Date().getFullYear();
+      const previewKey = String(Math.floor(1000 + Math.random() * 9000));
+      const previewId = await buildDisplayId(prisma, req.tenantId, department, previewKey);
+
+      res.json({
+        previewEmployeeId: previewId,
+        previewShortNumber: previewKey,
+        year,
+      });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
+
+// ============================================================
+// PLATFORM SOFT DELETE / RESTORE / HARD DELETE
+// ============================================================
+
+// PATCH /api/platform/hospitals/:id/soft-delete
+app.patch('/api/platform/hospitals/:id/soft-delete', async (req, res) => {
+  // Platform token validated by /api/platform router middleware in production
+  // For direct /api use, add manual check here
+  try {
+    const { reason } = req.body;
+    const hospital = await prisma.hospital.update({
+      where: { id: req.params.id },
+      data: {
+        deletedAt: new Date(),
+        deletedBy: req.user?.id || 'platform',
+        deleteReason: reason || 'Manually deleted via platform dashboard',
+        isActive: false,
+        status: 'deleted',
+      },
+    });
+    res.json({ success: true, hospital: { id: hospital.id, name: hospital.name, deletedAt: hospital.deletedAt } });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PATCH /api/platform/hospitals/:id/restore
+app.patch('/api/platform/hospitals/:id/restore', async (req, res) => {
+  try {
+    const hospital = await prisma.hospital.update({
+      where: { id: req.params.id },
+      data: {
+        deletedAt: null,
+        deletedBy: null,
+        deleteReason: null,
+        isActive: true,
+        status: 'active',
+      },
+    });
+    res.json({ success: true, hospital: { id: hospital.id, name: hospital.name } });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE /api/platform/hospitals/:id/hard-delete
+app.delete('/api/platform/hospitals/:id/hard-delete', async (req, res) => {
+  try {
+    const { slug, deletePhrase } = req.body;
+
+    if (deletePhrase !== 'DELETE') {
+      return res.status(400).json({
+        error: 'Type DELETE in the confirmation field to proceed',
+        code: 'CONFIRMATION_REQUIRED',
+      });
+    }
+
+    const hospital = await prisma.hospital.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, slug: true, name: true, deletedAt: true },
+    });
+
+    if (!hospital) {
+      return res.status(404).json({ error: 'Hospital not found' });
+    }
+
+    if (hospital.slug !== slug) {
+      return res.status(400).json({
+        error: `Slug does not match. Type "${hospital.slug}" to confirm.`,
+        code: 'SLUG_MISMATCH',
+      });
+    }
+
+    if (!hospital.deletedAt) {
+      return res.status(400).json({
+        error: 'Hospital must be soft-deleted before hard delete. Use soft-delete first.',
+        code: 'NOT_SOFT_DELETED',
+      });
+    }
+
+    // Cascade delete is handled by Prisma's onDelete: Cascade on all relations
+    await prisma.hospital.delete({ where: { id: hospital.id } });
+
+    res.json({
+      success: true,
+      message: `Hospital "${hospital.name}" permanently deleted`,
+      _warning: 'All associated data (patients, staff, bills) has been removed.',
+    });
+  } catch (error) {
+    console.error('Hard delete error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================================
+// POST /api/staff/bulk-import
+//
+// Accepts a JSON array of { firstName, lastName, email, role,
+// department, employeeId, password }. Requires Admin/ITAdmin/HR.
+//
+// Preserves existing employeeId if provided; auto-generates otherwise.
+// Skips rows with duplicate email/employeeId and reports them.
+// ============================================================
+app.post(
+  '/api/staff/bulk-import',
+  authenticate,
+  authorize('Admin', 'ITAdmin', 'HR'),
+  async (req, res) => {
+    try {
+      const { rows } = req.body;
+
+      if (!Array.isArray(rows) || rows.length === 0) {
+        return res.status(400).json({ error: 'rows must be a non-empty array' });
+      }
+
+      if (rows.length > 500) {
+        return res.status(400).json({ error: 'Maximum 500 rows per import' });
+      }
+
+      const hospital = await prisma.hospital.findUnique({
+        where: { id: req.tenantId },
+        select: { usernamePrefix: true },
+      });
+      if (!hospital?.usernamePrefix) {
+        return res.status(500).json({ error: 'Hospital prefix not configured' });
+      }
+
+      const year = new Date().getFullYear();
+      const results = { created: [], skipped: [], errors: [] };
+
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const rowNum = i + 2; // header is row 1
+
+        try {
+          const { firstName, lastName, email, role, department, employeeId, password } = row;
+
+          if (!firstName || !lastName || !email || !role) {
+            results.errors.push({
+              row: rowNum,
+              error: 'Missing required fields: firstName, lastName, email, role',
+            });
+            continue;
+          }
+
+          // Check duplicate email
+          const existing = await req.db.staff.findFirst({
+            where: { email: email.toLowerCase().trim() },
+            select: { id: true, employeeId: true },
+          });
+          if (existing) {
+            results.skipped.push({
+              row: rowNum,
+              email,
+              reason: `Email already exists (staff ID ${existing.employeeId})`,
+            });
+            continue;
+          }
+
+          // Use provided password or generate one
+          const isAutoPassword = !password || password.length < 6;
+          const plainPassword = isAutoPassword
+            ? `Welcome${Math.floor(1000 + Math.random() * 9000)}!`
+            : password;
+          const hashedPassword = await bcrypt.hash(plainPassword, SALT_ROUNDS);
+
+          // Transaction per row so one failure doesn't roll back all
+          const created = await prisma.$transaction(async (tx) => {
+            let departmentId = null;
+            let departmentName = department?.trim() || null;
+            if (departmentName) {
+              let dept = await tx.department.findFirst({
+                where: { tenantId: req.tenantId, name: departmentName },
+                select: { id: true },
+              });
+              if (!dept) {
+                dept = await tx.department.create({
+                  data: { tenantId: req.tenantId, name: departmentName, isActive: true },
+                  select: { id: true },
+                });
+              }
+              departmentId = dept.id;
+            }
+
+            const shortNumber = await generateShortNumber(tx, req.tenantId, year);
+            const finalEmployeeId = employeeId?.trim()
+              || (await buildDisplayId(tx, req.tenantId, departmentName, shortNumber));
+
+            // Check employeeId collision
+            const conflict = await tx.staff.findFirst({
+              where: { tenantId: req.tenantId, employeeId: finalEmployeeId },
+              select: { id: true },
+            });
+            if (conflict) {
+              throw new Error(`Employee ID "${finalEmployeeId}" already exists`);
+            }
+
+            const username = await generateUsername(hospital.usernamePrefix, req.tenantId, tx);
+
+            return tx.staff.create({
+              data: {
+                tenantId: req.tenantId,
+                employeeId: finalEmployeeId,
+                employeeIdKey: shortNumber,
+                employeeIdYear: year,
+                username,
+                firstName: firstName.trim(),
+                lastName: lastName.trim(),
+                email: email.toLowerCase().trim(),
+                role,
+                departmentId,
+                password: hashedPassword,
+                isActive: true,
+                seniorityLevel: row.seniorityLevel || 'STAFF',
+                mustChangePassword: true,
+                updatedAt: new Date(),
+              },
+            });
+          });
+
+          results.created.push({
+            row: rowNum,
+            employeeId: created.employeeId,
+            shortNumber: created.employeeIdKey,
+            username: created.username,
+            email: created.email,
+            tempPassword: isAutoPassword ? plainPassword : '(as provided)',
+            mustChangePassword: true,
+          });
+        } catch (rowErr) {
+          results.errors.push({
+            row: rowNum,
+            email: row.email || '(unknown)',
+            error: rowErr.message,
+          });
+        }
+      }
+
+      await req.db.auditLog.create({
+        data: {
+          staffId: req.user.id,
+          action: 'BULK_IMPORT_STAFF',
+          module: 'Staff',
+          details: `Bulk import: ${results.created.length} created, ${results.skipped.length} skipped, ${results.errors.length} errors`,
+        },
+      });
+
+      res.json({
+        summary: {
+          total: rows.length,
+          created: results.created.length,
+          skipped: results.skipped.length,
+          errors: results.errors.length,
+        },
+        created: results.created,
+        skipped: results.skipped,
+        errors: results.errors,
+      });
+    } catch (error) {
+      console.error('Bulk import error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
 
 // ============================================================
 // START SERVER

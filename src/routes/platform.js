@@ -562,6 +562,97 @@ router.patch('/users/:id', authenticatePlatform, requirePlatformAdmin, async (re
   }
 });
 
+// PATCH /api/platform/hospitals/:id/soft-delete
+router.patch('/hospitals/:id/soft-delete', authenticatePlatform, requirePlatformAdmin, async (req, res) => {
+  try {
+    const { reason } = req.body;
+    const hospital = await prisma.hospital.update({
+      where: { id: req.params.id },
+      data: {
+        deletedAt: new Date(),
+        deletedBy: req.platformUser.id,
+        deleteReason: reason || 'Manually deleted via platform dashboard',
+        isActive: false,
+        status: 'deleted',
+      },
+    });
+    res.json({
+      success: true,
+      hospital: { id: hospital.id, name: hospital.name, deletedAt: hospital.deletedAt },
+    });
+  } catch (error) {
+    if (error.code === 'P2025') return res.status(404).json({ error: 'Hospital not found' });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PATCH /api/platform/hospitals/:id/restore
+router.patch('/hospitals/:id/restore', authenticatePlatform, requirePlatformAdmin, async (req, res) => {
+  try {
+    const hospital = await prisma.hospital.update({
+      where: { id: req.params.id },
+      data: {
+        deletedAt: null,
+        deletedBy: null,
+        deleteReason: null,
+        isActive: true,
+        status: 'active',
+      },
+    });
+    res.json({ success: true, hospital: { id: hospital.id, name: hospital.name } });
+  } catch (error) {
+    if (error.code === 'P2025') return res.status(404).json({ error: 'Hospital not found' });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE /api/platform/hospitals/:id/hard-delete
+router.delete('/hospitals/:id/hard-delete', authenticatePlatform, requirePlatformAdmin, async (req, res) => {
+  try {
+    const { slug, deletePhrase } = req.body;
+
+    if (deletePhrase !== 'DELETE') {
+      return res.status(400).json({
+        error: 'Type DELETE in the confirmation field to proceed',
+        code: 'CONFIRMATION_REQUIRED',
+      });
+    }
+
+    const hospital = await prisma.hospital.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, slug: true, name: true, deletedAt: true },
+    });
+
+    if (!hospital) return res.status(404).json({ error: 'Hospital not found' });
+
+    if (hospital.slug !== slug) {
+      return res.status(400).json({
+        error: `Slug does not match. Type "${hospital.slug}" to confirm.`,
+        code: 'SLUG_MISMATCH',
+      });
+    }
+
+    if (!hospital.deletedAt) {
+      return res.status(400).json({
+        error: 'Hospital must be soft-deleted first. Use soft-delete before hard delete.',
+        code: 'NOT_SOFT_DELETED',
+      });
+    }
+
+    await prisma.hospital.delete({ where: { id: hospital.id } });
+
+    res.json({
+      success: true,
+      message: `Hospital "${hospital.name}" permanently deleted`,
+      _warning: 'All associated data (patients, staff, bills) has been removed.',
+    });
+  } catch (error) {
+    console.error('Hard delete error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
 // ============================================================
 // POST /api/platform/users/:id/reset-password
 // ============================================================

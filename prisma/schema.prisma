@@ -29,6 +29,7 @@ model Hospital {
   slug                  String                     @unique
   code                  String                     @unique
   usernamePrefix        String?                    @unique
+  patientIdPrefix       String?
   email                 String?
   phone                 String?
   address               String?
@@ -106,7 +107,36 @@ model Hospital {
   PerformanceReview     performance_reviews[]
   StaffLeaveEntitlement staff_leave_entitlements[]
   StaffTraining         staff_trainings[]
+
+  // ── Soft delete (added for platform delete safety) ──
+  deletedAt             DateTime?
+  deletedBy             String?
+  deleteReason          String?
+
+  // ── Staff ID template (added for short-number login) ──
+  StaffIdTemplate       StaffIdTemplate?
   Training              trainings[]
+}
+
+model StaffIdTemplate {
+  id                String   @id @default(cuid())
+  tenantId          String   @unique
+
+  displayFormat     String   @default("{PREFIX}/{DEPT}/{SEQ}")
+  loginKeyFormat    String   @default("{SEQ}")
+  sequencePadding   Int      @default(4)
+  sequenceStrategy  String   @default("RANDOM")   // "RANDOM" | "SEQUENTIAL"
+  lastSequence      Int      @default(0)
+  lastSequenceYear  Int?
+  departments       String[] @default([])
+  exampleId         String?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  Hospital          Hospital @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
 model HospitalSettings {
@@ -1268,12 +1298,19 @@ model Staff {
   staff_leave_entitlements                                   staff_leave_entitlements[]
   staff_trainings                                            staff_trainings[]
 
+  // ── Staff ID system (added for short-number login) ──
+  employeeIdKey      String?
+  employeeIdYear     Int?
+  mustChangePassword Boolean @default(false)
+
   @@unique([tenantId, employeeId])
   @@unique([tenantId, username])
   @@unique([tenantId, email])
+  @@unique([tenantId, employeeIdKey, employeeIdYear])
   @@index([tenantId])
   @@index([tenantId, role])
   @@index([tenantId, isActive])
+  @@index([tenantId, employeeIdKey])
 }
 
 model StaffClinic {
