@@ -1214,7 +1214,7 @@ const SuperAdminDashboard = () => {
                             flexShrink: 0,
                           }}
                         >
-                          <QRCode
+                          <QRCodeSVG
                             value={onboardingData.patientPortalUrl}
                             size={80}
                             level="M"
