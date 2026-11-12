@@ -1056,9 +1056,15 @@ const StaffManagement = () => {
                     type="email"
                     name="email"
                     value={formData.email}
-                    onChange={handleInputChange}
+                    onChange={(e) => {
+                      // Ignore synthetic onChange events from autofill that
+                      // fire on mount before the user has typed anything.
+                      if (e.nativeEvent?.inputType === undefined && e.target.value === 'ADMIN001') {
+                        return;
+                      }
+                      handleInputChange(e);
+                    }}
                     required
-                    autoComplete="new-email"
                   />
               </div>
               <div className="form-group">
