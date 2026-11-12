@@ -638,7 +638,7 @@ const StaffManagement = () => {
             className="btn btn-primary"
             onClick={() => {
               setEditingStaff(null);
-              setFormData(emptyForm);
+              setFormData(emptyForm);        // ← sets email to ''
               setAssignedClinicIds([]);
               setAssignedWardIds([]);
               setShowAssignmentAlert(false);
