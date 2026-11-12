@@ -946,12 +946,31 @@ const StaffManagement = () => {
       </div>
 
       {/* ============ ADD/EDIT STAFF MODAL ============ */}
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)}>
+      <Modal
+          isOpen={showModal}
+          onClose={() => {
+            setShowModal(false);
+            setEditingStaff(null);
+            setFormData(emptyForm);
+            setAssignedClinicIds([]);
+            setAssignedWardIds([]);
+          }}
+        >
         <div className="modal-header">
           <h3>{editingStaff ? "✏️ Edit Staff" : "➕ Add New Staff"}</h3>
-          <button className="modal-close" onClick={() => setShowModal(false)}>
-            ×
-          </button>
+          <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => {
+                setShowModal(false);
+                setEditingStaff(null);
+                setFormData(emptyForm);
+                setAssignedClinicIds([]);
+                setAssignedWardIds([]);
+              }}
+            >
+              x
+            </button>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="modal-body">
@@ -1347,7 +1366,13 @@ const StaffManagement = () => {
             <button
               type="button"
               className="btn btn-secondary"
-              onClick={() => setShowModal(false)}
+              onClick={() => {
+                setShowModal(false);
+                setEditingStaff(null);
+                setFormData(emptyForm);
+                setAssignedClinicIds([]);
+                setAssignedWardIds([]);
+              }}
             >
               Cancel
             </button>
