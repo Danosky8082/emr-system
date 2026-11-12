@@ -972,7 +972,7 @@ const StaffManagement = () => {
               x
             </button>
         </div>
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} autoComplete="off">
           <div className="modal-body">
             {/* Read-only username display when editing */}
             {editingStaff && (
@@ -1053,12 +1053,13 @@ const StaffManagement = () => {
               <div className="form-group">
                 <label>Email *</label>
                 <input
-                  type="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleInputChange}
-                  required
-                />
+                    type="email"
+                    name="email"
+                    value={formData.email}
+                    onChange={handleInputChange}
+                    required
+                    autoComplete="new-email"
+                  />
               </div>
               <div className="form-group">
                 <label>Role *</label>
