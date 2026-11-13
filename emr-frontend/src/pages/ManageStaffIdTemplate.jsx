@@ -368,27 +368,59 @@ const ManageStaffIdTemplate = () => {
         )}
       </div>
 
-      {/* ============ SAVE / DISCARD ============ */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-        <button
-          type="button"
-          onClick={handleReset}
-          className="btn btn-secondary"
-          disabled={!hasChanges || saving}
-        >
-          Discard changes
-        </button>
-        <button
-          type="button"
-          onClick={handleSave}
-          className="btn btn-primary"
-          disabled={!hasChanges || saving}
-          style={{ background: '#0f3460', color: 'white', border: 'none', padding: '10px 24px', borderRadius: '8px', fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}
-        >
-          {saving ? '⏳ Saving…' : '💾 Save template'}
-        </button>
+            {/* ============ SAVE / DISCARD ============ */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '12px',
+          flexWrap: 'wrap',
+        }}
+      >
+        <div style={{ fontSize: '13px', color: '#6b7280' }}>
+          {hasChanges
+            ? '● Unsaved changes'
+            : '✓ Everything is up to date'}
+        </div>
+
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            type="button"
+            onClick={handleReset}
+            disabled={!hasChanges || saving}
+            style={{
+              background: hasChanges ? '#e5e7eb' : '#f3f4f6',
+              color: hasChanges ? '#1f2937' : '#9ca3af',
+              border: '1px solid #d1d5db',
+              padding: '10px 20px',
+              borderRadius: '8px',
+              fontWeight: 600,
+              cursor: hasChanges && !saving ? 'pointer' : 'not-allowed',
+              opacity: hasChanges && !saving ? 1 : 0.6,
+            }}
+          >
+            Discard changes
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={!hasChanges || saving}
+            style={{
+              background: hasChanges && !saving ? '#0f3460' : '#9ca3af',
+              color: 'white',
+              border: 'none',
+              padding: '10px 24px',
+              borderRadius: '8px',
+              fontWeight: 600,
+              cursor: hasChanges && !saving ? 'pointer' : 'not-allowed',
+              opacity: hasChanges && !saving ? 1 : 0.6,
+            }}
+          >
+            {saving ? '⏳ Saving…' : '💾 Save template'}
+          </button>
+        </div>
       </div>
-    </div>
   );
 };
 
