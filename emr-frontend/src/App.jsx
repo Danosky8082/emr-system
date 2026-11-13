@@ -63,6 +63,7 @@ import Ledger from './pages/Ledger';
 import Analytics from './pages/Analytics';
 import StaffActivity from './pages/StaffActivity';
 import ManageCapabilities from './pages/ManageCapabilities';
+import ManageStaffIdTemplate from './pages/ManageStaffIdTemplate';
 
 // ============ PATIENT PORTAL IMPORTS ============
 import PatientLogin from './pages/PatientLogin';
@@ -199,6 +200,7 @@ const AppContent = () => {
 
           {/* Admin */}
           <Route path="staff" element={<StaffManagement />} />
+          <Route path="staff-id-template" element={<ManageStaffIdTemplate />} />
           <Route path="clinics" element={<ManageClinics />} />
           <Route path="wards" element={<ManageWards />} />
           <Route path="permissions" element={<ManagePermissions />} />

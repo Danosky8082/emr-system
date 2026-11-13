@@ -148,6 +148,7 @@ const Layout = () => {
     ],
     '🔐 Admin': [
       { path: '/staff', label: 'Staff Management' },
+      { path: '/staff-id-template', label: '🪪 Staff ID Template' },
       { path: '/clinics', label: 'Manage Clinics' },
       { path: '/wards', label: 'Manage Wards' },
       { path: '/permissions', label: 'Role Permissions' },
@@ -171,6 +172,7 @@ const Layout = () => {
     '/billing-officer': 'billingOfficer',
     '/wallet': 'wallet',
     '/staff': 'staff',
+    '/staff-id-template': 'staff',
     '/clinics': 'clinics',
     '/wards': 'wards',
     '/pricing': 'pricing',
