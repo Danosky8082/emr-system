@@ -418,9 +418,10 @@ const ManageStaffIdTemplate = () => {
             }}
           >
             {saving ? '⏳ Saving…' : '💾 Save template'}
-          </button>
+           </button>
         </div>
-      </div>
+      </div>  
+    </div>     
   );
 };
 
