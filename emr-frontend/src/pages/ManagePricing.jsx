@@ -49,17 +49,21 @@ const ManagePricing = () => {
     }));
   };
 
-  // ✅ Auto-calculate prices when base price changes
+    // Auto-calculate derived prices when the base price changes.
+  // ONLY during CREATE — never on edit, otherwise opening the edit
+  // modal silently overwrites any custom NHIS / corporate price the
+  // admin previously set on that service.
   useEffect(() => {
-    if (formData.basePrice) {
-      const base = parseFloat(formData.basePrice) || 0;
-      setFormData(prev => ({
-        ...prev,
-        nhisPrice: (base * 0.1).toFixed(2), // 10% for NHIS
-        corporatePrice: (base * 2).toFixed(2), // 200% for Corporate
-      }));
-    }
-  }, [formData.basePrice]);
+    if (editingService) return;
+    if (!formData.basePrice) return;
+
+    const base = parseFloat(formData.basePrice) || 0;
+    setFormData((prev) => ({
+      ...prev,
+      nhisPrice: (base * 0.1).toFixed(2),
+      corporatePrice: (base * 2).toFixed(2),
+    }));
+  }, [formData.basePrice, editingService]);
 
   // ✅ Handle submit (create or update)
   const handleSubmit = async (e) => {

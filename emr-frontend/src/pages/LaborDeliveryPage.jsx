@@ -107,6 +107,37 @@ const LaborDeliveryPage = () => {
     }
   };
 
+    const handleUpdateProgress = async (e) => {
+    e.preventDefault();
+    if (!selectedPregnancy) return;
+
+    setLoading(true);
+    try {
+      const response = await api.patch(
+        `/pregnancies/${selectedPregnancy.id}/labor-progress`,
+        progressForm
+      );
+      toast.success('✅ Labor progress updated!');
+      setShowProgressModal(false);
+      setProgressForm({
+        contractions: '',
+        dilation: '',
+        effacement: '',
+        fetalHeartRate: '',
+        maternalHeartRate: '',
+        bloodPressure: '',
+        notes: '',
+      });
+      await fetchPregnancies();
+    } catch (error) {
+      toast.error(
+        error.response?.data?.error || 'Failed to update labor progress'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleRecordDelivery = async (e) => {
     e.preventDefault();
     if (!selectedPregnancy) return;
@@ -415,7 +446,7 @@ const LaborDeliveryPage = () => {
               <h3>📊 Update Labor Progress</h3>
               <button className="modal-close" onClick={() => setShowProgressModal(false)}>×</button>
             </div>
-            <form onSubmit={() => {}}>
+            <form onSubmit={handleUpdateProgress}>
               <div className="modal-body">
                 <div className="form-row">
                   <div className="form-group">

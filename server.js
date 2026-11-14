@@ -511,12 +511,37 @@ async function authenticatePatient(req, res, next) {
     if (decoded.role !== 'Patient') {
       return res.status(403).json({ error: 'Access denied. Patient portal only.' });
     }
-    req.patient = decoded;
 
     const tenantId = decoded.tenantId;
     if (!tenantId) {
       return res.status(401).json({ error: 'Token missing tenant context. Please log in again.' });
     }
+
+    // Re-validate portal access on EVERY request.
+    // A token issued 6 days ago must still be revoked the instant
+    // Records/Admin flips portalAccess to false.
+    const livePatient = await prisma.patient.findUnique({
+      where: { id: decoded.id },
+      select: {
+        portalAccess: true,
+        isArchived: true,
+        deletedAt: true,
+      },
+    });
+
+    if (
+      !livePatient ||
+      !livePatient.portalAccess ||
+      livePatient.isArchived ||
+      livePatient.deletedAt
+    ) {
+      return res.status(401).json({
+        error: 'Portal access has been revoked. Please contact the hospital.',
+        code: 'PORTAL_REVOKED',
+      });
+    }
+
+    req.patient = decoded;
     req.tenantId = tenantId;
     req.db = getTenantPrisma(tenantId);
     next();
@@ -7417,10 +7442,11 @@ app.patch('/api/patient-journeys/:id', authenticate, authorize('Admin', 'Records
 
     const existingJourney = await req.db.patientJourney.findUnique({
       where: { id },
-      include: { Patient: true, Clinic: true, Ward: true }
+      include: { Patient: true, Clinic: true, Ward: true, BillingRecord: true }
     });
     if (!existingJourney) return res.status(404).json({ error: 'Journey not found' });
 
+    // Build the destination update
     const updateData = { updatedAt: new Date() };
     if (destinationType) updateData.destinationType = destinationType;
     if (destinationType === 'CLINIC') {
@@ -7434,11 +7460,95 @@ app.patch('/api/patient-journeys/:id', authenticate, authorize('Admin', 'Records
       if (wardId !== undefined) updateData.wardId = wardId;
     }
 
-    // ✅ THE MISSING UPDATE CALL
+    // ── Re-price the pending bill if the destination changed ──
+    // Only applies while the bill is still unpaid.
+    const newClinicId = updateData.clinicId ?? existingJourney.clinicId;
+    const newWardId   = updateData.wardId   ?? existingJourney.wardId;
+    const clinicChanged =
+      newClinicId !== existingJourney.clinicId ||
+      newWardId   !== existingJourney.wardId;
+
+    const bill = existingJourney.BillingRecord;
+    const billIsPending =
+      bill && bill.status !== 'Paid' && bill.status !== 'Partial';
+
+    if (clinicChanged && billIsPending && bill) {
+      // Look up the current consultation price for the new clinic
+      const price = await req.db.servicePrice.findFirst({
+        where: {
+          OR: [
+            { clinicId: newClinicId },
+            { name: 'Consultation' },
+          ],
+          isActive: true,
+        },
+      });
+      const baseAmount = price?.amount || 5000;
+
+      const category = existingJourney.Patient?.patientCategory || 'FPP';
+      let finalAmount = baseAmount;
+      let categoryLabel = 'FPP - 100%';
+      if (category === 'NHIS') {
+        finalAmount = Math.round(baseAmount * 0.1);
+        categoryLabel = 'NHIS - 10%';
+      } else if (category === 'RETAINER' || category === 'CORPORATE') {
+        finalAmount = baseAmount * 2;
+        categoryLabel = 'RETAINER - 200%';
+      }
+
+      const items = Array.isArray(bill.items) ? bill.items : [];
+      const rePricedItems = items.map((it) => {
+        // Only re-price the Consultation line — never Registration or Card
+        if (it.serviceType === 'CONSULTATION') {
+          return {
+            ...it,
+            amount: finalAmount,
+            description: `${price?.name || 'Consultation'} (${categoryLabel})`,
+          };
+        }
+        return it;
+      });
+
+      // If there's no Consultation item, append one
+      if (!rePricedItems.some((i) => i.serviceType === 'CONSULTATION')) {
+        rePricedItems.push({
+          name: 'Consultation Fee',
+          category: 'Consultation',
+          amount: finalAmount,
+          status: 'Pending',
+          serviceType: 'CONSULTATION',
+          description: `Consultation (${categoryLabel})`,
+        });
+      }
+
+      const newTotal = rePricedItems.reduce((s, i) => s + (i.amount || 0), 0);
+      const newBalance = Math.max(0, newTotal - (bill.paidAmount || 0));
+
+      await req.db.billingRecord.update({
+        where: { id: bill.id },
+        data: {
+          items: rePricedItems,
+          totalAmount: newTotal,
+          balance: newBalance,
+          description: `Consultation (${categoryLabel}) - Total: ₦${newTotal.toLocaleString()}`,
+          updatedAt: new Date(),
+        },
+      });
+
+      await req.db.auditLog.create({
+        data: {
+          staffId: req.user.id,
+          action: 'REPRICE_BILL_ON_DESTINATION_CHANGE',
+          module: 'Billing',
+          details: `Re-priced bill ${bill.invoiceNumber} from ₦${bill.totalAmount.toLocaleString()} to ₦${newTotal.toLocaleString()} after destination change`,
+        },
+      });
+    }
+
     const updatedJourney = await req.db.patientJourney.update({
       where: { id },
       data: updateData,
-      include: { Patient: true, Clinic: true, Ward: true, BillingRecord: true }
+      include: { Patient: true, Clinic: true, Ward: true, BillingRecord: true },
     });
 
     await req.db.auditLog.create({
@@ -7446,8 +7556,8 @@ app.patch('/api/patient-journeys/:id', authenticate, authorize('Admin', 'Records
         staffId: req.user.id,
         action: 'UPDATE_JOURNEY_DESTINATION',
         module: 'Records',
-        details: `Updated destination for patient ${updatedJourney.Patient?.hospitalId || 'N/A'} to ${destinationType || 'updated'}`
-      }
+        details: `Updated destination for patient ${updatedJourney.Patient?.hospitalId || 'N/A'} to ${destinationType || 'updated'}`,
+      },
     });
 
     res.json({
@@ -7455,7 +7565,7 @@ app.patch('/api/patient-journeys/:id', authenticate, authorize('Admin', 'Records
       patient: updatedJourney.Patient,
       clinic: updatedJourney.Clinic,
       ward: updatedJourney.Ward,
-      billingRecord: updatedJourney.BillingRecord
+      billingRecord: updatedJourney.BillingRecord,
     });
   } catch (error) {
     console.error('Error updating journey:', error);
@@ -11062,7 +11172,7 @@ app.put('/api/hr/employees/:id', authenticate, authorize('Admin', 'ITAdmin', 'HR
       data: {
         employeeId, firstName, lastName, email, role,
         departmentId: departmentId || null,
-        manager_id: managerId || null,
+        managerId: managerId || null,
         dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
         gender, phone, address, emergencyContact, employmentType,
         startDate: startDate ? new Date(startDate) : null,

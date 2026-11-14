@@ -154,7 +154,7 @@ const AppContent = () => {
           <Route path="antenatal" element={<AntenatalDashboard />} />
           <Route path="pregnancy/new" element={<PregnancyProfile />} />
           <Route path="pregnancy/:id" element={<PregnancyProfile />} />
-          <Route path="labor-delivery" element={<LaborDeliveryPage />} />
+          <Route path="labor-delivery" element={<AntenatalDashboard />} />
 
           {/* Clinical */}
           <Route path="appointments" element={<Appointments />} />

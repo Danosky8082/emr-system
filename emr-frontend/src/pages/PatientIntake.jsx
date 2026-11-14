@@ -607,7 +607,7 @@ if (j.status === 'REGISTERED') {
                         {patient.insuranceProvider}
                       </div>
                     )}
-                    {patient?.patientCategory === 'CORPORATE' && patient?.corporateCompany && (
+                    {patient?.patientCategory === 'RETAINER' && patient?.corporateCompany && (
                       <div style={{ fontSize: '10px', color: '#6b7280', marginTop: '2px' }}>
                         {patient.corporateCompany}
                       </div>

@@ -1095,24 +1095,43 @@ const handleSaveAllPrescriptions = async () => {
   if (savingPrescriptionBatch) return;
 
   setSavingPrescriptionBatch(true);
-  try {
-    const saved = [];
-    for (const item of prescriptionCart) {
-      const res = await api.post('/prescriptions', { patientId: id, ...item });
-      saved.push(res.data);
-    }
+  let savedCount = 0;
+  let duplicateCount = 0;
+  let firstRealError = null;
 
-    toast.success(`✅ ${saved.length} prescription(s) saved!`);
-    setPrescriptionCart([]);
-    setShowPrescriptionModal(false);
-    fetchAllData();
-  } catch (error) {
-    const msg = error.response?.data?.error || 'Failed to save prescriptions';
-    toast.error(`Error: ${msg}`);
-    fetchAllData();
-  } finally {
-    setSavingPrescriptionBatch(false);
+  for (const item of prescriptionCart) {
+    try {
+      await api.post('/prescriptions', { patientId: id, ...item });
+      savedCount++;
+    } catch (error) {
+      // 409 = duplicate detected within the last 60s — this is fine,
+      // the prescription already exists in the DB, count it as saved.
+      if (error.response?.status === 409) {
+        duplicateCount++;
+        savedCount++;
+        continue;
+      }
+      firstRealError = error;
+      break;
+    }
   }
+
+  setSavingPrescriptionBatch(false);
+
+  if (firstRealError) {
+    const msg =
+      firstRealError.response?.data?.error || 'Failed to save prescriptions';
+    toast.error(`Error after ${savedCount} saved: ${msg}`);
+  } else {
+    toast.success(
+      `✅ ${savedCount} prescription(s) saved` +
+        (duplicateCount > 0 ? ` (${duplicateCount} already existed)` : '')
+    );
+  }
+
+  setPrescriptionCart([]);
+  setShowPrescriptionModal(false);
+  fetchAllData();
 };
 
 const handleClosePrescriptionModal = () => {

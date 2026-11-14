@@ -376,12 +376,14 @@ const PaediatricDashboard = () => {
               <button className="modal-close" onClick={() => setShowImmunizationModal(false)}>×</button>
             </div>
             <div className="modal-body">
-              {immunizationSchedule.schedule && immunizationSchedule.schedule.length > 0 ? (
+              {Array.isArray(immunizationSchedule?.schedule) && immunizationSchedule.schedule.length > 0 ? (
                 <div>
                   <div style={{ marginBottom: '16px' }}>
                     <strong>Patient:</strong> {selectedPatient.firstName} {selectedPatient.lastName} ({selectedPatient.hospitalId})
                     <br />
-                    <strong>Completed Immunizations:</strong> {immunizationSchedule.schedule.filter(s => s.given).length} / {immunizationSchedule.schedule.length}
+                    <strong>Completed Immunizations:</strong>{' '}
+                      {(immunizationSchedule.schedule || []).filter((s) => s.given).length} /{' '}
+                      {(immunizationSchedule.schedule || []).length}
                   </div>
                   
                   <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
@@ -394,7 +396,7 @@ const PaediatricDashboard = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {immunizationSchedule.schedule.map((item, index) => (
+                        {(immunizationSchedule.schedule || []).map((item, index) => (
                           <tr key={index} style={{ borderBottom: index < immunizationSchedule.schedule.length - 1 ? '1px solid #e2e8f0' : 'none' }}>
                             <td style={{ padding: '8px 12px' }}>{item.vaccine}</td>
                             <td style={{ padding: '8px 12px' }}>{item.dueAge}</td>

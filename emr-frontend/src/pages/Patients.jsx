@@ -102,13 +102,22 @@ const Patients = () => {
   try {
     setLoading(true);
 
+    // Map form-only fields to the schema names before sending
+    const payload = {
+      ...formData,
+      corporateCompany: formData.retainerCompany || null,
+    };
+    delete payload.retainerCompany;
+    delete payload.enablePortal;
+    delete payload.portalPin;
+
     if (editingPatient) {
-      // ── EDIT PATH (unchanged) ──
-      await api.put(`/patients/${editingPatient.id}`, formData);
+      // ── EDIT PATH ──
+      await api.put(`/patients/${editingPatient.id}`, payload);
       toast.success('Patient updated successfully!');
     } else {
       // ── CREATE PATH ──
-      const createRes = await api.post('/patients', formData);
+      const createRes = await api.post('/patients', payload);
       const newPatient = createRes.data;
 
       console.log('📥 Patient created:', newPatient);
@@ -132,14 +141,14 @@ const Patients = () => {
 
           // 🔊 Loud success alert (this is what was missing all along)
           window.alert(
-  `✅ Patient Registered Successfully!\n\n` +
-  `Name: ${newPatient.firstName} ${newPatient.lastName}\n` +
-  `Patient ID: ${newPatient.hospitalId}\n\n` +
-  `🔑 PORTAL PIN: ${pinForDisplay}\n\n` +
-  `Patient can log in at:\n` +
-  `https://emr-system-liart.vercel.app/patient-login?h=${hospitalSlug}\n\n` +
-  `They will use their Patient ID and PIN to log in.`
-);
+              `✅ Patient Registered Successfully!\n\n` +
+              `Name: ${newPatient.firstName} ${newPatient.lastName}\n` +
+              `Patient ID: ${newPatient.hospitalId}\n\n` +
+              `🔑 PORTAL PIN: ${pinForDisplay}\n\n` +
+              `Patient can log in at:\n` +
+              `https://emr-system-liart.vercel.app/patient-login?h=${hospitalSlug}\n\n` +
+              `They will use their Patient ID and PIN to log in.`
+            );
 
           toast.success(
             `✅ ${newPatient.firstName} ${newPatient.lastName} registered (${newPatient.hospitalId})`,
