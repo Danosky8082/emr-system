@@ -64,9 +64,9 @@ const RegisterHospital = () => {
   }
 };
 
-  return (
-    <div className="login-screen app-container">
-      <div className="login-container" style={{ maxWidth: '520px' }}>
+    return (
+    <div className="register-hospital-screen">
+      <div className="register-hospital-card">
         <div className="login-header">
           <h1>🏥 Register Your Hospital</h1>
           <p>Start your 14-day free trial</p>

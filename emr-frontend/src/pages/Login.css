@@ -302,3 +302,50 @@
         pointer-events: none !important;
     }
 }
+
+/* ============================================================
+   REGISTER HOSPITAL PAGE — scrollable, roomy, top-aligned
+   Overrides the login-screen's fixed/overflow rules with a
+   page-specific class so the login pages stay untouched.
+   ============================================================ */
+.register-hospital-screen {
+    min-height: 100vh;
+    width: 100%;
+    display: flex;
+    align-items: flex-start;
+    /* top-align so tall forms grow down */
+    justify-content: center;
+    padding: 40px 24px 60px;
+    /* bottom padding so submit isn't clipped */
+    box-sizing: border-box;
+    overflow-y: auto;
+    /* ✅ THIS is the scroll fix */
+    overflow-x: hidden;
+    background: radial-gradient(ellipse at top, #1a2b4a 0%, #0a1628 60%, #050b14 100%);
+    position: relative;
+    /* not 'fixed' — allows page scroll */
+}
+
+.register-hospital-card {
+    width: 100%;
+    max-width: 560px;
+    background: #ffffff;
+    border-radius: 20px;
+    padding: 40px 36px 32px;
+    box-shadow:
+        0 20px 60px rgba(0, 0, 0, 0.5),
+        0 4px 12px rgba(0, 0, 0, 0.3);
+    box-sizing: border-box;
+    margin: 0 auto;
+}
+
+@media (max-width: 640px) {
+    .register-hospital-screen {
+        padding: 20px 12px 40px;
+    }
+
+    .register-hospital-card {
+        padding: 24px 20px 24px;
+        border-radius: 16px;
+    }
+}
