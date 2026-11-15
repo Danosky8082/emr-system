@@ -296,6 +296,86 @@ router.patch('/hospitals/:id/reactivate', authenticatePlatform, requirePlatformA
 });
 
 // ============================================================
+// PATCH /api/platform/hospitals/:id
+// Edit hospital details (name, slug, code, contact, plan).
+// ============================================================
+router.patch(
+  '/hospitals/:id',
+  authenticatePlatform,
+  requirePlatformAdmin,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const {
+        name, slug, code, email, phone,
+        address, city, state, plan,
+        usernamePrefix,
+      } = req.body;
+
+      const existing = await prisma.hospital.findUnique({ where: { id } });
+      if (!existing) {
+        return res.status(404).json({ error: 'Hospital not found' });
+      }
+
+      // Uniqueness guards (slug, code, usernamePrefix)
+      const conflicts = await prisma.hospital.findMany({
+        where: {
+          NOT: { id },
+          OR: [
+            slug           ? { slug }           : {},
+            code           ? { code }           : {},
+            usernamePrefix ? { usernamePrefix } : {},
+          ].filter((w) => Object.keys(w).length > 0),
+        },
+        select: { slug: true, code: true, usernamePrefix: true },
+      });
+
+      if (conflicts.length > 0) {
+        const c = conflicts[0];
+        if (slug && c.slug === slug) {
+          return res.status(409).json({ error: `Slug "${slug}" is already taken` });
+        }
+        if (code && c.code === code) {
+          return res.status(409).json({ error: `Code "${code}" is already taken` });
+        }
+        if (usernamePrefix && c.usernamePrefix === usernamePrefix) {
+          return res.status(409).json({ error: `Prefix "${usernamePrefix}" is already taken` });
+        }
+      }
+
+      if (usernamePrefix && !/^[a-z0-9]+$/.test(usernamePrefix)) {
+        return res.status(400).json({ error: 'Username prefix must be lowercase letters and numbers only' });
+      }
+
+      const updated = await prisma.hospital.update({
+        where: { id },
+        data: {
+          ...(name           !== undefined && { name }),
+          ...(slug           !== undefined && { slug: slug.toLowerCase() }),
+          ...(code           !== undefined && { code: code.toUpperCase() }),
+          ...(email          !== undefined && { email: email || null }),
+          ...(phone          !== undefined && { phone: phone || null }),
+          ...(address        !== undefined && { address: address || null }),
+          ...(city           !== undefined && { city: city || null }),
+          ...(state          !== undefined && { state: state || null }),
+          ...(plan           !== undefined && { plan }),
+          ...(usernamePrefix !== undefined && { usernamePrefix }),
+          updatedAt: new Date(),
+        },
+      });
+
+      res.json(updated);
+    } catch (err) {
+      console.error('Platform edit hospital error:', err);
+      if (err.code === 'P2002') {
+        return res.status(409).json({ error: 'Slug, code, or prefix already exists' });
+      }
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// ============================================================
 // PATCH /api/platform/hospitals/:id/settings
 // Update per-hospital settings (currently only the auto-advance
 // timeout; extend as more settings become configurable).
