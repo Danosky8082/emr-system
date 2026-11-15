@@ -51,7 +51,18 @@ api.interceptors.request.use(
     const url = config.url || '';
     let token = null;
 
-    if (url.startsWith('/patient/')) {
+        // Staff endpoints that happen to live under /patient/* but need the
+    // staff token, not the patient token.
+    const STAFF_PATIENT_ROUTES = [
+      '/patient/setup-portal',
+      '/patient/reset-portal',
+      '/patient/force-change',
+    ];
+    const isStaffPatientRoute = STAFF_PATIENT_ROUTES.some((p) =>
+      url.startsWith(p)
+    );
+
+    if (url.startsWith('/patient/') && !isStaffPatientRoute) {
       token = localStorage.getItem('patient_token');
     } else if (url.startsWith('/platform/')) {
       token = localStorage.getItem('platform_token');
@@ -86,8 +97,17 @@ api.interceptors.response.use(
     const url = error.config?.url || '';
     const onLoginPage = window.location.pathname.endsWith('/login');
 
-    if (status === 401 && !onLoginPage) {
-      if (url.startsWith('/patient/')) {
+        if (status === 401 && !onLoginPage) {
+      const STAFF_PATIENT_ROUTES = [
+        '/patient/setup-portal',
+        '/patient/reset-portal',
+        '/patient/force-change',
+      ];
+      const isStaffPatientRoute = STAFF_PATIENT_ROUTES.some((p) =>
+        url.startsWith(p)
+      );
+
+      if (url.startsWith('/patient/') && !isStaffPatientRoute) {
         localStorage.removeItem('patient_token');
         localStorage.removeItem('patient_data');
         localStorage.removeItem('must_change_password');
