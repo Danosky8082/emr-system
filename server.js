@@ -1301,11 +1301,7 @@ app.post('/api/public/register-hospital', async (req, res) => {
         data: { tenantId: hospital.id, hospitalId: hospital.id },
       });
 
-      // 3) Create the admin staff account
-      const hashedPassword = await bcrypt.hash(adminPassword, SALT_ROUNDS);
-      const adminUsername = await generateUsername(slug, hospital.id, tx);
-
-            // 3) Create the admin staff account
+                 // 3) Create the admin staff account
       const hashedPassword = await bcrypt.hash(adminPassword, SALT_ROUNDS);
       const adminUsername = await generateUsername(slug, hospital.id, tx);
 
