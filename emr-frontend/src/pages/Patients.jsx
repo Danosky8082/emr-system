@@ -1,6 +1,7 @@
 // src/pages/Patients.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useTenant } from '../context/TenantContext';
 import axios from 'axios';
 import './Dashboard.css';
 import { useSearch } from '../components/Layout';
@@ -11,6 +12,7 @@ import Skeleton from '../components/Skeleton';
 
 const Patients = () => {
   const { token, user } = useAuth();
+  const { hospital } = useTenant(); // <-- Add this
   const { searchTerm } = useSearch();
   const [patients, setPatients] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -139,36 +141,42 @@ const Patients = () => {
             () => false
           );
 
-          // 🔊 Loud success alert (this is what was missing all along)
-          window.alert(
-              `✅ Patient Registered Successfully!\n\n` +
-              `Name: ${newPatient.firstName} ${newPatient.lastName}\n` +
-              `Patient ID: ${newPatient.hospitalId}\n\n` +
-              `🔑 PORTAL PIN: ${pinForDisplay}\n\n` +
-              `Patient can log in at:\n` +
-              `https://emr-system-liart.vercel.app/patient-login?h=${hospitalSlug}\n\n` +
-              `They will use their Patient ID and PIN to log in.`
-            );
-
+                   // 🔊 NON-BLOCKING SUCCESS NOTIFICATION
+          // Using toast instead of window.alert so the UI doesn't freeze 
+          // and the table refreshes immediately.
           toast.success(
-            `✅ ${newPatient.firstName} ${newPatient.lastName} registered (${newPatient.hospitalId})`,
-            { duration: 8000 }
+            `✅ Patient Registered!\nID: ${newPatient.hospitalId}\nPIN: ${pinForDisplay}`,
+            { duration: 10000, position: 'top-center' }
           );
+
+          // Attempt to copy to clipboard silently
+          try {
+            await navigator.clipboard.writeText(pinForDisplay);
+            toast.success('PIN copied to clipboard', { duration: 4000 });
+          } catch (err) {
+            console.warn('Could not copy to clipboard:', err);
+          }
+
         } catch (portalErr) {
           console.error('Portal setup failed:', portalErr);
-          window.alert(
-            `⚠️ Patient created (ID: ${newPatient.hospitalId}), but PORTAL SETUP FAILED.\n\n` +
+          
+          // Non-blocking error notification for portal failure
+          toast.error(
+            `Patient created (ID: ${newPatient.hospitalId}), but PORTAL SETUP FAILED.\n` +
             `Error: ${portalErr.response?.data?.error || portalErr.message}\n\n` +
-            `You can enable the portal manually from the Patients list.`
+            `You can enable the portal manually from the Patients list.`,
+            { duration: 8000, position: 'top-center' }
           );
         }
       } else {
-        window.alert(
-          `✅ Patient Registered Successfully!\n\n` +
+        // Non-blocking success notification when portal is NOT enabled
+        toast.success(
+          `✅ Patient Registered Successfully!\n` +
           `Name: ${newPatient.firstName} ${newPatient.lastName}\n` +
           `Hospital ID: ${newPatient.hospitalId}\n` +
           `Phone: ${newPatient.phone || '—'}\n\n` +
-          `Portal access was NOT enabled (checkbox unchecked).`
+          `Portal access was NOT enabled.`,
+          { duration: 8000, position: 'top-center' }
         );
       }
     }
@@ -193,10 +201,12 @@ const Patients = () => {
     const data = error.response?.data;
 
     if (data?.code === 'DUPLICATE_FIELD') {
-      window.alert(
+      // Non-blocking duplicate error
+      toast.error(
         `⚠️ Duplicate Patient Detected\n\n` +
         `A patient with this ${data.field || 'value'} already exists in this hospital.\n\n` +
-        `Search the Patient list before trying again.`
+        `Search the Patient list before trying again.`,
+        { duration: 8000, position: 'top-center' }
       );
       return;
     }
@@ -692,7 +702,7 @@ const Patients = () => {
               <h3>{editingPatient ? 'Edit Patient' : 'Register New Patient'}</h3>
               <button className="modal-close" onClick={() => setShowModal(false)}>×</button>
             </div>
-            <form onSubmit={handleSubmit}>
+            <form onSubmit={handleSubmit} autoComplete="off">
               <div className="modal-body">
                 {/* Basic Information */}
                 <div className="form-row">
@@ -726,7 +736,8 @@ const Patients = () => {
                   </div>
                   <div className="form-group">
                     <label>Email</label>
-                    <input type="email" name="email" value={formData.email} onChange={handleInputChange} />
+                    <input type="email" name="email" value={formData.email} onChange={handleInputChange} autoComplete="off" 
+  placeholder="e.g. patient@example.com"/>
                   </div>
                 </div>
                 <div className="form-group">

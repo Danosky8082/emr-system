@@ -1305,11 +1305,25 @@ app.post('/api/public/register-hospital', async (req, res) => {
       const hashedPassword = await bcrypt.hash(adminPassword, SALT_ROUNDS);
       const adminUsername = await generateUsername(slug, hospital.id, tx);
 
+            // 3) Create the admin staff account
+      const hashedPassword = await bcrypt.hash(adminPassword, SALT_ROUNDS);
+      const adminUsername = await generateUsername(slug, hospital.id, tx);
+
+      // Generate a proper 4-digit key so the admin can log in with it
+      const adminYear = new Date().getFullYear();
+      const adminShortKey = String(Math.floor(1000 + Math.random() * 9000));
+      const adminPrefix = (usernamePrefix || code || 'HOSP')
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, '');
+      const adminEmployeeId = `${adminPrefix}/ADMIN/${adminShortKey}`;
+
       const admin = await tx.staff.create({
         data: {
           tenantId: hospital.id,
-          employeeId: 'ADMIN-001',
-          username: adminUsername,
+          employeeId: adminEmployeeId,      // e.g., NIDA/ADMIN/4827
+          employeeIdKey: adminShortKey,     // e.g., 4827
+          employeeIdYear: adminYear,        // e.g., 2026
+          username: adminUsername,          // e.g., nida-1234
           firstName: adminFirstName,
           lastName: adminLastName,
           email: adminEmail,
