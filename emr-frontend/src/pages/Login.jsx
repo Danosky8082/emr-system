@@ -18,6 +18,20 @@ const Login = () => {
   const { setTenant } = useTenant();
   const navigate = useNavigate();
 
+    // Read the last-used hospital slug from a cookie set at login time.
+  // localStorage is wiped on logout, but cookies persist for 30 days.
+  const lastHospitalSlug =
+    document.cookie
+      .split('; ')
+      .find((row) => row.startsWith('last_hospital_slug='))
+      ?.split('=')[1] || null;
+  const lastHospitalName = decodeURIComponent(
+    document.cookie
+      .split('; ')
+      .find((row) => row.startsWith('last_hospital_name='))
+      ?.split('=')[1] || ''
+  );
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -47,6 +61,19 @@ const Login = () => {
       //    from localStorage on the next request.
       // ─────────────────────────────────────────────────────────
       login(token, staff);
+
+            login(token, staff);
+
+      // Remember which hospital this user belongs to (30 days)
+      try {
+        const h = await api.get(`/hospitals/${staff.tenantId}`);
+        if (h.data?.slug) {
+          document.cookie = `last_hospital_slug=${h.data.slug}; max-age=${60 * 60 * 24 * 30}; path=/; SameSite=Lax`;
+          if (h.data.name) {
+            document.cookie = `last_hospital_name=${encodeURIComponent(h.data.name)}; max-age=${60 * 60 * 24 * 30}; path=/; SameSite=Lax`;
+          }
+        }
+      } catch { /* non-fatal */ }
 
       // ─────────────────────────────────────────────────────────
       // 3. Fetch the hospital record for branding (name, colors,
@@ -177,7 +204,33 @@ await new Promise((resolve) => setTimeout(resolve, 900));
         </form>
 
         {/* Footer */}
-        <div className="login-footer">
+                <div className="login-footer">
+          {lastHospitalSlug && (
+            <p
+              className="login-footer-help"
+              style={{
+                background: '#eff6ff',
+                border: '1px solid #3b82f6',
+                borderRadius: '8px',
+                padding: '10px 14px',
+                marginBottom: '12px',
+                fontSize: '13px',
+                color: '#1e3a5f',
+              }}
+            >
+              🏥 {lastHospitalName ? (
+                <>You last logged into <strong>{lastHospitalName}</strong>.{' '}</>
+              ) : (
+                <>You last logged into a hospital.{' '}</>
+              )}
+              <Link
+                to={`/h/${lastHospitalSlug}/login`}
+                style={{ fontWeight: 600, color: '#0f3460' }}
+              >
+                Go to hospital login →
+              </Link>
+            </p>
+          )}
           <p className="login-footer-help">
             Having trouble? Contact your hospital administrator.
           </p>

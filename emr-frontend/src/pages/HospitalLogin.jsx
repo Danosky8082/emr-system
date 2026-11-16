@@ -66,7 +66,16 @@ const HospitalLogin = () => {
         );
       }
 
-      login(token, staff);
+            login(token, staff);
+
+      // Remember this hospital for the next visit (30 days)
+      try {
+        document.cookie = `last_hospital_slug=${hospitalSlug}; max-age=${60 * 60 * 24 * 30}; path=/; SameSite=Lax`;
+        if (hospital?.name) {
+          document.cookie = `last_hospital_name=${encodeURIComponent(hospital.name)}; max-age=${60 * 60 * 24 * 30}; path=/; SameSite=Lax`;
+        }
+      } catch { /* cookie set failed — non-fatal */ }
+
       navigate('/');
       toast.success(`Welcome to ${hospital?.name || 'the hospital'}!`);
     } catch (error) {

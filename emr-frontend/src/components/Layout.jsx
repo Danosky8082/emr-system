@@ -61,7 +61,7 @@ const NavDropdown = ({ label, children, contentClassName = '' }) => {
 // ============================================================
 const Layout = () => {
   const { user, logout } = useAuth();
-  const { clearTenant, hospitalName, hospitalLogo, primaryColor } = useTenant();
+  const { clearTenant, hospitalName, hospitalLogo, primaryColor, hospital } = useTenant();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchTerm, setSearchTerm] = useState('');
@@ -817,7 +817,23 @@ const Layout = () => {
     );
   };
 
-  const handleLogout = () => {
+    const handleLogout = () => {
+    // Capture the current hospital slug BEFORE we wipe localStorage,
+    // so we can send the user back to the SAME branded login page.
+    let slugForRedirect = null;
+    try {
+      const savedHospital = localStorage.getItem('emr_hospital');
+      if (savedHospital) {
+        slugForRedirect = JSON.parse(savedHospital)?.slug || null;
+      }
+    } catch {
+      slugForRedirect = null;
+    }
+    // Fallback: use the tenant context if localStorage was already cleared
+    if (!slugForRedirect && hospital?.slug) {
+      slugForRedirect = hospital.slug;
+    }
+
     try {
       if (typeof window !== 'undefined') {
         localStorage.removeItem('emr_token');
@@ -838,9 +854,16 @@ const Layout = () => {
 
     clearTenant();
     logout();
-    navigate('/login');
-  };
 
+    // Redirect to the branded login for the hospital we came from.
+    // Only fall back to /login if we genuinely don't know the slug
+    // (e.g., user logged in via central login with no hospital context).
+    if (slugForRedirect) {
+      navigate(`/h/${slugForRedirect}/login`, { replace: true });
+    } else {
+      navigate('/login', { replace: true });
+    }
+  };
   const menuGroupsForMobile = Object.entries(menuStructure).map(
     ([title, items]) => ({
       title: title.replace(/^[^\w]+\s*/, '') || title,
