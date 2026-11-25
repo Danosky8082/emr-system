@@ -1217,6 +1217,7 @@ const StaffManagement = () => {
                   value={formData.password}
                   onChange={handleInputChange}
                   required
+                  autoComplete="new-password" 
                 />
                 <small>Minimum 6 characters</small>
               </div>
