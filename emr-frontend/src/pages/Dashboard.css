@@ -873,3 +873,10 @@
     /* Account for header + footer */
     overflow-y: auto;
 }
+.table-container table th {
+    position: sticky;
+    top: 0;
+    background-color: #f8f9fa;
+    /* Match your header background */
+    z-index: 10;
+}

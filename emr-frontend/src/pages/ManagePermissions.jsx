@@ -872,7 +872,14 @@ const ManagePermissions = () => {
         </span>
       </div>
 
-      <div className="table-container" style={{ overflowX: 'auto' }}>
+      <div 
+        className="table-container" 
+        style={{ 
+          overflowX: 'auto', 
+          overflowY: 'auto', 
+          maxHeight: 'calc(100vh - 250px)' // Keeps the header visible
+        }}
+      >
         <table>
           <thead>
             <tr>
