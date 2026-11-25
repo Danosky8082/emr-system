@@ -1,20 +1,36 @@
 // src/components/Modal.jsx
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import './Modal.css';
 
 const Modal = ({ isOpen, onClose, children, maxWidth = '620px' }) => {
-  // Close on Escape key
+  const lockRef = useRef(false);
+
   useEffect(() => {
     if (!isOpen) return;
+
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onKey);
-    // Prevent body scroll while modal is open
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+
+    if (!lockRef.current) {
+      window.__modalLockCount = (window.__modalLockCount || 0) + 1;
+      if (window.__modalLockCount === 1) {
+        document.body.dataset.prevOverflow = document.body.style.overflow || '';
+        document.body.style.overflow = 'hidden';
+      }
+      lockRef.current = true;
+    }
+
     return () => {
       document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prev;
+      if (lockRef.current) {
+        window.__modalLockCount = Math.max(0, (window.__modalLockCount || 1) - 1);
+        if (window.__modalLockCount === 0) {
+          document.body.style.overflow = document.body.dataset.prevOverflow || '';
+          delete document.body.dataset.prevOverflow;
+        }
+        lockRef.current = false;
+      }
     };
   }, [isOpen, onClose]);
 

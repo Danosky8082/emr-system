@@ -1,12 +1,22 @@
 /* src/index.css - Professional EMR Theme */
+/* src/index.css — replace the existing html/body/#root rule */
 body,
 html,
 #root {
     margin: 0;
     padding: 0;
-    height: 100%;
+    min-height: 100%;
+    height: auto;
+    /* ✅ was 100% — that clamped the page */
     width: 100%;
     font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* ✅ Root can now grow with its content, so the browser shows a real scrollbar */
+#root {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
 }
 
 /* GLOBAL FADED BACKGROUND */
@@ -15,7 +25,8 @@ html,
     background-size: cover;
     background-position: center;
     background-attachment: fixed;
-    min-height: 100vh;
+    flex: 1;
+    /* ✅ fill #root */
     width: 100%;
     max-width: 100%;
     overflow-x: hidden;
@@ -23,6 +34,19 @@ html,
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
+}
+
+/* ✅ Critical: the overlay must scroll with the page, not cover it fixed */
+.app-container::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(8, 20, 40, 0.75);
+    z-index: 0;
+    pointer-events: none;
 }
 
 /* Dark blue, semi-transparent overlay to fade the image */
