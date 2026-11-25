@@ -297,6 +297,10 @@ html,
 .main-content {
     padding: 24px 32px;
     flex: 1;
+    min-height: 0;
+    min-width: 0;
+    /* ✅ ADD THIS */
+    overflow-y: visible;
 }
 
 /* --- LOGIN PAGE – LEFT ALIGNED --- */

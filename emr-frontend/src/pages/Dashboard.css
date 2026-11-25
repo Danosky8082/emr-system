@@ -86,9 +86,18 @@
 
 /* ✅ Scrolling variant for very tall tables (Permissions, Analytics, Ledger, StaffActivity) */
 .table-container.permissions-table {
+    width: 100%;
+    /* ✅ Force container to fit parent */
+    max-width: 100%;
+    /* ✅ Don't let it stretch past screen */
     max-height: calc(100vh - 260px);
-    overflow: auto;
+    overflow-x: auto;
+    /* ✅ Horizontal scroll */
+    overflow-y: auto;
+    /* ✅ Vertical scroll */
     position: relative;
+    display: block;
+    /* ✅ Ensure it acts as a block container */
 }
 
 .table-container.permissions-table thead th {
