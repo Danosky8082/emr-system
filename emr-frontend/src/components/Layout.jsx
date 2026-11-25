@@ -300,7 +300,7 @@ const Layout = () => {
     }
 
     if (path === '/labor-delivery') {
-      if (['Obstetrician', 'Midwife', 'Doctor', 'Nurse'].includes(user?.role)) return true;
+      if (['Obstetrician', 'Midwife', 'Nurse'].includes(user?.role)) return true;
       return permissions?.['laborAndDelivery'] === true;
     }
 
@@ -643,15 +643,25 @@ const Layout = () => {
     }
 
     // Doctor
+        // Doctor
     if (user?.role === 'Doctor') {
       return (
         <>
           <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📊 Dashboard</NavLink>
           <NavLink to="/patients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>👤 Patients</NavLink>
-          <NavDropdown label="🤱 Maternity">
-            <NavLink to="/antenatal" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🤰 Antenatal Care</NavLink>
-            <NavLink to="/labor-delivery" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🤱 Labor & Delivery</NavLink>
-          </NavDropdown>
+          
+          {/* ✅ Only show Maternity if the Doctor has the specific permissions */}
+          {(permissions?.antenatal || permissions?.laborAndDelivery) && (
+            <NavDropdown label="🤱 Maternity">
+              {permissions?.antenatal && (
+                <NavLink to="/antenatal" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🤰 Antenatal Care</NavLink>
+              )}
+              {permissions?.laborAndDelivery && (
+                <NavLink to="/labor-delivery" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>🤱 Labor & Delivery</NavLink>
+              )}
+            </NavDropdown>
+          )}
+
           <NavDropdown label="👨‍⚕️ Clinical">
             <NavLink to="/appointments" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>📅 Appointments</NavLink>
             <NavLink to="/prescriptions" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>💊 Prescriptions</NavLink>

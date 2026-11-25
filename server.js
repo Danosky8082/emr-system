@@ -579,11 +579,11 @@ const checkPermission = (permissionKey) => {
         if (['Doctor', 'Obstetrician'].includes(userRole)) return next();
       }
       if (permissionKey === 'antenatal') {
-        const allowedRoles = ['Obstetrician', 'Midwife', 'Nurse', 'Doctor', 'Records', 'Paediatrician'];
+        const allowedRoles = ['Obstetrician', 'Midwife', 'Nurse', 'Records', 'Paediatrician'];
         if (allowedRoles.includes(userRole)) return next();
       }
       if (permissionKey === 'laborAndDelivery') {
-        const allowedRoles = ['Obstetrician', 'Midwife', 'Nurse', 'Doctor', 'Paediatrician'];
+        const allowedRoles = ['Obstetrician', 'Midwife', 'Nurse', 'Paediatrician'];
         if (allowedRoles.includes(userRole)) return next();
       }
       if (permissionKey === 'dental') {
