@@ -77,27 +77,20 @@ const AntenatalDashboard = () => {
       if (canViewPatients && isMounted.current) {
         let patientsData = [];
         
-        try {
-          let url = '/patients';
-          
-          if (user?.role === 'Midwife' || user?.role === 'Nurse') {
-            url = '/nurse/patients';
-          } else if (user?.role === 'Doctor' || user?.role === 'Obstetrician') {
-            url = '/doctor/patients';
-          }
-          
-          const patientRes = await axios.get(url, {
+                try {
+          // ✅ Always fetch the full patient list for Antenatal Registration
+          // This ensures Doctors/Nurses can see ALL eligible females, not just those in their current queue.
+          const patientRes = await axios.get('/patients', {
             headers: { Authorization: `Bearer ${token}` },
             timeout: 15000
           });
           
-          if (user?.role === 'Midwife' || user?.role === 'Nurse' || 
-              user?.role === 'Doctor' || user?.role === 'Obstetrician') {
-            patientsData = (patientRes.data || [])
-              .map(journey => journey?.patient)
-              .filter(patient => patient !== null && patient !== undefined);
-          } else {
-            patientsData = patientRes.data || [];
+          // The /patients endpoint returns a direct array of patients
+          patientsData = Array.isArray(patientRes.data) ? patientRes.data : (patientRes.data.data || []);
+          
+          console.log(`👤 Fetched ${patientsData.length} total patients for antenatal registration`);
+          if (isMounted.current) {
+            setPatients(patientsData);
           }
           
           console.log(`👤 Fetched ${patientsData.length} patients`);
@@ -181,13 +174,17 @@ const AntenatalDashboard = () => {
   console.log(`📊 Active: ${activePregnancies.length}, Delivered: ${deliveredPregnancies.length}`);
 
   // Filter: Female patients who are NOT currently pregnant (Active)
+    // Filter: Female patients who are NOT currently pregnant (Active)
   const availablePatients = patients.filter(patient => {
     if (!patient) return false;
-    const genderLower = (patient.gender || '').toLowerCase().trim();
-    const isFemale = genderLower === 'female' || genderLower === 'f';
+    
+    // ✅ More robust gender check
+    const genderStr = String(patient.gender || '').trim().toLowerCase();
+    const isFemale = genderStr === 'female' || genderStr === 'f' || genderStr.startsWith('f');
     
     if (!isFemale) return false;
     
+    // Check if she already has an active pregnancy
     const hasActivePregnancy = pregnancies.some(p => 
       p?.patient?.id === patient.id && p?.status === 'Active'
     );
